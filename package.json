@@ -1,0 +1,133 @@
+{
+  "name": "vscode-livepreview-editor",
+  "displayName": "Live Preview Editor",
+  "description": "Obsidian ライクな Markdown ライブプレビュー編集エディタ (CodeMirror 6)",
+  "version": "1.11.0",
+  "publisher": "Hashi-Kazu",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#3C6EDC",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hashi-Kazu/vscode-livepreview-editor"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "live preview",
+    "wysiwyg",
+    "obsidian",
+    "editor"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "livePreview.markdown",
+        "displayName": "Live Preview (Markdown)",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "livePreview.openWith",
+        "title": "Live Preview エディタで開く",
+        "category": "Live Preview",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "livePreview.toggleSource",
+        "title": "標準（ソース）エディタで開く",
+        "category": "Live Preview",
+        "icon": "$(code)"
+      },
+      { "command": "livePreview.format.bold", "title": "太字 (Bold)", "category": "Live Preview" },
+      { "command": "livePreview.format.italic", "title": "斜体 (Italic)", "category": "Live Preview" },
+      { "command": "livePreview.format.strikethrough", "title": "取り消し線 (Strikethrough)", "category": "Live Preview" },
+      { "command": "livePreview.format.highlight", "title": "ハイライト (Highlight)", "category": "Live Preview" },
+      { "command": "livePreview.format.code", "title": "インラインコード (Code)", "category": "Live Preview" }
+    ],
+    "keybindings": [
+      { "command": "livePreview.format.bold", "key": "ctrl+b", "mac": "cmd+b", "when": "activeCustomEditorId == livePreview.markdown" },
+      { "command": "livePreview.format.italic", "key": "ctrl+i", "mac": "cmd+i", "when": "activeCustomEditorId == livePreview.markdown" },
+      { "command": "livePreview.format.strikethrough", "key": "ctrl+shift+x", "mac": "cmd+shift+x", "when": "activeCustomEditorId == livePreview.markdown" },
+      { "command": "livePreview.format.highlight", "key": "ctrl+shift+h", "mac": "cmd+shift+h", "when": "activeCustomEditorId == livePreview.markdown" },
+      { "command": "livePreview.format.code", "key": "ctrl+e", "mac": "cmd+e", "when": "activeCustomEditorId == livePreview.markdown" }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "livePreview.toggleSource",
+          "when": "activeCustomEditorId == livePreview.markdown",
+          "group": "navigation"
+        },
+        {
+          "command": "livePreview.openWith",
+          "when": "resourceExtname == .md && !activeCustomEditorId",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "livePreview.openWith",
+          "when": "resourceExtname == .md",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Live Preview Editor",
+      "properties": {
+        "livePreview.fontSize": {
+          "type": "number",
+          "default": 14,
+          "minimum": 8,
+          "maximum": 40,
+          "description": "エディタのフォントサイズ (px)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "compile": "npm run check-types && node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
+    "vscode:prepublish": "node esbuild.js --production",
+    "package": "npx --yes @vscode/vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "@vscode/vsce": "^2.24.0",
+    "esbuild": "^0.20.2",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.5.0",
+    "@codemirror/lang-markdown": "^6.2.5",
+    "@codemirror/language": "^6.10.1",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.26.3"
+  }
+}

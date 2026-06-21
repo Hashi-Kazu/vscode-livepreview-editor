@@ -1,0 +1,7 @@
+node_modules/
+dist/
+dist-test/
+coverage/
+*.vsix
+!releases/**/*.vsix
+.DS_Store

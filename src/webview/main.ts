@@ -1,0 +1,303 @@
+/**
+ * Webview entry point. Boots a CodeMirror 6 editor, wires the live-preview
+ * decoration plugin, and bridges document changes to/from the extension host
+ * over `postMessage`.
+ */
+import { EditorState, Transaction, StateField } from '@codemirror/state';
+import { EditorView, ViewUpdate, DecorationSet, keymap, drawSelection } from '@codemirror/view';
+import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
+import { markdown } from '@codemirror/lang-markdown';
+import { buildDecorations, setResourceBase } from './decorations';
+import { shouldEmitEdit } from '../core/sync';
+import { toggleWrap, WrapResult } from '../core/format';
+import { continueList, changeIndent, toggleHeading } from '../core/editing';
+
+interface VsCodeApi {
+  postMessage(msg: unknown): void;
+  getState(): unknown;
+  setState(state: unknown): void;
+}
+declare function acquireVsCodeApi(): VsCodeApi;
+const vscode = acquireVsCodeApi();
+
+let fontSize = 14;
+/** True while we are applying an edit that came from the extension host, so we
+ *  do not echo it straight back and create a feedback loop. */
+let applyingRemote = false;
+
+// Decorations are provided via a StateField (not a ViewPlugin): CodeMirror
+// forbids block decorations — used by the HTML table widget — from plugins.
+let renderErrorReported = false;
+function onRenderError(message: string) {
+  // Ask the host to switch to VS Code's standard text editor (we no longer ship
+  // an in-webview source view). Report once to avoid a warning storm.
+  if (!renderErrorReported) {
+    renderErrorReported = true;
+    vscode.postMessage({ type: 'renderError', message });
+  }
+}
+
+function computeField(state: EditorState): DecorationSet {
+  return buildDecorations(state, {}, onRenderError);
+}
+
+function livePreviewField() {
+  return StateField.define<DecorationSet>({
+    create: (state) => computeField(state),
+    update(value, tr) {
+      // Recompute on edits and cursor/selection moves (cursor line shows raw).
+      if (tr.docChanged || tr.selection) return computeField(tr.state);
+      return value;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+}
+
+const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
+  // Defer during IME composition / remote application to avoid flicker & loops.
+  if (!shouldEmitEdit({ docChanged: update.docChanged, composing: update.view.composing, applyingRemote })) {
+    return;
+  }
+  vscode.postMessage({ type: 'edit', text: update.state.doc.toString() });
+});
+
+/** Apply a pure {@link WrapResult} to the editor as one transaction. */
+function applyWrap(result: WrapResult) {
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: result.text },
+    selection: { anchor: result.selFrom, head: result.selTo },
+  });
+}
+
+const FORMAT_MARKERS: Record<string, string> = {
+  bold: '**',
+  italic: '*',
+  strikethrough: '~~',
+  highlight: '==',
+  code: '`',
+};
+
+/** Run a named format toggle on the current selection (keymap + host command). */
+function runFormat(kind: string) {
+  const { from, to } = view.state.selection.main;
+  const doc = view.state.doc.toString();
+  if (FORMAT_MARKERS[kind]) {
+    applyWrap(toggleWrap(doc, from, to, FORMAT_MARKERS[kind]));
+  }
+}
+
+/** Build a keymap command that toggles a symmetric formatting marker. */
+function wrapCommand(marker: string) {
+  return (target: EditorView): boolean => {
+    const { from, to } = target.state.selection.main;
+    applyWrap(toggleWrap(target.state.doc.toString(), from, to, marker));
+    return true;
+  };
+}
+
+const formatKeymap = keymap.of([
+  { key: 'Mod-b', run: wrapCommand('**') },
+  { key: 'Mod-i', run: wrapCommand('*') },
+  { key: 'Mod-Shift-x', run: wrapCommand('~~') },
+  { key: 'Mod-Shift-h', run: wrapCommand('==') },
+  { key: 'Mod-e', run: wrapCommand('`') },
+]);
+
+/** Enter: continue or terminate a Markdown list. */
+function handleEnter(target: EditorView): boolean {
+  const { from, to } = target.state.selection.main;
+  if (from !== to) return false;
+  const line = target.state.doc.lineAt(from);
+  const cont = continueList(line.text);
+  if (!cont.isList) return false;
+  if (cont.removeMarker) {
+    target.dispatch({
+      changes: { from: line.from, to: line.from + cont.markerLength, insert: '' },
+      selection: { anchor: line.from },
+    });
+    return true;
+  }
+  target.dispatch({
+    changes: { from, to, insert: '\n' + cont.insert },
+    selection: { anchor: from + 1 + cont.insert.length },
+  });
+  return true;
+}
+
+/** Tab / Shift-Tab: indent or outdent a list line. */
+function indentCommand(delta: number) {
+  return (target: EditorView): boolean => {
+    const { from } = target.state.selection.main;
+    const line = target.state.doc.lineAt(from);
+    if (delta > 0 && !continueList(line.text).isList) return false; // default tab elsewhere
+    const { text, shift } = changeIndent(line.text, delta);
+    if (text === line.text) return delta < 0; // nothing to outdent
+    target.dispatch({
+      changes: { from: line.from, to: line.from + line.text.length, insert: text },
+      selection: { anchor: Math.max(line.from, from + shift) },
+    });
+    return true;
+  };
+}
+
+/** Mod-Alt-N: toggle ATX heading level N on the current line. */
+function headingCommand(level: number) {
+  return (target: EditorView): boolean => {
+    const { from } = target.state.selection.main;
+    const line = target.state.doc.lineAt(from);
+    const text = toggleHeading(line.text, level);
+    target.dispatch({
+      changes: { from: line.from, to: line.from + line.text.length, insert: text },
+      selection: { anchor: line.from + text.length },
+    });
+    return true;
+  };
+}
+
+const editingKeymap = keymap.of([
+  { key: 'Enter', run: handleEnter },
+  { key: 'Tab', run: indentCommand(1) },
+  { key: 'Shift-Tab', run: indentCommand(-1) },
+  ...[1, 2, 3, 4, 5, 6].map((n) => ({ key: `Mod-Alt-${n}`, run: headingCommand(n) })),
+]);
+
+function makeState(text: string): EditorState {
+  return EditorState.create({
+    doc: text,
+    extensions: [
+      history(),
+      formatKeymap,
+      editingKeymap,
+      keymap.of([...defaultKeymap, ...historyKeymap]),
+      markdown(),
+      livePreviewField(),
+      syncPlugin,
+      EditorView.lineWrapping,
+      // Draw CodeMirror's own cursor/selection elements so we can style the
+      // caret with the VS Code cursor color (R-28-02).
+      drawSelection(),
+      EditorView.theme({}),
+    ],
+  });
+}
+
+const view = new EditorView({
+  state: makeState(''),
+  parent: document.getElementById('editor')!,
+});
+
+// Click routing for interactive widgets (task checkboxes, links, tables).
+//
+// Registered on the CAPTURE phase so it runs *before* CodeMirror's own
+// mousedown handler. Otherwise CodeMirror moves the selection onto the clicked
+// line first, re-rendering the task line to its raw `- [ ]` form, which made the
+// checkbox toggle feel like it did nothing (R-28-03). For the checkbox we
+// `stopImmediatePropagation` so CodeMirror never sees the event at all.
+view.dom.addEventListener(
+  'mousedown',
+  (event) => {
+    const el = event.target as HTMLElement;
+    // Task checkbox → toggle the source line via the host. Handle this BEFORE
+    // any other widget branch (details/table) so a checkbox nested inside other
+    // rendered content still toggles rather than moving the caret.
+    const box = el.closest('.cm-lp-task-checkbox');
+    if (box) {
+      // Fully swallow the event: prevent the default text-selection behaviour
+      // and keep CodeMirror's mousedown handler (same DOM node, capture phase)
+      // from running so the caret does not jump onto this line.
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      try {
+        const pos = view.posAtDOM(box as HTMLElement);
+        const line = view.state.doc.lineAt(pos).number - 1; // 0-based
+        vscode.postMessage({ type: 'toggleTask', line });
+      } catch {
+        /* widget not currently mapped (mid-render); ignore this click */
+      }
+      return;
+    }
+    // Standard link / autolink → open externally or as a workspace file.
+    const href = el.closest('[data-href]') as HTMLElement | null;
+    if (href) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      vscode.postMessage({ type: 'openLink', href: href.getAttribute('data-href') });
+      return;
+    }
+    // Rendered <details> accordion. Clicking the summary toggles open/close
+    // (native <details>); clicking elsewhere in the widget moves the caret into
+    // the block so the raw HTML can be edited.
+    const details = el.closest('.cm-lp-details');
+    if (details) {
+      if (el.closest('.cm-lp-details-summary')) return; // let native toggle run
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      try {
+        const pos = view.posAtDOM(details);
+        view.dispatch({ selection: { anchor: pos } });
+        view.focus();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    // Rendered table → move the caret into it so the raw source can be edited.
+    const table = el.closest('.cm-lp-table');
+    if (table) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      try {
+        const pos = view.posAtDOM(table);
+        view.dispatch({ selection: { anchor: pos } });
+        view.focus();
+      } catch {
+        /* ignore */
+      }
+    }
+  },
+  true, // capture phase
+);
+
+function applyFontSize(size: number) {
+  fontSize = size;
+  (document.getElementById('editor') as HTMLElement).style.fontSize = `${size}px`;
+}
+
+function setText(text: string) {
+  applyingRemote = true;
+  try {
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text },
+      // Mark as a remote sync so it does not pollute the undo history origin.
+      annotations: Transaction.addToHistory.of(false),
+    });
+  } finally {
+    applyingRemote = false;
+  }
+}
+
+// --- Messages from the extension host ----------------------------------------
+window.addEventListener('message', (event) => {
+  const msg = event.data;
+  switch (msg.type) {
+    case 'init':
+      applyFontSize(msg.fontSize ?? 14);
+      if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
+      // Blocks start expanded; the user folds/unfolds via the ▸/▾ gutter.
+      view.setState(makeState(msg.text ?? ''));
+      break;
+    case 'update': // external / host-side document change
+      if (msg.text !== view.state.doc.toString()) setText(msg.text);
+      break;
+    case 'settings':
+      if (typeof msg.fontSize === 'number') applyFontSize(msg.fontSize);
+      break;
+    case 'format':
+      if (typeof msg.kind === 'string') runFormat(msg.kind);
+      break;
+  }
+});
+
+// Tell the host we are ready to receive the initial document.
+vscode.postMessage({ type: 'ready' });

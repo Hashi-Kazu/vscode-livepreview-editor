@@ -1,0 +1,305 @@
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  /* Body text follows the UI/sans-serif font (GitHub / VS Code Markdown preview
+     look). Code keeps its own monospace stack below. */
+  font-family: var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif));
+}
+
+#editor {
+  height: 100vh;
+  overflow: auto;
+}
+
+.cm-editor {
+  height: 100%;
+}
+.cm-editor.cm-focused {
+  outline: none;
+}
+.cm-content {
+  caret-color: var(--vscode-editorCursor-foreground, var(--vscode-editor-foreground));
+  /* Inherit the standard editor text color so body text follows the active VS
+     Code theme rather than a hard-coded value. */
+  color: var(--vscode-editor-foreground);
+  /* Prefer the Markdown preview sans-serif stack explicitly (rather than only
+     inheriting) so body text never falls back to the editor monospace font,
+     and keep a normal weight to match the MAIO preview (R-28-06). */
+  font-family: var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, -apple-system, "Segoe UI", sans-serif));
+  font-weight: 400;
+  /* GitHub-preview-like reading rhythm (R-28-05). */
+  line-height: 1.6;
+  /* Generous, symmetric reading margins to match the Markdown All in One
+     preview rhythm (R-28-06). Headings and body share the same left edge
+     because heading markers are line decorations, not extra indentation. */
+  padding: 20px 40px 24px 48px;
+}
+/* CodeMirror sets a fixed line-height on each line; relax it so paragraphs
+   breathe at the 1.6 rhythm above. */
+.cm-line {
+  line-height: 1.6;
+  padding: 0;
+}
+
+/* Caret: with drawSelection enabled CodeMirror paints its own cursor element,
+   so the native caret-color is not used — style the cursor element directly,
+   otherwise it inherits an (often invisible) default color. Fall back through
+   the cursor color → editor foreground → an explicit color so the caret is
+   always visible whatever the theme exposes (R-28-02). */
+.cm-cursor,
+.cm-cursor-primary,
+.cm-dropCursor {
+  border-left-color: var(--vscode-editorCursor-foreground, var(--vscode-editor-foreground, #ffffff)) !important;
+  border-left-width: 2px !important;
+}
+
+/* Selection follows the theme's editor selection color. */
+.cm-selectionBackground,
+.cm-content ::selection {
+  background: var(--vscode-editor-selectionBackground) !important;
+}
+
+/* --- Live-preview decoration styles --------------------------------------- */
+/* All text colors below follow VS Code theme variables (no hard-coded colors). */
+.cm-lp-strong {
+  font-weight: 700;
+}
+.cm-lp-em {
+  font-style: italic;
+}
+.cm-lp-code,
+.cm-lp-codeblock {
+  font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 0.92em;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+  border-radius: 4px;
+}
+.cm-lp-code {
+  /* Inline code: subtle tinted pill (GitHub-style). */
+  padding: 0.15em 0.4em;
+}
+.cm-lp-codeblock {
+  /* Block code: full-width background band with generous padding and a subtle
+     border, matching the GitHub / MAIO fenced-code look. */
+  display: block;
+  padding: 12px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.25));
+  line-height: 1.45;
+}
+
+/* --- Headings (GitHub-preview sizing) ------------------------------------- */
+.cm-lp-heading {
+  font-weight: 600;
+  line-height: 1.25;
+  /* Headings follow the VS Code standard editor foreground color (no custom
+     hard-coded heading color). Size/weight are kept; only the color is theme-
+     driven (R-28-04). */
+  color: var(--vscode-editor-foreground);
+}
+/* Heading decorations are line decorations, so margins/borders apply to the
+   whole heading line (GitHub vertical rhythm). */
+.cm-line.cm-lp-h1,
+.cm-line.cm-lp-h2,
+.cm-line.cm-lp-h3,
+.cm-line.cm-lp-h4,
+.cm-line.cm-lp-h5,
+.cm-line.cm-lp-h6 {
+  margin-top: 0.8em;
+  margin-bottom: 0.3em;
+}
+.cm-lp-h1 { font-size: 2em; }
+.cm-lp-h2 { font-size: 1.5em; }
+.cm-lp-h3 { font-size: 1.25em; }
+.cm-lp-h4 { font-size: 1em; }
+.cm-lp-h5 { font-size: 0.9em; }
+.cm-lp-h6 { font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+/* h1/h2 get an underline rule like GitHub-flavored Markdown preview. */
+.cm-line.cm-lp-h1,
+.cm-line.cm-lp-h2 {
+  border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3)));
+  padding-bottom: 0.25em;
+}
+
+.cm-lp-quote {
+  border-left: 0.25em solid var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888));
+  padding-left: 12px;
+  /* GitHub/MAIO render quotes in a muted color over a faint tinted band. */
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
+  color: var(--vscode-textBlockQuote-foreground, var(--vscode-descriptionForeground, inherit));
+}
+
+.cm-lp-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+  cursor: pointer;
+}
+.cm-lp-link:hover {
+  text-decoration: underline;
+}
+
+.cm-lp-list-bullet {
+  color: var(--vscode-textLink-foreground);
+  padding-right: 8px;
+}
+
+.cm-lp-table-row {
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-lp-hr-line {
+  display: block;
+  border-top: 2px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
+  margin: 1em 0;
+  width: 100%;
+}
+
+/* --- Tables (GitHub-preview look) ----------------------------------------- */
+table.cm-lp-table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  font-size: 0.95em;
+}
+table.cm-lp-table th,
+table.cm-lp-table td {
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
+  padding: 6px 13px;
+}
+table.cm-lp-table th {
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+  font-weight: 600;
+}
+/* Subtle zebra striping for readability. */
+table.cm-lp-table tr:nth-child(2n) td {
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.06));
+}
+
+/* Task-list lines render their text as plain body text (MAIO look): never
+   inherit link color/underline just because the source happens to contain a
+   link or other inline construct. Actual inline links inside the task keep
+   their own `.cm-lp-link` styling (more specific selector below). */
+.cm-line.cm-lp-task {
+  color: var(--vscode-editor-foreground);
+  text-decoration: none;
+}
+/* Task-list text often contains an inline link (e.g. `- [ ] [87. …](…)`); MAIO
+   renders the task label as plain body text, not as a blue underlined link.
+   Force the body color and drop the underline for links inside a task line so
+   the checklist reads as ordinary text (R-08-06 / R-28-06). */
+.cm-line.cm-lp-task .cm-lp-link {
+  color: var(--vscode-editor-foreground);
+  text-decoration: none;
+}
+.cm-line.cm-lp-task .cm-lp-link:hover {
+  text-decoration: none;
+}
+
+.cm-lp-task-checkbox {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 1em;
+  height: 1em;
+  margin: 0 8px 0 0;
+  vertical-align: -0.15em;
+  border: 1px solid var(--vscode-checkbox-border, var(--vscode-descriptionForeground, #888));
+  border-radius: 3px;
+  background: var(--vscode-checkbox-background, transparent);
+  cursor: pointer;
+}
+.cm-lp-task-checkbox-checked {
+  background: var(--vscode-checkbox-selectBackground, var(--vscode-textLink-foreground, #3c6edc));
+  border-color: var(--vscode-checkbox-selectBorder, var(--vscode-textLink-foreground, #3c6edc));
+  position: relative;
+}
+.cm-lp-task-checkbox-checked::after {
+  content: '';
+  position: absolute;
+  left: 0.28em;
+  top: 0.08em;
+  width: 0.28em;
+  height: 0.55em;
+  border: solid var(--vscode-checkbox-foreground, #fff);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.cm-lp-task-done {
+  text-decoration: line-through;
+  color: var(--vscode-descriptionForeground);
+}
+
+.cm-lp-strike {
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+.cm-lp-highlight {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(255, 220, 0, 0.4));
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.cm-lp-image {
+  max-width: 100%;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+.cm-lp-image-fallback {
+  color: var(--vscode-errorForeground);
+  font-style: italic;
+}
+
+/* --- HTML <details> accordion (collapsed by default) ----------------------
+   Lightweight look: no background bar, no border — just a ▶/▼ marker plus the
+   summary text on a single line, blending in with body inline text (R-27). */
+.cm-lp-details {
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--vscode-editor-foreground);
+}
+/* Hide the native disclosure triangle; we render our own marker span. */
+.cm-lp-details-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  line-height: 1.4;
+  /* MAIO renders the summary in normal body weight — never bold. */
+  font-weight: 400;
+  color: var(--vscode-editor-foreground);
+}
+.cm-lp-details-summary::-webkit-details-marker {
+  display: none;
+}
+.cm-lp-details-marker {
+  display: inline-block;
+  /* Smaller, muted disclosure triangle like the MAIO preview, with a small
+     gap before the summary text (▶ WBS… rather than ▶WBS…). */
+  font-size: 0.8em;
+  margin-right: 0.4em;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  /* default (closed) marker */
+}
+/* Summary label reads as plain body text on one line (MAIO look): normal
+   weight, no link color, no underline, even if the summary contains inline
+   links. */
+.cm-lp-details-label {
+  font-weight: 400;
+  color: var(--vscode-editor-foreground);
+}
+.cm-lp-details-summary:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+}
+.cm-lp-details-hint {
+  padding: 0 0 2px 1.1em;
+  font-size: 0.85em;
+  color: var(--vscode-descriptionForeground);
+}

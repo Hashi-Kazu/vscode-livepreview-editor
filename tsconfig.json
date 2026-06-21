@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2021",
+    "lib": ["ES2021", "DOM"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": false,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "test"],
+  "exclude": ["node_modules", "dist", "dist-test"]
+}
