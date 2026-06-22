@@ -202,6 +202,8 @@ table.cm-lp-table tr:nth-child(2n) td {
   text-decoration: none;
 }
 
+/* Unchecked box: a soft, theme-following dark rounded square so it reads as an
+   empty control against any theme (R-08-08). */
 .cm-lp-task-checkbox {
   display: inline-block;
   box-sizing: border-box;
@@ -209,24 +211,28 @@ table.cm-lp-table tr:nth-child(2n) td {
   height: 1em;
   margin: 0 8px 0 0;
   vertical-align: -0.15em;
-  border: 1px solid var(--vscode-checkbox-border, var(--vscode-descriptionForeground, #888));
-  border-radius: 3px;
-  background: var(--vscode-checkbox-background, transparent);
+  border: 1px solid var(--vscode-input-border, var(--vscode-checkbox-border, #555));
+  border-radius: 4px;
+  background: var(--vscode-input-background, var(--vscode-editorWidget-background, #2b2b2b));
   cursor: pointer;
 }
+/* Checked box: a fixed red fill (theme-independent) so a done task reads with a
+   consistent accent regardless of theme (R-08-08). */
 .cm-lp-task-checkbox-checked {
-  background: var(--vscode-checkbox-selectBackground, var(--vscode-textLink-foreground, #3c6edc));
-  border-color: var(--vscode-checkbox-selectBorder, var(--vscode-textLink-foreground, #3c6edc));
+  background: #e5484d;
+  border-color: #e5484d;
   position: relative;
 }
+/* White check glyph (fixed) — a rotated open square corner; left/top/size tuned
+   to sit centered in the 1em rounded box. */
 .cm-lp-task-checkbox-checked::after {
   content: '';
   position: absolute;
-  left: 0.28em;
-  top: 0.08em;
-  width: 0.28em;
-  height: 0.55em;
-  border: solid var(--vscode-checkbox-foreground, #fff);
+  left: 0.34em;
+  top: 0.12em;
+  width: 0.26em;
+  height: 0.52em;
+  border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }

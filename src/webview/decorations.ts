@@ -101,9 +101,19 @@ function appendInlineCell(parent: HTMLElement, text: string): void {
 /** Approximate rendered line height (px). Block widgets must report an
  *  `estimatedHeight` close to their real height or CodeMirror's block-height
  *  accounting drifts from the painted DOM, which throws off `posAtCoords` for
- *  lines *below* the widget (clicks land on the wrong line). 22px is a safe
- *  default for the editor's default font size. */
+ *  lines *below* the widget (clicks land on the wrong line). 22px matches a
+ *  plain editor line at the default font size; tables render taller (see
+ *  TABLE_ROW_PX). The initial estimate only narrows the gap — `toDOM` also calls
+ *  `view.requestMeasure()` so CodeMirror reconciles block heights against the
+ *  real painted DOM on the next frame (R-28-10). */
 const LINE_PX = 22;
+
+/** Real per-row height of a rendered table row. Cells use `padding: 6px 13px`,
+ *  so a row paints at ≈ 30–31px — noticeably taller than a plain line. Using
+ *  this for the table estimate (instead of LINE_PX) keeps the pre-measure block
+ *  height close to reality, reducing click-position drift before the
+ *  `requestMeasure` correction lands (R-28-10). */
+const TABLE_ROW_PX = 31;
 
 class TableWidget extends WidgetType {
   constructor(private readonly json: string, private readonly startLine: number) {
@@ -112,7 +122,9 @@ class TableWidget extends WidgetType {
   eq(other: TableWidget) {
     return other.json === this.json && other.startLine === this.startLine;
   }
-  /** header + body rows × line height + a little chrome (border/padding). */
+  /** header + body rows × real row height + a little chrome (border/padding).
+   *  Uses TABLE_ROW_PX (not LINE_PX) because padded table cells paint taller
+   *  than a plain line; the `requestMeasure` in `toDOM` corrects any residual. */
   get estimatedHeight() {
     let rows = 1; // header
     try {
@@ -120,9 +132,9 @@ class TableWidget extends WidgetType {
     } catch {
       /* fall back to header-only */
     }
-    return rows * LINE_PX + 8;
+    return rows * TABLE_ROW_PX + 8;
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     let data: ParsedTable;
     try {
       data = JSON.parse(this.json);
@@ -159,6 +171,10 @@ class TableWidget extends WidgetType {
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
+    // The estimate is approximate; ask CodeMirror to re-measure block heights
+    // against the real painted DOM on the next frame so `posAtCoords` for lines
+    // below the table maps clicks to the correct line (R-28-10).
+    view.requestMeasure();
     return table;
   }
   ignoreEvent() {
@@ -232,6 +248,10 @@ class DetailsWidget extends WidgetType {
       else openDetails.delete(this.summary);
       view.requestMeasure();
     });
+    // Initial measure: the estimate is approximate, so reconcile block heights
+    // against the real painted DOM on the next frame too (not just on toggle) —
+    // otherwise `posAtCoords` for lines below drifts (R-28-10).
+    view.requestMeasure();
     return details;
   }
   ignoreEvent() {

@@ -4,6 +4,13 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.14.0 — クリック位置ずれの measure 主導修正／チェックボックス再デザイン (2026-06-23)
+
+### 修正・変更
+
+- **クリック位置と編集行のずれを measure 主導で解消（R-28-10 改訂）。** ブロックウィジェット（`TableWidget`・`DetailsWidget`、`block: true`）の `estimatedHeight` が実描画高さより小さく、CodeMirror のブロック高さ会計が painted DOM とズレてウィジェットより下の行の `posAtCoords` がずれていた。`TableWidget.toDOM` を `toDOM(view: EditorView)` に変更し DOM 構築後に `view.requestMeasure()` を呼ぶ。`DetailsWidget.toDOM` でも従来 toggle 時のみだった `view.requestMeasure()` を初回描画直後（return 前）にも呼ぶ。あわせて初期推定を改善: プレーン行用の `LINE_PX(22)` は残しつつ、パディング付きテーブル行用に `TABLE_ROW_PX(31)` を導入し `TableWidget.estimatedHeight` を `(ヘッダ＋本文行数) × TABLE_ROW_PX ＋余白` へ調整（`src/webview/decorations.ts`）。
+- **タスクチェックボックスを再デザイン（R-08-08 追加、CSS のみ）。** チェック済み＝固定の赤（`#e5484d`／チェックマークは白固定 `#fff`）、未チェック＝テーマ追従の暗い角丸四角（`border-radius: 4px`、塗り `var(--vscode-input-background, …)`、枠 `var(--vscode-input-border, …)`）に変更。DOM・クラス名（`cm-lp-task-checkbox` / `-checked` / `::after`）は不変、チェックマークの位置・サイズを新サイズ・角丸に合わせ微調整（`media/editor.css`）。
+
 ## v1.13.0 — アコーディオン本文描画／テーブルのセル編集／ブロックウィジェットの高さ会計修正 (2026-06-22)
 
 ### 修正・変更
