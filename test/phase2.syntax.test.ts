@@ -112,12 +112,11 @@ describe('Phase 2: tables', () => {
     expect(byTag(specs, 'table-row')).toHaveLength(0);
   });
 
-  it('always renders the table-block widget regardless of cursor (v1.12.0+: viewer-only widget)', () => {
-    // v1.12.0: tables are always a table-block widget; the cursor no longer
-    // un-renders them into raw table-row lines (cell editing was removed).
-    const specs = computeDecorations(doc, new Set([1]));
-    expect(byTag(specs, 'table-block')).toHaveLength(1);
-    expect(byTag(specs, 'table-row').length).toBe(0);
+  it('un-renders the table into raw rows when the cursor is inside (v1.13.0+: cell editing)', () => {
+    // v1.13.0: a caret inside the block suppresses the table-block widget so the
+    // raw `| a | b |` rows show and the cell text is editable in-place (R-22-02).
+    const specs = computeDecorations(doc, new Set([2]));
+    expect(byTag(specs, 'table-block')).toHaveLength(0);
   });
 });
 

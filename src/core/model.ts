@@ -138,6 +138,9 @@ export interface DetailsBlock {
   start: number; // line index of the `<details ...>` opener
   end: number; // line index of the `</details>` closer
   summary: string; // text inside <summary>…</summary> (may be empty)
+  /** Body lines (between </summary> and </details>), with structural HTML tags
+   *  stripped. Leading/trailing empty lines are trimmed; interior blanks kept. */
+  body: string[];
   /** Absolute offsets of the inner content (between summary close and </details>). */
   contentFrom: number;
   contentTo: number;
@@ -203,10 +206,41 @@ export function detectDetailsBlocks(lines: LineInfo[], code: CodeBlockInfo): Det
     const joined = lines.slice(i, close + 1).map((l) => l.text).join('\n');
     const sm = SUMMARY_INLINE_RE.exec(joined);
     const summary = sm ? sm[1].replace(/\s+/g, ' ').trim() : '';
+    // Body = every line strictly between </summary> and </details>, with the
+    // structural <details>/<summary>/</summary>/</details> tags removed. The
+    // </summary> may sit on the opener line or a later line; scan for it.
+    let summaryCloseLine = i;
+    for (let j = i; j <= close; j++) {
+      if (/<\/summary>/i.test(lines[j].text)) {
+        summaryCloseLine = j;
+        break;
+      }
+    }
+    const body: string[] = [];
+    for (let j = summaryCloseLine; j < close; j++) {
+      let text = lines[j].text;
+      if (j === summaryCloseLine) {
+        // On the summary-close line, keep only what FOLLOWS </summary> (the text
+        // between the summary tags is the summary, not body).
+        const cm = /<\/summary>/i.exec(text);
+        text = cm ? text.slice(cm.index + cm[0].length) : '';
+      }
+      // Strip any remaining structural tags; what remains is body prose.
+      const stripped = text.replace(DETAILS_TAG_RE, '').trim();
+      if (j === summaryCloseLine) {
+        if (stripped !== '') body.push(stripped);
+        continue;
+      }
+      body.push(stripped);
+    }
+    // Trim leading/trailing empty lines (interior blanks preserved).
+    while (body.length && body[0] === '') body.shift();
+    while (body.length && body[body.length - 1] === '') body.pop();
     blocks.push({
       start: i,
       end: close,
       summary,
+      body,
       contentFrom: lines[i].from,
       contentTo: lines[close].to,
     });
@@ -221,6 +255,19 @@ export function parseTableRow(text: string): string[] {
   if (s.startsWith('|')) s = s.slice(1);
   if (s.endsWith('|')) s = s.slice(0, -1);
   return s.split('|').map((c) => c.trim());
+}
+
+/**
+ * Map a rendered table row index to its 0-based source document line, given the
+ * block's start line. The header is `startLine`; the delimiter row (`startLine
+ * + 1`) is skipped (returns null); each body row `rows[k]` maps to `startLine +
+ * 2 + k`. Used by the Webview to set `data-line` so a click can move the caret
+ * into the block (making cells editable). Pure & framework-agnostic.
+ */
+export function tableRowSourceLine(startLine: number, kind: 'header' | 'delim' | 'row', rowIndex = 0): number | null {
+  if (kind === 'header') return startLine;
+  if (kind === 'delim') return null; // delimiter row carries no editable cell
+  return startLine + 2 + rowIndex;
 }
 
 /** Parse a table block into header + body rows + column alignments. */
@@ -561,19 +608,25 @@ export function computeDecorations(
     if (tableMember[i]) {
       const block = tableStartAt.get(i);
       if (!block) continue; // non-start rows are handled by the block at start
-      // Viewer-only: ALWAYS render the whole block as one HTML table widget,
-      // even when the caret is inside the block (R-22-02). The raw Markdown is
-      // not editable in-place; editing happens via the standard source editor.
-      const parsed = parseTable(lines, block);
-      specs.push({
-        from: lines[block.start].from,
-        to: lines[block.end].to,
-        type: 'replaceWidget',
-        tag: 'table-block',
-        attrs: { table: JSON.stringify(parsed) },
-      });
-      i = block.end; // skip the consumed rows
-      continue;
+      const active = blockHasCursor(block.start, block.end);
+      if (active) {
+        // R-22-02: caret inside the block → show raw `| a | b |` rows so the
+        // cell text is directly editable. Fall through to per-line handling
+        // (inline rendering still applies). The delimiter row stays raw too.
+        // (do not emit a table-block widget here)
+      } else {
+        // Non-active: render the whole block as one HTML table widget.
+        const parsed = parseTable(lines, block);
+        specs.push({
+          from: lines[block.start].from,
+          to: lines[block.end].to,
+          type: 'replaceWidget',
+          tag: 'table-block',
+          attrs: { table: JSON.stringify(parsed), startLine: String(block.start) },
+        });
+        i = block.end; // skip the consumed rows
+        continue;
+      }
     }
 
     // --- HTML <details> accordion ---------------------------------------
@@ -589,7 +642,7 @@ export function computeDecorations(
         to: lines[block.end].to,
         type: 'replaceWidget',
         tag: 'details-block',
-        attrs: { summary: block.summary },
+        attrs: { summary: block.summary, body: JSON.stringify(block.body) },
       });
       i = block.end;
       continue;

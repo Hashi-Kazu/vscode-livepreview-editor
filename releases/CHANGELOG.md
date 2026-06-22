@@ -4,6 +4,15 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.13.0 — アコーディオン本文描画／テーブルのセル編集／ブロックウィジェットの高さ会計修正 (2026-06-22)
+
+### 修正・変更
+
+- **アコーディオンを開いても本文が表示されない不具合を修正（R-27-06 追加）。** `DetailsWidget`（`src/webview/decorations.ts`）がサマリのみ描画し本文を出していなかった。`detectDetailsBlocks`（`src/core/model.ts`）に `DetailsBlock.body`（`</summary>` より後〜`</details>` 直前の各行から構造タグを除去・前後空行をトリムした本文行群）を追加し、`details-block` ウィジェットの `attrs.body` に JSON で渡す。Webview 側は `<details>` 内に各本文行を `.cm-lp-details-body-line` として最小限のインライン記法（太字・斜体・コード、`appendInlineCell`）で描画する。`eq()` に body 比較を追加。CSS に本文行の余白・色（テーマ変数）を追加。
+- **クリック位置と編集位置のずれを修正（R-28-10 追加）。** `TableWidget`・`DetailsWidget` は `block: true` なのに `estimatedHeight` 未指定で、CodeMirror のブロック高さ会計が実描画とズレ、ウィジェットより下の行の `posAtCoords` がずれていた（特に折りたたみアコーディオンで顕著）。両ウィジェットに `get estimatedHeight()`（1 行≈22px 前提の概算）を実装。`DetailsWidget` は `toDOM(view)` で `view` を受け取り、`toggle` で開閉により高さが変わるため `view.requestMeasure()` を呼んで再測定させる。
+- **テーブルのセル内テキストを編集可能にした（R-22-02 再定義 / R-22-01 改訂）。** これまでテーブルは常にウィジェット化＋クリック握りつぶしで完全非編集だった。`computeDecorations` の table 分岐に `blockHasCursor` を追加し、**カーソルがブロック内のときはウィジェットを出さず生の行 `| a | b |` を表示**してセル編集を可能にした（非カーソル時のみ従来どおりウィジェット）。ウィジェット `attrs` に `startLine` を追加、Webview が各 `<tr>` に `data-line`（ヘッダ=start／区切り行スキップ／rows=start+2+k）を付与。テーブルのクリックは握りつぶしから「クリックした `<tr>` の `data-line` 行頭へキャレット移動」へ変更し、再描画で編集モードへ遷移させる。行マッピングは純粋関数 `tableRowSourceLine` に切り出してテスト。
+- ユニットテストを新挙動へ更新（`test/feature.markdown.test.ts`・`test/phase2.syntax.test.ts`）: `detectDetailsBlocks` の `body` 抽出、table のカーソル内ウィジェット抑制、`tableRowSourceLine` のマッピングを検証。
+
 ## v1.12.0 — 表・アコーディオンのビューア専用化／チェックボックス・リンク・余白・ビュー切り替えの修正 (2026-06-22)
 
 ### 変更

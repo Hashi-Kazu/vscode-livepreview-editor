@@ -98,12 +98,29 @@ function appendInlineCell(parent: HTMLElement, text: string): void {
   if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
 }
 
+/** Approximate rendered line height (px). Block widgets must report an
+ *  `estimatedHeight` close to their real height or CodeMirror's block-height
+ *  accounting drifts from the painted DOM, which throws off `posAtCoords` for
+ *  lines *below* the widget (clicks land on the wrong line). 22px is a safe
+ *  default for the editor's default font size. */
+const LINE_PX = 22;
+
 class TableWidget extends WidgetType {
-  constructor(private readonly json: string) {
+  constructor(private readonly json: string, private readonly startLine: number) {
     super();
   }
   eq(other: TableWidget) {
-    return other.json === this.json;
+    return other.json === this.json && other.startLine === this.startLine;
+  }
+  /** header + body rows × line height + a little chrome (border/padding). */
+  get estimatedHeight() {
+    let rows = 1; // header
+    try {
+      rows += (JSON.parse(this.json) as ParsedTable).rows.length;
+    } catch {
+      /* fall back to header-only */
+    }
+    return rows * LINE_PX + 8;
   }
   toDOM() {
     let data: ParsedTable;
@@ -118,6 +135,8 @@ class TableWidget extends WidgetType {
     table.className = 'cm-lp-table';
     const thead = document.createElement('thead');
     const htr = document.createElement('tr');
+    // data-line lets the click handler move the caret into the block (R-22-02).
+    htr.setAttribute('data-line', String(this.startLine));
     data.header.forEach((cell, idx) => {
       const th = document.createElement('th');
       appendInlineCell(th, cell);
@@ -127,8 +146,10 @@ class TableWidget extends WidgetType {
     thead.appendChild(htr);
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
-    for (const row of data.rows) {
+    data.rows.forEach((row, k) => {
       const tr = document.createElement('tr');
+      // Delimiter row (startLine+1) is skipped; body rows start at startLine+2.
+      tr.setAttribute('data-line', String(this.startLine + 2 + k));
       for (let idx = 0; idx < data.header.length; idx++) {
         const td = document.createElement('td');
         appendInlineCell(td, row[idx] ?? '');
@@ -136,7 +157,7 @@ class TableWidget extends WidgetType {
         tr.appendChild(td);
       }
       tbody.appendChild(tr);
-    }
+    });
     table.appendChild(tbody);
     return table;
   }
@@ -157,13 +178,21 @@ const openDetails = new Set<string>();
  *  opened an accordion with the same summary. The block is not editable
  *  in-place — editing happens via the standard source editor. */
 class DetailsWidget extends WidgetType {
-  constructor(private readonly summary: string) {
+  constructor(private readonly summary: string, private readonly body: string[]) {
     super();
   }
   eq(other: DetailsWidget) {
-    return other.summary === this.summary;
+    return other.summary === this.summary && JSON.stringify(other.body) === JSON.stringify(this.body);
   }
-  toDOM() {
+  /** Closed ≈ 1 line; open ≈ summary + body lines. The accordion can change
+   *  height at runtime (toggle) — `toDOM` requests a re-measure so CodeMirror
+   *  re-reconciles block heights after the user opens/closes it. */
+  get estimatedHeight() {
+    const open = openDetails.has(this.summary);
+    const lines = open ? 1 + this.body.length : 1;
+    return lines * LINE_PX + 4;
+  }
+  toDOM(view: EditorView) {
     const details = document.createElement('details');
     details.className = 'cm-lp-details';
     // Restore the previously-remembered open state for this summary; closed by
@@ -183,14 +212,26 @@ class DetailsWidget extends WidgetType {
     // `**...**` shows as bold rather than literal asterisks (MAIO look).
     appendInlineCell(label, this.summary || '詳細');
     summary.appendChild(label);
+    details.appendChild(summary);
+    // Render the body (viewer-only) so opening the accordion reveals content.
+    // Each line gets minimal inline Markdown (bold / italic / code); richer
+    // structure (lists, nested blocks, multiple paragraphs) is simplified.
+    for (const lineText of this.body) {
+      const div = document.createElement('div');
+      div.className = 'cm-lp-details-body-line';
+      appendInlineCell(div, lineText);
+      details.appendChild(div);
+    }
     // Keep the marker in sync with the native open state on toggle and remember
-    // the open/closed state per summary so it survives re-renders.
+    // the open/closed state per summary so it survives re-renders. Opening or
+    // closing changes the widget height, so ask CodeMirror to re-measure block
+    // heights (otherwise `posAtCoords` for lines below drifts — bug 2).
     details.addEventListener('toggle', () => {
       marker.textContent = details.open ? '▼' : '▶'; // ▼ / ▶
       if (details.open) openDetails.add(this.summary);
       else openDetails.delete(this.summary);
+      view.requestMeasure();
     });
-    details.appendChild(summary);
     return details;
   }
   ignoreEvent() {
@@ -289,13 +330,19 @@ function toDecoration(s: DecoSpec): Decoration | null {
         return Decoration.replace({ widget: new CheckboxWidget(s.attrs?.checked === 'true') });
       }
       if (s.tag === 'table-block') {
-        return Decoration.replace({ widget: new TableWidget(s.attrs?.table ?? '{}'), block: true });
+        return Decoration.replace({
+          widget: new TableWidget(s.attrs?.table ?? '{}', Number(s.attrs?.startLine ?? '0')),
+          block: true,
+        });
       }
       if (s.tag === 'hr-widget') {
         return Decoration.replace({ widget: new HrWidget() });
       }
       if (s.tag === 'details-block') {
-        return Decoration.replace({ widget: new DetailsWidget(s.attrs?.summary ?? ''), block: true });
+        return Decoration.replace({
+          widget: new DetailsWidget(s.attrs?.summary ?? '', JSON.parse(s.attrs?.body ?? '[]')),
+          block: true,
+        });
       }
       return Decoration.replace({ widget: new TextWidget(s.attrs?.widget ?? '', `cm-lp-${s.tag}`) });
     default:

@@ -305,3 +305,10 @@ table.cm-lp-table tr:nth-child(2n) td {
   font-size: 0.85em;
   color: var(--vscode-descriptionForeground);
 }
+/* Accordion body lines, revealed when the user opens the <details>. Indented to
+   align under the summary label, in normal body color/weight (viewer-only). */
+.cm-lp-details-body-line {
+  padding: 1px 0 1px 1.1em;
+  line-height: 1.4;
+  color: var(--vscode-editor-foreground);
+}

@@ -236,12 +236,26 @@ view.dom.addEventListener(
       event.stopImmediatePropagation();
       return;
     }
-    // Rendered table (viewer-only) → swallow the click so the default mousedown
-    // does not move the caret into the (non-editable) block.
+    // Rendered table → move the caret to the clicked row's source line so the
+    // block becomes "active" on re-render and its cells turn into editable raw
+    // `| a | b |` text (R-22-02). We read `data-line` (0-based) off the clicked
+    // `<tr>`; the delimiter row has none. Without a data-line, swallow the click
+    // (legacy behaviour) so the caret does not jump to the block start.
     const table = el.closest('.cm-lp-table');
     if (table) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      const tr = el.closest('tr');
+      const dl = tr?.getAttribute('data-line');
+      if (dl != null) {
+        try {
+          const anchor = view.state.doc.line(Number(dl) + 1).from; // doc.line is 1-based
+          view.dispatch({ selection: { anchor } });
+          view.focus();
+        } catch {
+          /* line out of range mid-render; ignore */
+        }
+      }
     }
   },
   true, // capture phase

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow } from '../src/core/model';
+import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow, tableRowSourceLine } from '../src/core/model';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
 const slice = (doc: string, s: DecoSpec) => doc.slice(s.from, s.to);
@@ -107,15 +107,28 @@ describe('R-22 表のレンダリング', () => {
     expect(block[0].type).toBe('replaceWidget');
     const parsed = JSON.parse(block[0].attrs!.table);
     expect(parsed.header).toEqual(['a', 'b']);
+    // ブロックの開始行を data-line マッピング用に attrs へ載せる。
+    expect(block[0].attrs!.startLine).toBe('0');
     // 行装飾は出さない（ブロック置換のみ）
     expect(byTag(specs, 'table-row')).toHaveLength(0);
   });
 
-  it('R-22-02: ビューア専用 — カーソルが表内にあっても常に table-block ウィジェットに置換する', () => {
+  it('R-22-02: カーソルが表内にあるときは table-block ウィジェットを出さず、生の行を表示してセル編集を可能にする', () => {
     const specs = computeDecorations(doc, new Set([2]));
-    // ブロック内にカーソルがあっても生の行は出さず、ウィジェットのまま（非編集）。
-    expect(byTag(specs, 'table-block')).toHaveLength(1);
-    expect(byTag(specs, 'table-row')).toHaveLength(0);
+    // ブロック内にカーソルがある間はウィジェット化せず、raw 行を見せる（編集可能）。
+    expect(byTag(specs, 'table-block')).toHaveLength(0);
+    // 行は通常行として処理され、ドキュメント文字列は書き換えない。
+    const before = doc;
+    computeDecorations(doc, new Set([2]));
+    expect(before).toBe(doc);
+  });
+
+  it('R-22-02: tableRowSourceLine は header=start / 区切り=null / rows=start+2+k を返す', () => {
+    expect(tableRowSourceLine(0, 'header')).toBe(0);
+    expect(tableRowSourceLine(0, 'delim')).toBeNull();
+    expect(tableRowSourceLine(0, 'row', 0)).toBe(2);
+    expect(tableRowSourceLine(0, 'row', 1)).toBe(3);
+    expect(tableRowSourceLine(5, 'row', 2)).toBe(9);
   });
 
   it('コードブロック内の表もどきは表にしない', () => {
@@ -137,12 +150,28 @@ describe('R-27 <details> アコーディオン', () => {
     expect(blocks[0].summary).toBe('クリックして開く');
   });
 
+  it('detectDetailsBlocks は構造タグを除去した本文行を body に格納する', () => {
+    const lines = splitLines(inline);
+    const blocks = detectDetailsBlocks(lines, detectCodeBlocks(lines));
+    // 前後の空行はトリムされ、構造タグ（</summary>/</details>）は含まれない。
+    expect(blocks[0].body).toEqual(['中身']);
+  });
+
+  it('detectDetailsBlocks: summary 同一行の後続本文とタグ除去を検証する', () => {
+    const doc = ['<details><summary>見出し</summary>本文1', '本文2', '</details>'].join('\n');
+    const lines = splitLines(doc);
+    const blocks = detectDetailsBlocks(lines, detectCodeBlocks(lines));
+    expect(blocks[0].summary).toBe('見出し');
+    expect(blocks[0].body).toEqual(['本文1', '本文2']);
+  });
+
   it('summary が別行にある場合も抽出する', () => {
     const multi = ['<details>', '<summary>見出し</summary>', '本文', '</details>'].join('\n');
     const lines = splitLines(multi);
     const blocks = detectDetailsBlocks(lines, detectCodeBlocks(lines));
     expect(blocks).toHaveLength(1);
     expect(blocks[0].summary).toBe('見出し');
+    expect(blocks[0].body).toEqual(['本文']);
   });
 
   it('R-27-01/02: 非カーソル時はブロック全体を 1 つの details-block ウィジェットへ置換する（既定で折りたたみ）', () => {
