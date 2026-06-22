@@ -561,29 +561,18 @@ export function computeDecorations(
     if (tableMember[i]) {
       const block = tableStartAt.get(i);
       if (!block) continue; // non-start rows are handled by the block at start
-      const active = blockHasCursor(block.start, block.end);
-      if (!active) {
-        // Render the whole block as one HTML table widget.
-        const parsed = parseTable(lines, block);
-        specs.push({
-          from: lines[block.start].from,
-          to: lines[block.end].to,
-          type: 'replaceWidget',
-          tag: 'table-block',
-          attrs: { table: JSON.stringify(parsed) },
-        });
-        i = block.end; // skip the consumed rows
-        continue;
-      }
-      // Active (editing): show raw rows with light styling.
-      for (let j = block.start; j <= block.end && inRange(j); j++) {
-        const row = lines[j];
-        const rowIsCursor = cursorLines.has(j);
-        specs.push({ from: row.from, to: row.from, type: 'line', tag: 'table-row', className: 'cm-lp-table-row' });
-        const isDelim = /^\s*\|?\s*:?-{1,}:?/.test(row.text) && row.text.includes('-') && !row.text.replace(/[\s|:-]/g, '');
-        if (!isDelim) specs.push(...parseInline(row.text, row.from, rowIsCursor));
-      }
-      i = block.end;
+      // Viewer-only: ALWAYS render the whole block as one HTML table widget,
+      // even when the caret is inside the block (R-22-02). The raw Markdown is
+      // not editable in-place; editing happens via the standard source editor.
+      const parsed = parseTable(lines, block);
+      specs.push({
+        from: lines[block.start].from,
+        to: lines[block.end].to,
+        type: 'replaceWidget',
+        tag: 'table-block',
+        attrs: { table: JSON.stringify(parsed) },
+      });
+      i = block.end; // skip the consumed rows
       continue;
     }
 
@@ -591,36 +580,17 @@ export function computeDecorations(
     if (detailsMember[i]) {
       const block = detailsStartAt.get(i);
       if (!block) continue; // inner lines handled by the start
-      const active = blockHasCursor(block.start, block.end);
-      if (!active) {
-        // Collapsed: replace the whole block with one accordion widget that
-        // shows only the summary (closed by default). Clicking opens it.
-        specs.push({
-          from: lines[block.start].from,
-          to: lines[block.end].to,
-          type: 'replaceWidget',
-          tag: 'details-block',
-          attrs: { summary: block.summary },
-        });
-        i = block.end;
-        continue;
-      }
-      // Active (editing): show raw lines so the user can edit the body, but
-      // ALWAYS hide the structural HTML tag spans (`<details …>`, `<summary …>`,
-      // `</summary>`, `</details>`) — even on the cursor line — so the literal
-      // angle-bracket markup never leaks into the rendered view (R-27-05). The
-      // summary text between `<summary>` and `</summary>` stays as visible, raw,
-      // editable text. Inline Markdown is parsed on every line so emphasis (e.g.
-      // `**ワークパッケージ**`) renders; on the cursor line the inline markers
-      // themselves stay visible (Live-Preview rule) so editing is never blocked.
-      for (let j = block.start; j <= block.end && inRange(j); j++) {
-        const ln = lines[j];
-        // Hide every structural tag span on this line (independent of cursor).
-        for (const r of detailsTagRanges(ln.text)) {
-          specs.push({ from: ln.from + r.start, to: ln.from + r.end, type: 'hide', tag: 'details-tag' });
-        }
-        specs.push(...parseInline(ln.text, ln.from, cursorLines.has(j)));
-      }
+      // Viewer-only: ALWAYS replace the whole block with one accordion widget
+      // (closed by default), even when the caret is inside the block (R-27-03).
+      // Clicking the summary opens/closes it natively; the body is not editable
+      // in-place (edit via the standard source editor).
+      specs.push({
+        from: lines[block.start].from,
+        to: lines[block.end].to,
+        type: 'replaceWidget',
+        tag: 'details-block',
+        attrs: { summary: block.summary },
+      });
       i = block.end;
       continue;
     }

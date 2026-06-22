@@ -145,11 +145,17 @@ class TableWidget extends WidgetType {
   }
 }
 
-/** Collapsed `<details>` accordion. Rendered as a real, interactive
- *  `<details>` element so the browser handles open/close natively; it starts
- *  closed (collapsed by default per R-27). The inner content is intentionally a
- *  short placeholder — full inner editing happens when the caret enters the
- *  block (the host shows the raw lines then). */
+/** Per-summary open/closed memory so the accordion keeps its expanded state
+ *  across re-renders (the widget DOM is rebuilt on every doc change). Keyed by
+ *  the raw summary text. Limitation: two accordions with an identical summary
+ *  share one open/closed state. */
+const openDetails = new Set<string>();
+
+/** Collapsed `<details>` accordion (viewer-only). Rendered as a real,
+ *  interactive `<details>` element so the browser handles open/close natively;
+ *  it starts closed (collapsed by default per R-27) unless the user previously
+ *  opened an accordion with the same summary. The block is not editable
+ *  in-place — editing happens via the standard source editor. */
 class DetailsWidget extends WidgetType {
   constructor(private readonly summary: string) {
     super();
@@ -160,14 +166,16 @@ class DetailsWidget extends WidgetType {
   toDOM() {
     const details = document.createElement('details');
     details.className = 'cm-lp-details';
-    // closed by default (no `open` attribute)
+    // Restore the previously-remembered open state for this summary; closed by
+    // default otherwise.
+    if (openDetails.has(this.summary)) details.open = true;
     const summary = document.createElement('summary');
     summary.className = 'cm-lp-details-summary';
     // Our own marker span (the native triangle is hidden in CSS) so the open /
     // closed glyph follows the theme and reads as plain inline text (R-27).
     const marker = document.createElement('span');
     marker.className = 'cm-lp-details-marker';
-    marker.textContent = '▶'; // ▶ closed
+    marker.textContent = details.open ? '▼' : '▶'; // ▼ open / ▶ closed
     summary.appendChild(marker);
     const label = document.createElement('span');
     label.className = 'cm-lp-details-label';
@@ -175,15 +183,14 @@ class DetailsWidget extends WidgetType {
     // `**...**` shows as bold rather than literal asterisks (MAIO look).
     appendInlineCell(label, this.summary || '詳細');
     summary.appendChild(label);
-    // Keep the marker in sync with the native open state on toggle.
+    // Keep the marker in sync with the native open state on toggle and remember
+    // the open/closed state per summary so it survives re-renders.
     details.addEventListener('toggle', () => {
       marker.textContent = details.open ? '▼' : '▶'; // ▼ / ▶
+      if (details.open) openDetails.add(this.summary);
+      else openDetails.delete(this.summary);
     });
     details.appendChild(summary);
-    const hint = document.createElement('div');
-    hint.className = 'cm-lp-details-hint';
-    hint.textContent = '（クリックして編集するにはこの行にカーソルを移動）';
-    details.appendChild(hint);
     return details;
   }
   ignoreEvent() {

@@ -58,6 +58,27 @@ describe('R-21 オートリンク', () => {
     const specs = computeDecorations('<me@example.com>', new Set());
     expect(byTag(specs, 'link')[0].attrs?.href).toBe('mailto:me@example.com');
   });
+
+  // R-21（相対パス + 山括弧宛先）: `[label](<path>)` の宛先は CommonMark の
+  // 山括弧記法。model は href に山括弧を残し（パース仕様）、ホスト側 openLink が
+  // 単一の山括弧ペアを除去して解決する。ここでは (1) model が山括弧込みの href を
+  // 返すこと、(2) ホスト側で使う除去ロジックがスペースを保ったまま山括弧のみ
+  // 剥がすこと、を検証する。
+  it('R-21-03: [label](<rel path>) は href に山括弧を残す（model 仕様）', () => {
+    const doc = '[doc](<a b/メモ.md>)';
+    const specs = computeDecorations(doc, new Set());
+    const link = byTag(specs, 'link');
+    expect(link).toHaveLength(1);
+    expect(link[0].attrs?.href).toBe('<a b/メモ.md>');
+  });
+
+  it('R-21-03: openLink の山括弧除去はスペースを保ち外側1組だけ剥がす', () => {
+    // openLink（livePreviewEditorProvider）と同じ除去パターン。
+    const strip = (h: string) => h.replace(/^<([\s\S]*)>$/, '$1');
+    expect(strip('<a b/メモ.md>')).toBe('a b/メモ.md');
+    expect(strip('a b/メモ.md')).toBe('a b/メモ.md'); // 山括弧なしは不変
+    expect(strip('<x><y>')).toBe('x><y'); // 外側1組のみ（内側は保持）
+  });
 });
 
 // R-22: 表のレンダリング
@@ -90,10 +111,11 @@ describe('R-22 表のレンダリング', () => {
     expect(byTag(specs, 'table-row')).toHaveLength(0);
   });
 
-  it('R-22-02: カーソルが表内にあるとき生の行を表示する', () => {
+  it('R-22-02: ビューア専用 — カーソルが表内にあっても常に table-block ウィジェットに置換する', () => {
     const specs = computeDecorations(doc, new Set([2]));
-    expect(byTag(specs, 'table-block')).toHaveLength(0);
-    expect(byTag(specs, 'table-row').length).toBe(4);
+    // ブロック内にカーソルがあっても生の行は出さず、ウィジェットのまま（非編集）。
+    expect(byTag(specs, 'table-block')).toHaveLength(1);
+    expect(byTag(specs, 'table-row')).toHaveLength(0);
   });
 
   it('コードブロック内の表もどきは表にしない', () => {
@@ -131,9 +153,11 @@ describe('R-27 <details> アコーディオン', () => {
     expect(block[0].attrs?.summary).toBe('クリックして開く');
   });
 
-  it('R-27-03: ブロック内にカーソルがあるときは生記法を表示する（置換しない）', () => {
+  it('R-27-03: ビューア専用 — ブロック内にカーソルがあっても常に details-block ウィジェットに置換する', () => {
     const specs = computeDecorations(inline, new Set([0]));
-    expect(byTag(specs, 'details-block')).toHaveLength(0);
+    // ブロック内カーソルでもウィジェットのまま（生記法を出さない＝非編集）。
+    expect(byTag(specs, 'details-block')).toHaveLength(1);
+    expect(byTag(specs, 'details-tag')).toHaveLength(0);
   });
 
   it('コードブロック内の <details> は折りたたまない', () => {
@@ -153,37 +177,25 @@ describe('R-27 <details> アコーディオン', () => {
     expect(before).toBe(inline);
   });
 
-  // R-28-06: アクティブな details ブロックでも本文行のインライン記法を描画する
-  it('R-28-06: アクティブ時も本文行の強調（**…**）を描画する', () => {
+  // R-27-03（ビューア専用化）: ブロック内にカーソルがあっても details-block の
+  // ままで、生記法（行装飾・構造タグの hide・インライン強調）は一切出さない。
+  it('R-27-03: ブロック内カーソルでも生記法を出さない（強調マーク等を emit しない）', () => {
     const doc = ['<details><summary>Q</summary>', '', '**ワークパッケージ**。', '', '</details>'].join('\n');
-    // カーソルは別行（summary 行）にあり、ブロックはアクティブ＝生記法表示。
-    const specs = computeDecorations(doc, new Set([0]));
-    // details-block ウィジェットには置換されない（アクティブなので生表示）。
-    expect(byTag(specs, 'details-block')).toHaveLength(0);
-    // それでも本文行 `**ワークパッケージ**` の強調マークは付与される。
-    const strong = byTag(specs, 'strong');
-    expect(strong).toHaveLength(1);
-    expect(slice(doc, strong[0])).toBe('ワークパッケージ');
-    // 強調マーカー `**` は非カーソル本文行なので隠される。
-    expect(byTag(specs, 'strong-mark')).toHaveLength(2);
-  });
-
-  it('R-28-06: 本文行にカーソルがあるときはマーカーを隠さない', () => {
-    const doc = ['<details><summary>Q</summary>', '', '**ワークパッケージ**。', '', '</details>'].join('\n');
-    // カーソルが本文行（index 2）にある。
     const specs = computeDecorations(doc, new Set([2]));
-    expect(byTag(specs, 'strong')).toHaveLength(1);
-    expect(byTag(specs, 'strong-mark')).toHaveLength(0); // 生記法のまま
+    expect(byTag(specs, 'details-block')).toHaveLength(1);
+    expect(byTag(specs, 'strong')).toHaveLength(0);
+    expect(byTag(specs, 'strong-mark')).toHaveLength(0);
+    expect(byTag(specs, 'details-tag')).toHaveLength(0);
   });
 
-  // R-27-05: 構造 HTML タグは常に隠す（生のタグ文字列を表示しない）
-  describe('R-27-05 構造タグの非表示', () => {
-    it('detailsTagRanges は山括弧タグの範囲のみ返す（サマリ本文は含まない）', () => {
+  // R-27-05: detailsTagRanges は引き続き純粋関数として構造タグ範囲を返す
+  // （ビューア専用化により computeDecorations 内では未使用だが、関数仕様は維持）。
+  describe('R-27-05 detailsTagRanges（純粋関数の範囲抽出）', () => {
+    it('山括弧タグの範囲のみ返す（サマリ本文は含まない）', () => {
       const line = '<details><summary>サマリ</summary>';
       const ranges = detailsTagRanges(line);
       const tags = ranges.map((r) => line.slice(r.start, r.end));
       expect(tags).toEqual(['<details>', '<summary>', '</summary>']);
-      // サマリ本文「サマリ」はどの範囲にも含まれない。
       for (const r of ranges) expect(line.slice(r.start, r.end)).not.toContain('サマリ');
     });
 
@@ -197,37 +209,7 @@ describe('R-27 <details> アコーディオン', () => {
       expect(detailsTagRanges('</details>').map((r) => '</details>'.slice(r.start, r.end))).toEqual(['</details>']);
     });
 
-    it('アクティブ時、各構造タグを details-tag の hide 記述子で隠す（カーソル有無を問わず）', () => {
-      const doc = ['<details><summary>Q</summary>', '本文', '</details>'].join('\n');
-      // カーソルが summary 行（タグを含む行）にあっても隠す。
-      const specs = computeDecorations(doc, new Set([0]));
-      const hidden = byTag(specs, 'details-tag');
-      const tags = hidden.map((s) => slice(doc, s)).sort();
-      expect(tags).toEqual(['</details>', '</summary>', '<details>', '<summary>'].sort());
-      for (const s of hidden) expect(s.type).toBe('hide');
-    });
-
-    it('アクティブ時、<summary> と </summary> の間のサマリ本文は隠さず可視のまま', () => {
-      const doc = ['<details><summary>サマリ本文</summary>', '本文', '</details>'].join('\n');
-      const specs = computeDecorations(doc, new Set([0]));
-      // 「サマリ本文」を覆う hide 記述子は存在しない。
-      const summaryFrom = doc.indexOf('サマリ本文');
-      const covers = specs.some(
-        (s) => s.type === 'hide' && s.from <= summaryFrom && s.to >= summaryFrom + 1,
-      );
-      expect(covers).toBe(false);
-    });
-
-    it('アクティブ時、サマリ本文のインライン記法（**…**）も描画する', () => {
-      const doc = ['<details><summary>**強調**</summary>', '本文', '</details>'].join('\n');
-      // 本文行（タグ無し）にカーソル → summary 行は非カーソルなのでマーカーも隠れる。
-      const specs = computeDecorations(doc, new Set([1]));
-      const strong = byTag(specs, 'strong');
-      expect(strong).toHaveLength(1);
-      expect(slice(doc, strong[0])).toBe('強調');
-    });
-
-    it('ユーザーテキストを書き換えない（タグ非表示は表示のみ）', () => {
+    it('ユーザーテキストを書き換えない（ビューア専用化後も表示のみ）', () => {
       const doc = ['<details><summary>Q</summary>', '本文', '</details>'].join('\n');
       const before = doc;
       computeDecorations(doc, new Set([0]));

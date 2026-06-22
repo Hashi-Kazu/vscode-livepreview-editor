@@ -225,35 +225,23 @@ view.dom.addEventListener(
       vscode.postMessage({ type: 'openLink', href: href.getAttribute('data-href') });
       return;
     }
-    // Rendered <details> accordion. Clicking the summary toggles open/close
-    // (native <details>); clicking elsewhere in the widget moves the caret into
-    // the block so the raw HTML can be edited.
+    // Rendered <details> accordion (viewer-only). Clicking the summary toggles
+    // open/close (native <details>); clicking elsewhere in the widget is
+    // swallowed so CodeMirror's default mousedown does not move the caret to the
+    // block start. The block is not editable in-place.
     const details = el.closest('.cm-lp-details');
     if (details) {
       if (el.closest('.cm-lp-details-summary')) return; // let native toggle run
       event.preventDefault();
       event.stopImmediatePropagation();
-      try {
-        const pos = view.posAtDOM(details);
-        view.dispatch({ selection: { anchor: pos } });
-        view.focus();
-      } catch {
-        /* ignore */
-      }
       return;
     }
-    // Rendered table → move the caret into it so the raw source can be edited.
+    // Rendered table (viewer-only) → swallow the click so the default mousedown
+    // does not move the caret into the (non-editable) block.
     const table = el.closest('.cm-lp-table');
     if (table) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      try {
-        const pos = view.posAtDOM(table);
-        view.dispatch({ selection: { anchor: pos } });
-        view.focus();
-      } catch {
-        /* ignore */
-      }
     }
   },
   true, // capture phase

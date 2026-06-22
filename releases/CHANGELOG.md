@@ -2,7 +2,18 @@
 
 本拡張のリリース履歴。各バージョンの VSIX は `releases/v{version}/` 配下に格納する。
 
-> ⏸️ **凍結保留／開発継続中（2026-06-22 時点）**: v1.6.0 での凍結予定は一旦保留とし、開発を継続中。
+> ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
+
+## v1.12.0 — 表・アコーディオンのビューア専用化／チェックボックス・リンク・余白・ビュー切り替えの修正 (2026-06-22)
+
+### 変更
+
+- **表・`<details>` アコーディオンをビューア専用化（R-22-02 / R-27-03 再定義、R-27-05 / R-28-09 改訂）。** これまでブロック内にカーソルがあると生の Markdown／HTML 記法を表示して編集モードに入っていたが、カーソル位置に依らず**常に** `table-block` / `details-block` ウィジェットのまま（実質非編集）にした。ブロックの編集は標準ソースエディタで行う。`src/core/model.ts` から active/raw 分岐を撤去。Webview 側（`src/webview/main.ts`）はウィジェット本体のクリックを capture フェーズで握りつぶし（`preventDefault`/`stopImmediatePropagation`）、CodeMirror 既定の mousedown によるキャレット移動を防ぐ（`<summary>` クリックはネイティブ開閉に通す）。ユニットテストを新挙動へ改訂。
+- **アコーディオン開閉状態の保持（R-27-02）。** `DetailsWidget`（`src/webview/decorations.ts`）に summary テキストをキーとする `openDetails` 集合を追加し、`toggle` で記憶・`toDOM` で復元することで、再描画後も開閉状態を維持するようにした（同一サマリのアコーディオンは状態を共有する制限あり）。
+- **チェックボックス ON/OFF がトグルできない問題を修正（R-08-07）。** ホスト起点のトグル（`toggleTask`）で、`applyEditFromWebview` が `webviewText` を先行更新するため `onDidChangeTextDocument` のエコー抑制で `update` が Webview へ送られず CodeMirror が更新されなかった。`toggleTask` 処理で `applyEditFromWebview` の後に明示的に `postMessage({ type: 'update', text })` を送るようにした（`update` ハンドラはテキスト一致時 no-op のため通常編集には無害）。
+- **相対パスリンクの山括弧宛先を修正（R-21-03）。** `[ラベル](<相対パス>)`（CommonMark の山括弧宛先、パスにスペースを含み得る）で `openLink` が `< >` を取り込んだまま解決し not-found になっていた。`openLink`（`src/livePreviewEditorProvider.ts`）で外側 1 組の山括弧のみを除去（`/^<([\s\S]*)>$/`）してから解決するようにした。スペースは保持（全角スラッシュ `／` は実フォルダ名の一部として不変）。
+- **本文余白を調整（R-28-07、CSS のみ）。** `.cm-content` の padding を `32px 64px 40px 72px → 20px 40px 24px 48px` に戻した（`!important` は維持）。
+- **ビュー切り替えの保存確認回避を堅牢化（R-03-05）。** `switchEditor`（`src/livePreviewEditorProvider.ts`）で、`vscode.openWith` の**後**に旧ビュー種別の重複タブを再評価し、現在のアクティブ（新規）タブと別物のときだけ閉じるようにした（アクティブ／dirty な入力を閉じないことで保存確認を回避）。`supportsMultipleEditorsPerDocument` は同期リスクを避けるため `false` を維持。VS Code の API 制約上、本挙動は手動 UI 検証を前提とする。
 
 ## v1.11.0 — `<details>` 編集中の構造タグ非表示・サマリ体裁を MAIO に寄せる (2026-06-22)
 

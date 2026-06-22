@@ -63,20 +63,29 @@ export class LivePreviewEditorProvider implements vscode.CustomTextEditorProvide
    */
   private async switchEditor(uri: vscode.Uri, target: 'live' | 'source'): Promise<void> {
     const targetViewType = target === 'live' ? LivePreviewEditorProvider.viewType : 'default';
-    const oldTab = this.findTab(uri, target === 'live' ? 'source' : 'live');
+    const fromFlavor = target === 'live' ? 'source' : 'live';
 
     await vscode.commands.executeCommand('vscode.openWith', uri, targetViewType, {
       viewColumn: vscode.ViewColumn.Active,
     });
 
-    // If openWith replaced the tab in place, `oldTab` is already gone and the
-    // existence check below makes the close a no-op (safe in both cases).
-    if (oldTab) {
-      const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-      const stillOpen = vscode.window.tabGroups.all.some((g) => g.tabs.includes(oldTab));
-      if (stillOpen && oldTab !== activeTab) {
-        await vscode.window.tabGroups.close(oldTab);
-      }
+    // Re-evaluate the stale tab AFTER the new editor is established. The new
+    // target tab is the active tab now; the stale tab is the OTHER tab still
+    // showing `uri` in the previous flavor. We only close that, never the active
+    // (newly opened) tab — closing the active/dirty input is what pops VS Code's
+    // "保存しますか？" dialog. Because both editors reference the *same*
+    // `TextDocument`, closing the stale duplicate leaves the dirty buffer open
+    // and unsaved without a prompt.
+    //
+    // NOTE: VS Code treats the custom and default editors as different inputs,
+    // so openWith may open a NEW tab rather than replacing in place; the
+    // "single tab, no duplicate" contract (R-03) is enforced by this cleanup,
+    // not guaranteed by the API. Verify behavior manually after changes.
+    const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    const staleTab = this.findTab(uri, fromFlavor);
+    if (staleTab && staleTab !== activeTab) {
+      const stillOpen = vscode.window.tabGroups.all.some((g) => g.tabs.includes(staleTab));
+      if (stillOpen) await vscode.window.tabGroups.close(staleTab);
     }
   }
 
@@ -185,7 +194,16 @@ export class LivePreviewEditorProvider implements vscode.CustomTextEditorProvide
         case 'toggleTask': {
           // Operate in the LF domain the webview uses, then re-apply EOL-aware.
           const result = toggleTaskAt(webviewText, msg.line);
-          if (result.changed) await applyEditFromWebview(result.text);
+          if (result.changed) {
+            await applyEditFromWebview(result.text);
+            // `applyEditFromWebview` set `webviewText = result.text` up front, so
+            // the subsequent `onDidChangeTextDocument` sees `docLF === webviewText`
+            // and suppresses the echo — CodeMirror would never get the new text.
+            // Push the update explicitly so the rendered checkbox flips. The
+            // webview `update` handler is a no-op when the text already matches,
+            // so this is harmless for ordinary edits.
+            webview.postMessage({ type: 'update', text: result.text });
+          }
           break;
         }
         case 'openLink':
@@ -249,6 +267,11 @@ export class LivePreviewEditorProvider implements vscode.CustomTextEditorProvide
   /** Open a standard Markdown link: external URLs in the browser, relative paths as files. */
   private async openLink(document: vscode.TextDocument, href: string): Promise<void> {
     if (!href) return;
+    // CommonMark allows a `<…>` link destination (`[label](<path with space>)`).
+    // The model keeps the angle brackets in the href; strip a single enclosing
+    // pair here so they don't leak into URL parsing / path resolution. Spaces
+    // inside are preserved (Uri.joinPath handles them).
+    href = href.replace(/^<([\s\S]*)>$/, '$1');
     if (/^(https?|mailto):/i.test(href)) {
       await vscode.env.openExternal(vscode.Uri.parse(href));
       return;
