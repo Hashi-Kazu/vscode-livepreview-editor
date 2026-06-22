@@ -107,12 +107,13 @@ function appendInlineCell(parent: HTMLElement, text: string): void {
  *  `requestMeasure()` correction lands (R-28-10). */
 const LINE_PX = 22;
 
-/** Real per-row height of a rendered table row. Cells use `padding: 6px 13px`,
- *  so a row paints at ≈ 33px — noticeably taller than a plain line. Using
- *  this for the table estimate (instead of LINE_PX) keeps the pre-measure block
- *  height close to reality, reducing click-position drift before the
- *  `requestMeasure` correction lands (R-28-10). */
-const TABLE_ROW_PX = 33;
+/** Real per-row height of a rendered table row. Cells use `padding: 6px 13px`
+ *  and `line-height: 1.6` at `font-size: 0.95em`, so a row paints at ≈ 34px —
+ *  noticeably taller than a plain line. Using this for the table estimate
+ *  (instead of LINE_PX) keeps the pre-measure block height close to reality,
+ *  reducing click-position drift before the `requestMeasure` correction lands
+ *  (R-28-10). */
+const TABLE_ROW_PX = 34;
 
 class TableWidget extends WidgetType {
   constructor(private readonly json: string, private readonly startLine: number) {
@@ -121,10 +122,10 @@ class TableWidget extends WidgetType {
   eq(other: TableWidget) {
     return other.json === this.json && other.startLine === this.startLine;
   }
-  /** header + body rows × real row height + margin chrome (≈14px for
-   *  `margin: 0.5em 0`). Uses TABLE_ROW_PX (≈33px, not LINE_PX) because
-   *  padded table cells paint taller than a plain line; the `updateDOM`
-   *  `requestMeasure()` corrects any residual (R-28-10). */
+  /** header + body rows × real row height + margin chrome (≈15px for
+   *  `margin: 0.5em 0` plus 1px border-collapse). Uses TABLE_ROW_PX (≈34px,
+   *  not LINE_PX) because padded table cells paint taller than a plain line;
+   *  the `updateDOM` `requestMeasure()` corrects any residual (R-28-10). */
   get estimatedHeight() {
     let rows = 1; // header
     try {
@@ -132,9 +133,9 @@ class TableWidget extends WidgetType {
     } catch {
       /* fall back to header-only */
     }
-    return rows * TABLE_ROW_PX + 14;
+    return rows * TABLE_ROW_PX + 15;
   }
-  toDOM(_view: EditorView) {
+  toDOM(view: EditorView) {
     let data: ParsedTable;
     try {
       data = JSON.parse(this.json);
@@ -171,15 +172,19 @@ class TableWidget extends WidgetType {
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
+    // Request a re-measure immediately after the initial mount so CodeMirror
+    // reconciles block heights against the real painted DOM on the next frame
+    // (R-28-10). The measure runs after the DOM is inserted into the tree.
+    view.requestMeasure();
     return table;
   }
   /** Called when the widget DOM already exists in the tree (update path).
-   *  The DOM is reused (return false); we only schedule a re-measure so
-   *  CodeMirror reconciles block heights against the real painted DOM, keeping
+   *  Reuse existing DOM (return true) and schedule a re-measure so CodeMirror
+   *  reconciles block heights against the real painted DOM, keeping
    *  `posAtCoords` accurate for lines below the table (R-28-10). */
   updateDOM(_dom: HTMLElement, view: EditorView): boolean {
     view.requestMeasure();
-    return false;
+    return true;
   }
   ignoreEvent() {
     return false;
@@ -254,15 +259,19 @@ class DetailsWidget extends WidgetType {
       else openDetails.delete(this.summary);
       view.requestMeasure();
     });
+    // Request a re-measure immediately after the initial mount so CodeMirror
+    // reconciles block heights against the real painted DOM on the next frame
+    // (R-28-10). The measure runs after the DOM is inserted into the tree.
+    view.requestMeasure();
     return details;
   }
   /** Called when the widget DOM already exists in the tree (update path).
-   *  The DOM is reused (return false); we only schedule a re-measure so
-   *  CodeMirror reconciles block heights against the real painted DOM, keeping
+   *  Reuse existing DOM (return true) and schedule a re-measure so CodeMirror
+   *  reconciles block heights against the real painted DOM, keeping
    *  `posAtCoords` accurate for lines below the accordion (R-28-10). */
   updateDOM(_dom: HTMLElement, view: EditorView): boolean {
     view.requestMeasure();
-    return false;
+    return true;
   }
   ignoreEvent() {
     return false;

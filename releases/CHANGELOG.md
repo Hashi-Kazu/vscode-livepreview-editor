@@ -4,6 +4,15 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.14.3 — クリック位置ずれ・スクロール跳び・チェックボックス外観の追加修正 (2026-06-23)
+
+### 修正
+
+- **クリック位置ずれを再修正（R-28-10 再改訂）。** `TABLE_ROW_PX` を 33 → 34px（`padding: 6px 13px` + `line-height: 1.6` 実測値）、chrome を 14 → 15px（border-collapse 込み）に調整。さらに `toDOM(view)` の末尾（return 前）にも `view.requestMeasure()` を追加し（初回マウント直後の実高さ測定）、`updateDOM` を `return false` → `return true` に変更（既存 DOM を再利用しつつ measure のみ要求）。これにより初回描画・更新どちらでも確実に高さが再測定される。`TableWidget`・`DetailsWidget` 両方に適用（`src/webview/decorations.ts`）。
+- **チェックボックストグル時のスクロール跳びを根本修正（R-08-07 改訂）。** `setText` を全文置換から**最小差分 dispatch 方式**へ書き換えた。共通プレフィックス・サフィックスを除いた最小変更範囲のみ dispatch することで、CodeMirror がセレクションを自動マッピングし cursor 位置を維持する。全文置換時に生じていた「selection → anchor:0 リセット → scrollIntoView」の連鎖を根本排除（`src/webview/main.ts`）。
+- **未チェックボックスの背景を `transparent`、枠を固定 `#888` に変更（R-08-08 改訂、CSS のみ）。** 従来の `background: var(--vscode-input-background)` はエディタ背景と同化して見えにくく、テーマによって枠も薄かった。`transparent` + `#888` は dark/light 両テーマで枠が確実に視認できる（`media/editor.css`）。
+- **チェック済みタスク内リンクの文字が暗転しない問題を修正（R-08-08 改訂、CSS のみ）。** `.cm-line.cm-lp-task .cm-lp-link` に明示 color があり `.cm-lp-task-done` の `!important` 継承に勝っていた。`.cm-lp-task-done .cm-lp-link { color: inherit !important }` を追加し、チェック済みタスク内のリンクも取り消し線色に統一した（`media/editor.css`）。
+
 ## v1.14.2 — チェックボックス CSS の視認性改善 (2026-06-23)
 
 ### 修正

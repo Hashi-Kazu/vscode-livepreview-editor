@@ -202,8 +202,9 @@ table.cm-lp-table tr:nth-child(2n) td {
   text-decoration: none;
 }
 
-/* Unchecked box: a soft, theme-following dark rounded square so it reads as an
-   empty control against any theme (R-08-08). */
+/* Unchecked box: transparent background so it does not blend into the editor
+   background; a mid-grey border (#888) is visible on both dark and light themes
+   without relying on theme variables that may be undefined (R-08-08). */
 .cm-lp-task-checkbox {
   display: inline-block;
   box-sizing: border-box;
@@ -211,9 +212,9 @@ table.cm-lp-table tr:nth-child(2n) td {
   height: 1em;
   margin: 0 8px 0 0;
   vertical-align: -0.15em;
-  border: 1.5px solid var(--vscode-checkbox-border, #767676);
+  border: 1.5px solid #888;
   border-radius: 4px;
-  background: var(--vscode-input-background, var(--vscode-editorWidget-background, #2b2b2b));
+  background: transparent;
   cursor: pointer;
 }
 /* Checked box: a fixed red fill (theme-independent) so a done task reads with a
@@ -239,6 +240,12 @@ table.cm-lp-table tr:nth-child(2n) td {
 .cm-lp-task-done {
   text-decoration: line-through;
   color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground, #888)) !important;
+}
+/* Checked task: links inside the done line must also dim to the same strike-
+   through color. The more-specific `.cm-line.cm-lp-task .cm-lp-link` rule
+   would otherwise override the parent !important inheritance (R-08-08). */
+.cm-lp-task-done .cm-lp-link {
+  color: inherit !important;
 }
 
 .cm-lp-strike {

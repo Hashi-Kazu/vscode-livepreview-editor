@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.14.2  
+**バージョン**: 1.14.3  
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-23  
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-23 時点 / v1.14.2）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.14.2 では、チェックボックス CSS の視認性改善（未チェック枠を `1.5px solid var(--vscode-checkbox-border, #767676)` へ変更しテーマ透明問題を解消、R-08-08 改訂）、チェック済み本文色に `!important` を追加して他インライン装飾の上書きを防止（R-08-08 改訂）を行う。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-06-23 時点 / v1.14.3）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.14.3 では、クリック位置ずれ（`TABLE_ROW_PX=34`・chrome=15・`toDOM`+`updateDOM(return true)` 両方で `requestMeasure`、R-28-10 再改訂）、チェックボックストグル時のスクロール跳び（`setText` を最小差分 dispatch 方式へ変更、R-08-07 改訂）、未チェックボックスの背景を `transparent`・枠を固定 `#888` に変更して視認性を改善（R-08-08 改訂）、チェック済みタスク内リンクの暗転（`.cm-lp-task-done .cm-lp-link { color: inherit !important }` 追加、R-08-08 改訂）の 4 件を修正。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -167,12 +167,12 @@
 - ■■■ R-08-03 カーソル行では `- [ ]` の生記法を表示すること（チェックボックス置換を行わない）。
 - ■■■ R-08-04 インデントされたネストタスクも検知し、インデントレベルを属性 `indent` に保持すること。
 - ■■□ R-08-06 タスク行（`.cm-lp-task`）の本文はリンク色・下線を継承せず、本文（`var(--vscode-editor-foreground)`）色・下線なしで表示すること（MAIO プレビュー同様）。本文中の実リンク（`.cm-lp-link`）は従来どおりリンク装飾を保持すること。
-- ■■□ R-08-08 チェックボックスウィジェットの外観を CSS のみで次のとおりにすること（DOM・クラス名は不変）。未チェック（`.cm-lp-task-checkbox`）はテーマ追従の暗い角丸四角とし、`border-radius: 4px`・塗り `var(--vscode-input-background, var(--vscode-editorWidget-background, #2b2b2b))`・枠 `1.5px solid var(--vscode-checkbox-border, #767676)` とする（`--vscode-checkbox-border` はチェックボックス専用変数を優先し、フォールバックは WCAG AA 対応の `#767676`。`--vscode-input-border` は使用しない）。チェック済み（`.cm-lp-task-checkbox-checked`）は**固定の赤** `background: #e5484d; border-color: #e5484d;` とし、チェックマーク（`::after`）は**白固定** `border-color: #fff`（回転四角コーナー形状を維持し、位置・サイズを角丸四角の中央に視覚的に収まるよう調整）とする。完了タスクの本文色（`.cm-lp-task-done` の `color`）は `var(--vscode-disabledForeground, var(--vscode-descriptionForeground, #888)) !important` とし、`!important` によって他インライン装飾（リンク色等）による上書きを防ぐこと。
+- ■■□ R-08-08 チェックボックスウィジェットの外観を CSS のみで次のとおりにすること（DOM・クラス名は不変）。未チェック（`.cm-lp-task-checkbox`）は `background: transparent`（エディタ背景と同化しない）・`border: 1.5px solid #888`（dark/light 両テーマで視認可能な中間グレー）・`border-radius: 4px` とする。チェック済み（`.cm-lp-task-checkbox-checked`）は**固定の赤** `background: #e5484d; border-color: #e5484d;` とし、チェックマーク（`::after`）は**白固定** `border-color: #fff`（回転四角コーナー形状を維持し、位置・サイズを角丸四角の中央に視覚的に収まるよう調整）とする。完了タスクの本文色（`.cm-lp-task-done` の `color`）は `var(--vscode-disabledForeground, var(--vscode-descriptionForeground, #888)) !important` とし、さらに `.cm-lp-task-done .cm-lp-link { color: inherit !important }` を追加してチェック済みタスク内のリンクも同じ暗転色で描画すること（`.cm-line.cm-lp-task .cm-lp-link` の明示 color による !important 上書きを防ぐ）。
 
 ###### ＜操作＞
 
 - ■■■ R-08-05 Webview 上でチェックボックスをクリックすると、対応行の `[ ]`⇄`[x]` をトグルし、TextDocument に反映すること。（行トグル計算 `toggleTaskAt` を自動検証。クリック→反映の UI 結線は手動確認）
-- ■■□ R-08-07 ホスト起点のトグル（`toggleTask`）でも、トグル結果を Webview へ確実に反映すること。`applyEditFromWebview` が `webviewText` を先行更新するため `onDidChangeTextDocument` のエコー抑制で `update` が送られず、CodeMirror のチェックボックス表示が更新されない問題を避けるため、`toggleTask` 処理では `applyEditFromWebview` の後に明示的に `postMessage({ type: 'update', text })` を送ること。Webview の `update` ハンドラはテキスト一致時 no-op のため通常編集には無害であること。また `setText`（Webview の `update` ハンドラが呼ぶ全文置換関数）では `dispatch` にセレクションを明示して保持すること（`{ anchor: clamp(sel.main.anchor), head: clamp(sel.main.head) }`）。セレクション未指定の全文置換は CodeMirror がセレクションを anchor:0 にリセットし `scrollIntoView` が走り、チェックボックストグル後にスクロール位置が先頭へジャンプする原因となる。`clamp()` で新テキスト長を超えないよう保護する。
+- ■■□ R-08-07 ホスト起点のトグル（`toggleTask`）でも、トグル結果を Webview へ確実に反映すること。`applyEditFromWebview` が `webviewText` を先行更新するため `onDidChangeTextDocument` のエコー抑制で `update` が送られず、CodeMirror のチェックボックス表示が更新されない問題を避けるため、`toggleTask` 処理では `applyEditFromWebview` の後に明示的に `postMessage({ type: 'update', text })` を送ること。Webview の `update` ハンドラはテキスト一致時 no-op のため通常編集には無害であること。また `setText`（Webview の `update` ハンドラが呼ぶ関数）は**最小差分 dispatch 方式**で実装すること: 共通プレフィックス・サフィックスを除いた最小変更範囲のみ `{ from, to: toOld, insert: text.slice(from, toNew) }` で dispatch し、セレクションを明示しない（CodeMirror が差分を通じてセレクションを自動マッピングするため cursor 位置がほぼ維持される）。全文置換（from:0, to:doc.length）では CodeMirror がセレクションを anchor:0 にリセットして `scrollIntoView` が走り、チェックボックストグル後にスクロール位置が先頭へジャンプする。最小差分方式はその根本原因を排除する。
 
 ---
 
@@ -334,4 +334,4 @@
 - ■■□ R-28-07 左右の読みやすい余白を「Markdown All in One」プレビューに寄せること（`.cm-content` のパディングを `20px 40px 24px 48px` 目安〔上 `20px`／右 `40px`／下 `24px`／左 `48px`〕とする。CodeMirror のインラインスタイル上書きを防ぐため `!important` を付与する）。見出しは行装飾のためインデントを増やさず、見出しと本文の左端が揃うこと。本文フォントは Markdown サンセリフスタックを明示指定（継承のみに頼らない）し、`font-weight: 400`（通常ウェイト）で等幅へフォールバックしないこと。
 - ■■□ R-28-08 タスク行（`.cm-line.cm-lp-task`）内のインラインリンク（`.cm-lp-task .cm-lp-link`）はリンク色・下線（hover 含む）を継承せず本文色・下線なしで描画し、`- [ ] [ラベル](URL)` 形式のチェックリストが本文テキストとして読めること（R-08-06 の補完）。
 - ■■■ R-28-09 `<details>` アコーディオンは**ビューア専用**（R-27-03）のため、ブロック本文を生記法で表示する編集モードは持たない。本文・サマリのインライン記法（太字・斜体・インラインコード）は `details-block` ウィジェット側（`<summary>` は `appendInlineCell`）でのみ描画し、ブロック内カーソル時に生のマーカー（例 `**ワークパッケージ**`）が見えることはない。本文の編集は標準ソースエディタで行う。装飾は表示のみで入力文字列を変更しないこと。
-- ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **measure 主導**とし、`updateDOM(_dom, view)` メソッドで `view.requestMeasure()` を呼び、CodeMirror に実 DOM 高さへ block-height を再調整させること（`updateDOM` は DOM がツリーに挿入済みの更新パスで呼ばれるため、`toDOM` 内の `requestMeasure` より確実に実高さを測定できる。`updateDOM` は `return false` として DOM 再構築は行わない）。`toDOM` 内では `view.requestMeasure()` を呼ばない。`DetailsWidget` は開閉で高さが変わるため、`toggle` イベントリスナー内でも `view.requestMeasure()` を呼ぶこと（toggle は DOM がツリー内にあるタイミングのため有効）。あわせて `get estimatedHeight()` で初期推定を実態に近づけ measure 確定前のズレを縮めること（プレーン行≈22px〔`LINE_PX`〕。ただしパディング付きテーブル行は実高さ≈33px〔`TABLE_ROW_PX`〕で、テーブル＝（ヘッダ 1＋本文行数）×`TABLE_ROW_PX`＋14px（`margin: 0.5em 0` 相当）、アコーディオン＝閉時約 1 行・開時（1＋本文行数）×`LINE_PX`）。
+- ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **measure 主導**とし、`toDOM(view)` の末尾（return 前）および `updateDOM(_dom, view)` の両方で `view.requestMeasure()` を呼ぶこと。`updateDOM` は `return true` として既存 DOM を再利用し、measure のみ要求する。`toDOM` 内の `requestMeasure` は DOM がツリーに挿入された直後の次フレームで実高さを測定させる初回修正用、`updateDOM` の `requestMeasure` は更新パスでの再測定用。`DetailsWidget` は開閉で高さが変わるため、`toggle` イベントリスナー内でも `view.requestMeasure()` を呼ぶこと（toggle は DOM がツリー内にあるタイミングのため有効）。あわせて `get estimatedHeight()` で初期推定を実態に近づけ measure 確定前のズレを縮めること（プレーン行≈22px〔`LINE_PX`〕。ただしパディング付きテーブル行は実高さ≈34px〔`TABLE_ROW_PX`〕で、テーブル＝（ヘッダ 1＋本文行数）×`TABLE_ROW_PX`＋15px（`margin: 0.5em 0` + border 1px ≈ 15px）、アコーディオン＝閉時約 1 行・開時（1＋本文行数）×`LINE_PX`）。

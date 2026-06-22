@@ -267,19 +267,28 @@ function applyFontSize(size: number) {
 }
 
 function setText(text: string) {
+  const doc = view.state.doc.toString();
+  if (doc === text) return;
+
+  // Find the minimal changed range by trimming the common prefix and suffix.
+  // Dispatching only the changed slice keeps the selection stable (CodeMirror
+  // auto-maps it through the change) so the cursor does not jump and
+  // scrollIntoView is not triggered — eliminating the scroll-to-top on
+  // checkbox toggle (R-08-07).
+  let from = 0;
+  const minLen = Math.min(doc.length, text.length);
+  while (from < minLen && doc[from] === text[from]) from++;
+  let toOld = doc.length;
+  let toNew = text.length;
+  while (toOld > from && toNew > from && doc[toOld - 1] === text[toNew - 1]) {
+    toOld--;
+    toNew--;
+  }
+
   applyingRemote = true;
   try {
-    const sel = view.state.selection;
-    const newLen = text.length;
-    const clamp = (pos: number) => Math.min(pos, newLen);
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: text },
-      // Preserve the current selection so the full-text replacement does not
-      // reset the caret to anchor:0, which would trigger CodeMirror's automatic
-      // scrollIntoView and jump the scroll position to the top (R-08-07 fix).
-      // clamp() guards against the new text being shorter than the old one.
-      selection: { anchor: clamp(sel.main.anchor), head: clamp(sel.main.head) },
-      // Mark as a remote sync so it does not pollute the undo history origin.
+      changes: { from, to: toOld, insert: text.slice(from, toNew) },
       annotations: Transaction.addToHistory.of(false),
     });
   } finally {
