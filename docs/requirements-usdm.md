@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.14.0  
+**バージョン**: 1.14.1  
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-23  
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-23 時点 / v1.14.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.14.0 では、ブロックウィジェット（表・アコーディオン）のクリック位置と編集行のずれを **measure 主導**で解消（`toDOM(view)` 内で `view.requestMeasure()` を初回描画直後にも呼び実 DOM 高さへ block-height を再調整、テーブルの初期推定を実行高に近い `TABLE_ROW_PX` ベースへ改善、R-28-10 改訂）、タスクチェックボックスの外観を再デザイン（チェック済み＝固定の赤、未チェック＝テーマ追従の暗い角丸四角、R-08-08 追加）を行う。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-06-23 時点 / v1.14.1）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.14.1 では、ブロックウィジェットのクリック位置ずれの根本修正（`requestMeasure` を `toDOM` ではなく `updateDOM` で呼ぶ方式へ変更、`TABLE_ROW_PX` 31→33・chrome 8→14px に精度向上、R-28-10 再改訂）、チェックボックス切り替え時のスクロール位置ジャンプを修正（`setText` の `dispatch` でセレクション保持、R-08-07 補完）を行う。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -172,7 +172,7 @@
 ###### ＜操作＞
 
 - ■■■ R-08-05 Webview 上でチェックボックスをクリックすると、対応行の `[ ]`⇄`[x]` をトグルし、TextDocument に反映すること。（行トグル計算 `toggleTaskAt` を自動検証。クリック→反映の UI 結線は手動確認）
-- ■■□ R-08-07 ホスト起点のトグル（`toggleTask`）でも、トグル結果を Webview へ確実に反映すること。`applyEditFromWebview` が `webviewText` を先行更新するため `onDidChangeTextDocument` のエコー抑制で `update` が送られず、CodeMirror のチェックボックス表示が更新されない問題を避けるため、`toggleTask` 処理では `applyEditFromWebview` の後に明示的に `postMessage({ type: 'update', text })` を送ること。Webview の `update` ハンドラはテキスト一致時 no-op のため通常編集には無害であること。
+- ■■□ R-08-07 ホスト起点のトグル（`toggleTask`）でも、トグル結果を Webview へ確実に反映すること。`applyEditFromWebview` が `webviewText` を先行更新するため `onDidChangeTextDocument` のエコー抑制で `update` が送られず、CodeMirror のチェックボックス表示が更新されない問題を避けるため、`toggleTask` 処理では `applyEditFromWebview` の後に明示的に `postMessage({ type: 'update', text })` を送ること。Webview の `update` ハンドラはテキスト一致時 no-op のため通常編集には無害であること。また `setText`（Webview の `update` ハンドラが呼ぶ全文置換関数）では `dispatch` にセレクションを明示して保持すること（`{ anchor: clamp(sel.main.anchor), head: clamp(sel.main.head) }`）。セレクション未指定の全文置換は CodeMirror がセレクションを anchor:0 にリセットし `scrollIntoView` が走り、チェックボックストグル後にスクロール位置が先頭へジャンプする原因となる。`clamp()` で新テキスト長を超えないよう保護する。
 
 ---
 
@@ -334,4 +334,4 @@
 - ■■□ R-28-07 左右の読みやすい余白を「Markdown All in One」プレビューに寄せること（`.cm-content` のパディングを `20px 40px 24px 48px` 目安〔上 `20px`／右 `40px`／下 `24px`／左 `48px`〕とする。CodeMirror のインラインスタイル上書きを防ぐため `!important` を付与する）。見出しは行装飾のためインデントを増やさず、見出しと本文の左端が揃うこと。本文フォントは Markdown サンセリフスタックを明示指定（継承のみに頼らない）し、`font-weight: 400`（通常ウェイト）で等幅へフォールバックしないこと。
 - ■■□ R-28-08 タスク行（`.cm-line.cm-lp-task`）内のインラインリンク（`.cm-lp-task .cm-lp-link`）はリンク色・下線（hover 含む）を継承せず本文色・下線なしで描画し、`- [ ] [ラベル](URL)` 形式のチェックリストが本文テキストとして読めること（R-08-06 の補完）。
 - ■■■ R-28-09 `<details>` アコーディオンは**ビューア専用**（R-27-03）のため、ブロック本文を生記法で表示する編集モードは持たない。本文・サマリのインライン記法（太字・斜体・インラインコード）は `details-block` ウィジェット側（`<summary>` は `appendInlineCell`）でのみ描画し、ブロック内カーソル時に生のマーカー（例 `**ワークパッケージ**`）が見えることはない。本文の編集は標準ソースエディタで行う。装飾は表示のみで入力文字列を変更しないこと。
-- ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **measure 主導**とし、`toDOM(view: EditorView)` で受け取った `view` を使って実描画後に `view.requestMeasure()` を呼び、CodeMirror に実 DOM 高さへ block-height を再調整させること（次フレームの測定をスケジュールする安全な API。引数なし呼び出しで block-height 再調整が走る）。`TableWidget`・`DetailsWidget` ともに初回描画直後（`toDOM` の return 前）に一度呼び、`DetailsWidget` は開閉で高さが変わるため `toggle` 時にも呼ぶこと。あわせて `get estimatedHeight()` で初期推定を実態に近づけ measure 確定前のズレを縮めること（プレーン行≈22px〔`LINE_PX`〕。ただしパディング付きテーブル行は実高さ≈30〜31px〔`TABLE_ROW_PX`〕で、テーブル＝（ヘッダ 1＋本文行数）×`TABLE_ROW_PX`＋余白、アコーディオン＝閉時約 1 行・開時（1＋本文行数）×`LINE_PX`）。
+- ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **measure 主導**とし、`updateDOM(_dom, view)` メソッドで `view.requestMeasure()` を呼び、CodeMirror に実 DOM 高さへ block-height を再調整させること（`updateDOM` は DOM がツリーに挿入済みの更新パスで呼ばれるため、`toDOM` 内の `requestMeasure` より確実に実高さを測定できる。`updateDOM` は `return false` として DOM 再構築は行わない）。`toDOM` 内では `view.requestMeasure()` を呼ばない。`DetailsWidget` は開閉で高さが変わるため、`toggle` イベントリスナー内でも `view.requestMeasure()` を呼ぶこと（toggle は DOM がツリー内にあるタイミングのため有効）。あわせて `get estimatedHeight()` で初期推定を実態に近づけ measure 確定前のズレを縮めること（プレーン行≈22px〔`LINE_PX`〕。ただしパディング付きテーブル行は実高さ≈33px〔`TABLE_ROW_PX`〕で、テーブル＝（ヘッダ 1＋本文行数）×`TABLE_ROW_PX`＋14px（`margin: 0.5em 0` 相当）、アコーディオン＝閉時約 1 行・開時（1＋本文行数）×`LINE_PX`）。

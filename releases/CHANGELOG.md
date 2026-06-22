@@ -4,6 +4,13 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.14.1 — クリック位置ずれの根本修正／チェックボックストグル後のスクロールジャンプ修正 (2026-06-23)
+
+### 修正
+
+- **クリック位置ずれの根本原因を修正（R-28-10 再改訂）。** v1.14.0 で `toDOM` 内に `view.requestMeasure()` を追加したが、`toDOM` 実行時点では DOM がまだツリーに挿入されていないため measure が空振りしていた。`toDOM` からは `view.requestMeasure()` を削除し、代わりに `updateDOM(_dom, view)` メソッドを `TableWidget`・`DetailsWidget` 両方に追加して `view.requestMeasure(); return false;` を実行する方式へ変更した（`updateDOM` は DOM がツリー内にある更新パスで呼ばれるため正確に実高さを測定できる）。`DetailsWidget` の `toggle` イベント内の `requestMeasure` はそのまま維持（toggle は DOM がツリー内にあるため有効）。あわせて `estimatedHeight` 精度を向上: `TABLE_ROW_PX` を 31→33px（実測値 ≈ 33px に合わせる）、テーブルの chrome を 8→14px（`margin: 0.5em 0` ≈ 14px を計上）に変更（`src/webview/decorations.ts`）。
+- **チェックボックストグル後にスクロール位置が先頭へジャンプする不具合を修正（R-08-07 補完）。** `setText`（`src/webview/main.ts`）の `dispatch` にセレクションを明示していなかったため、全文置換（`from:0, to:doc.length`）後に CodeMirror がセレクションを anchor:0 へリセットし `scrollIntoView` が走っていた。`dispatch` に `selection: { anchor: clamp(sel.main.anchor), head: clamp(sel.main.head) }` を追加し現在位置を保持するよう修正した（`clamp()` で新テキスト長を超えないよう保護）。
+
 ## v1.14.0 — クリック位置ずれの measure 主導修正／チェックボックス再デザイン (2026-06-23)
 
 ### 修正・変更

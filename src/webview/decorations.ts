@@ -103,17 +103,16 @@ function appendInlineCell(parent: HTMLElement, text: string): void {
  *  accounting drifts from the painted DOM, which throws off `posAtCoords` for
  *  lines *below* the widget (clicks land on the wrong line). 22px matches a
  *  plain editor line at the default font size; tables render taller (see
- *  TABLE_ROW_PX). The initial estimate only narrows the gap — `toDOM` also calls
- *  `view.requestMeasure()` so CodeMirror reconciles block heights against the
- *  real painted DOM on the next frame (R-28-10). */
+ *  TABLE_ROW_PX). The initial estimate narrows the gap before the `updateDOM`
+ *  `requestMeasure()` correction lands (R-28-10). */
 const LINE_PX = 22;
 
 /** Real per-row height of a rendered table row. Cells use `padding: 6px 13px`,
- *  so a row paints at ≈ 30–31px — noticeably taller than a plain line. Using
+ *  so a row paints at ≈ 33px — noticeably taller than a plain line. Using
  *  this for the table estimate (instead of LINE_PX) keeps the pre-measure block
  *  height close to reality, reducing click-position drift before the
  *  `requestMeasure` correction lands (R-28-10). */
-const TABLE_ROW_PX = 31;
+const TABLE_ROW_PX = 33;
 
 class TableWidget extends WidgetType {
   constructor(private readonly json: string, private readonly startLine: number) {
@@ -122,9 +121,10 @@ class TableWidget extends WidgetType {
   eq(other: TableWidget) {
     return other.json === this.json && other.startLine === this.startLine;
   }
-  /** header + body rows × real row height + a little chrome (border/padding).
-   *  Uses TABLE_ROW_PX (not LINE_PX) because padded table cells paint taller
-   *  than a plain line; the `requestMeasure` in `toDOM` corrects any residual. */
+  /** header + body rows × real row height + margin chrome (≈14px for
+   *  `margin: 0.5em 0`). Uses TABLE_ROW_PX (≈33px, not LINE_PX) because
+   *  padded table cells paint taller than a plain line; the `updateDOM`
+   *  `requestMeasure()` corrects any residual (R-28-10). */
   get estimatedHeight() {
     let rows = 1; // header
     try {
@@ -132,9 +132,9 @@ class TableWidget extends WidgetType {
     } catch {
       /* fall back to header-only */
     }
-    return rows * TABLE_ROW_PX + 8;
+    return rows * TABLE_ROW_PX + 14;
   }
-  toDOM(view: EditorView) {
+  toDOM(_view: EditorView) {
     let data: ParsedTable;
     try {
       data = JSON.parse(this.json);
@@ -171,11 +171,15 @@ class TableWidget extends WidgetType {
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
-    // The estimate is approximate; ask CodeMirror to re-measure block heights
-    // against the real painted DOM on the next frame so `posAtCoords` for lines
-    // below the table maps clicks to the correct line (R-28-10).
-    view.requestMeasure();
     return table;
+  }
+  /** Called when the widget DOM already exists in the tree (update path).
+   *  The DOM is reused (return false); we only schedule a re-measure so
+   *  CodeMirror reconciles block heights against the real painted DOM, keeping
+   *  `posAtCoords` accurate for lines below the table (R-28-10). */
+  updateDOM(_dom: HTMLElement, view: EditorView): boolean {
+    view.requestMeasure();
+    return false;
   }
   ignoreEvent() {
     return false;
@@ -241,18 +245,24 @@ class DetailsWidget extends WidgetType {
     // Keep the marker in sync with the native open state on toggle and remember
     // the open/closed state per summary so it survives re-renders. Opening or
     // closing changes the widget height, so ask CodeMirror to re-measure block
-    // heights (otherwise `posAtCoords` for lines below drifts — bug 2).
+    // heights (otherwise `posAtCoords` for lines below drifts — R-28-10).
+    // This requestMeasure call is valid: toggle fires while the DOM is in the
+    // tree, so the measurement will capture the real post-toggle height.
     details.addEventListener('toggle', () => {
       marker.textContent = details.open ? '▼' : '▶'; // ▼ / ▶
       if (details.open) openDetails.add(this.summary);
       else openDetails.delete(this.summary);
       view.requestMeasure();
     });
-    // Initial measure: the estimate is approximate, so reconcile block heights
-    // against the real painted DOM on the next frame too (not just on toggle) —
-    // otherwise `posAtCoords` for lines below drifts (R-28-10).
-    view.requestMeasure();
     return details;
+  }
+  /** Called when the widget DOM already exists in the tree (update path).
+   *  The DOM is reused (return false); we only schedule a re-measure so
+   *  CodeMirror reconciles block heights against the real painted DOM, keeping
+   *  `posAtCoords` accurate for lines below the accordion (R-28-10). */
+  updateDOM(_dom: HTMLElement, view: EditorView): boolean {
+    view.requestMeasure();
+    return false;
   }
   ignoreEvent() {
     return false;

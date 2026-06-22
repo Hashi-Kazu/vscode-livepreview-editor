@@ -269,8 +269,16 @@ function applyFontSize(size: number) {
 function setText(text: string) {
   applyingRemote = true;
   try {
+    const sel = view.state.selection;
+    const newLen = text.length;
+    const clamp = (pos: number) => Math.min(pos, newLen);
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: text },
+      // Preserve the current selection so the full-text replacement does not
+      // reset the caret to anchor:0, which would trigger CodeMirror's automatic
+      // scrollIntoView and jump the scroll position to the top (R-08-07 fix).
+      // clamp() guards against the new text being shorter than the old one.
+      selection: { anchor: clamp(sel.main.anchor), head: clamp(sel.main.head) },
       // Mark as a remote sync so it does not pollute the undo history origin.
       annotations: Transaction.addToHistory.of(false),
     });
