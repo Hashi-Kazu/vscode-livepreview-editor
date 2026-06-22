@@ -7,7 +7,7 @@ import { EditorState, Transaction, StateField } from '@codemirror/state';
 import { EditorView, ViewUpdate, DecorationSet, keymap, drawSelection } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
-import { buildDecorations, setResourceBase } from './decorations';
+import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import { shouldEmitEdit } from '../core/sync';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading } from '../core/editing';
@@ -154,6 +154,46 @@ function headingCommand(level: number) {
   };
 }
 
+/**
+ * Up/Down arrow that steps exactly one *source* line when the caret would
+ * otherwise jump across a collapsed block widget (table / `<details>`).
+ *
+ * Block widgets (`block: true` replace decorations) are atomic: CodeMirror's
+ * default `cursorLineUp/Down` skips the entire block in one keystroke, so a
+ * table or accordion spanning N source lines made the arrow appear to "jump"
+ * several lines at once (R-28-12). We detect that case by comparing the source
+ * line CodeMirror would land on against the current one: if it jumped more than
+ * one source line (only possible across a block widget — wrapped paragraphs move
+ * by visual line and stay on the same/adjacent source line), we override and
+ * land on the immediately adjacent source line instead. Normal moves (including
+ * wrapped-paragraph visual-line moves) fall through to the default unchanged.
+ */
+function lineStepCommand(dir: -1 | 1) {
+  return (target: EditorView): boolean => {
+    const sel = target.state.selection.main;
+    if (sel.from !== sel.to) return false; // only for a collapsed caret
+    const doc = target.state.doc;
+    const curLine = doc.lineAt(sel.head).number; // 1-based
+    // Where would CodeMirror's default vertical move land?
+    const movedPos = target.moveVertically(sel, dir > 0).head;
+    const movedLine = doc.lineAt(movedPos).number;
+    // Jumped more than one source line → it skipped over a block widget.
+    if (Math.abs(movedLine - curLine) > 1) {
+      const targetLine = curLine + dir;
+      if (targetLine < 1 || targetLine > doc.lines) return false; // at the edge
+      const anchor = doc.line(targetLine).from;
+      target.dispatch({ selection: { anchor }, scrollIntoView: true });
+      return true;
+    }
+    return false; // normal case: let the default keymap handle it
+  };
+}
+
+const arrowKeymap = keymap.of([
+  { key: 'ArrowUp', run: lineStepCommand(-1) },
+  { key: 'ArrowDown', run: lineStepCommand(1) },
+]);
+
 const editingKeymap = keymap.of([
   { key: 'Enter', run: handleEnter },
   { key: 'Tab', run: indentCommand(1) },
@@ -167,6 +207,7 @@ function makeState(text: string): EditorState {
     extensions: [
       history(),
       formatKeymap,
+      arrowKeymap,
       editingKeymap,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
@@ -264,6 +305,9 @@ view.dom.addEventListener(
 function applyFontSize(size: number) {
   fontSize = size;
   (document.getElementById('editor') as HTMLElement).style.fontSize = `${size}px`;
+  // Keep the decoration layer's block-height estimates in sync with the font
+  // size so `posAtCoords` stays accurate below tables/accordions (R-28-11).
+  setFontSize(size);
 }
 
 function setText(text: string) {

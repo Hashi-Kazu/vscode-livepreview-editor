@@ -172,6 +172,22 @@ table.cm-lp-table th,
 table.cm-lp-table td {
   border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.4));
   padding: 6px 13px;
+  /* Lock the row line-height so a row paints at a deterministic height
+     regardless of inline <strong>/<code> content — keeps the block-height
+     estimate (tableRowPx) aligned with reality so clicks below the table land
+     on the right line (R-28-11). */
+  line-height: 1.6;
+  vertical-align: top;
+}
+/* Inline cell markup must not change the row's line box height. */
+table.cm-lp-table td .cm-lp-code,
+table.cm-lp-table th .cm-lp-code,
+table.cm-lp-table td .cm-lp-strong,
+table.cm-lp-table th .cm-lp-strong,
+table.cm-lp-table td .cm-lp-em,
+table.cm-lp-table th .cm-lp-em {
+  line-height: inherit;
+  font-size: inherit;
 }
 table.cm-lp-table th {
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));

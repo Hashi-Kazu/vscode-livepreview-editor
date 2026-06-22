@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.14.3  
+**バージョン**: 1.15.0  
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-23  
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-23 時点 / v1.14.3）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.14.3 では、クリック位置ずれ（`TABLE_ROW_PX=34`・chrome=15・`toDOM`+`updateDOM(return true)` 両方で `requestMeasure`、R-28-10 再改訂）、チェックボックストグル時のスクロール跳び（`setText` を最小差分 dispatch 方式へ変更、R-08-07 改訂）、未チェックボックスの背景を `transparent`・枠を固定 `#888` に変更して視認性を改善（R-08-08 改訂）、チェック済みタスク内リンクの暗転（`.cm-lp-task-done .cm-lp-link { color: inherit !important }` 追加、R-08-08 改訂）の 4 件を修正。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-06-23 時点 / v1.15.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.15.0 では、ブロックウィジェット直下のクリック位置ずれを根本修正（`toDOM` の `requestMeasure` 撤去・`estimatedHeight` をフォントサイズ／開閉状態依存へ動的化・テーブルセル `line-height` 固定、R-28-10 再定義／R-28-11 新規）、上下矢印がテーブル／アコーディオンをまたぐ際の複数行ジャンプを修正（`ArrowUp`/`ArrowDown` カスタムコマンドで 1 ソース行ずつ着地、R-28-12 新規）の 2 件を修正。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -334,4 +334,6 @@
 - ■■□ R-28-07 左右の読みやすい余白を「Markdown All in One」プレビューに寄せること（`.cm-content` のパディングを `20px 40px 24px 48px` 目安〔上 `20px`／右 `40px`／下 `24px`／左 `48px`〕とする。CodeMirror のインラインスタイル上書きを防ぐため `!important` を付与する）。見出しは行装飾のためインデントを増やさず、見出しと本文の左端が揃うこと。本文フォントは Markdown サンセリフスタックを明示指定（継承のみに頼らない）し、`font-weight: 400`（通常ウェイト）で等幅へフォールバックしないこと。
 - ■■□ R-28-08 タスク行（`.cm-line.cm-lp-task`）内のインラインリンク（`.cm-lp-task .cm-lp-link`）はリンク色・下線（hover 含む）を継承せず本文色・下線なしで描画し、`- [ ] [ラベル](URL)` 形式のチェックリストが本文テキストとして読めること（R-08-06 の補完）。
 - ■■■ R-28-09 `<details>` アコーディオンは**ビューア専用**（R-27-03）のため、ブロック本文を生記法で表示する編集モードは持たない。本文・サマリのインライン記法（太字・斜体・インラインコード）は `details-block` ウィジェット側（`<summary>` は `appendInlineCell`）でのみ描画し、ブロック内カーソル時に生のマーカー（例 `**ワークパッケージ**`）が見えることはない。本文の編集は標準ソースエディタで行う。装飾は表示のみで入力文字列を変更しないこと。
-- ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **measure 主導**とし、`toDOM(view)` の末尾（return 前）および `updateDOM(_dom, view)` の両方で `view.requestMeasure()` を呼ぶこと。`updateDOM` は `return true` として既存 DOM を再利用し、measure のみ要求する。`toDOM` 内の `requestMeasure` は DOM がツリーに挿入された直後の次フレームで実高さを測定させる初回修正用、`updateDOM` の `requestMeasure` は更新パスでの再測定用。`DetailsWidget` は開閉で高さが変わるため、`toggle` イベントリスナー内でも `view.requestMeasure()` を呼ぶこと（toggle は DOM がツリー内にあるタイミングのため有効）。あわせて `get estimatedHeight()` で初期推定を実態に近づけ measure 確定前のズレを縮めること（プレーン行≈22px〔`LINE_PX`〕。ただしパディング付きテーブル行は実高さ≈34px〔`TABLE_ROW_PX`〕で、テーブル＝（ヘッダ 1＋本文行数）×`TABLE_ROW_PX`＋15px（`margin: 0.5em 0` + border 1px ≈ 15px）、アコーディオン＝閉時約 1 行・開時（1＋本文行数）×`LINE_PX`）。
+- ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **estimatedHeight 主導**とし（R-28-11 で再定義）、`toDOM` 内では `view.requestMeasure()` を**呼ばない**こと（`toDOM` は CodeMirror の measure サイクル内で実行されるため、ここで再 measure を要求すると高さ確定が次フレームへ遅れ、その間 `posAtCoords` が旧値のままクリックずれを生む）。更新パスの `updateDOM(_dom, view)` でのみ `view.requestMeasure()` を呼び（`return true` で既存 DOM を再利用）、初回描画は `estimatedHeight` で実態に近づける。`DetailsWidget` は開閉で高さが変わるため、`toggle` イベントリスナー内でも `view.requestMeasure()` を呼ぶこと（toggle は measure サイクル外・DOM がツリー内にあるタイミングのため有効）。
+- ■■□ R-28-11 ブロックウィジェットの `get estimatedHeight()` は**現在のフォントサイズ**（ホストの `fontSize` 設定。既定 14px。`setFontSize` で webview の装飾層へ同期）と、アコーディオンの**開閉状態**を反映した値を返し、measure 確定前でもブロック直下のクリック位置が一致すること。具体的には、プレーン行高は `fontSize × 1.6`、テーブル行高は `fontSize × 0.95 × 1.6 + 13`（セル `padding: 6px 13px` の縦 12px＋border 1px）として、テーブル＝（ヘッダ 1＋本文行数）× テーブル行高＋`fontSize`（`margin: 0.5em 0`）、アコーディオン＝サマリ行（`fontSize × 1.4 + 2`）＋（開状態のみ）本文行数 ×（`fontSize × 1.4 + 2`）とすること（22/34px のハードコードは廃止）。あわせて、テーブルセルの行高を CSS で固定（`table.cm-lp-table th/td { line-height: 1.6; }`、インライン `<strong>`/`<code>`/`<em>` は `line-height/font-size: inherit`）し、セル内インライン記法（`**bold**`/`` `code` ``）や折返しで行高がブレないようにして推定と実測の乖離自体を縮めること。これによりフォントサイズ 14 以外・セル内インライン記法・details 開閉直後でもブロック直下クリックが正しい行に着地すること。
+- ■■□ R-28-12 ブロックウィジェット（テーブル・`<details>`）は `block: true` で atomic 扱いのため、上下矢印（既定の `cursorLineUp/Down`）はブロック全体を 1 ストロークでスキップし、複数ソース行を飛び越えてしまう。これを防ぐため、上下矢印用のカスタムコマンド（`ArrowUp`/`ArrowDown`、既定キーマップより優先登録）を設け、キャレットが折りたたみブロックを越える場合は**1 ソース行ずつ**隣接行へ着地させること。判定は「CodeMirror の既定の縦移動（`moveVertically`）が現在行から 2 ソース行以上ジャンプするか」で行い（折返し段落の視覚行移動は同一/隣接ソース行に留まるため誤発火しない）、該当時のみ現在行 ±1 のソース行先頭へキャレットを移す。非該当（通常移動・折返し段落内の視覚行移動）は既定キーマップにフォールバックすること。

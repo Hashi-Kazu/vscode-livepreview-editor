@@ -98,22 +98,34 @@ function appendInlineCell(parent: HTMLElement, text: string): void {
   if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
 }
 
-/** Approximate rendered line height (px). Block widgets must report an
- *  `estimatedHeight` close to their real height or CodeMirror's block-height
- *  accounting drifts from the painted DOM, which throws off `posAtCoords` for
- *  lines *below* the widget (clicks land on the wrong line). 22px matches a
- *  plain editor line at the default font size; tables render taller (see
- *  TABLE_ROW_PX). The initial estimate narrows the gap before the `updateDOM`
- *  `requestMeasure()` correction lands (R-28-10). */
-const LINE_PX = 22;
+/** Current editor font size (px), mirrored from the host `fontSize` setting via
+ *  {@link setFontSize}. Block-widget height estimates scale with this so that
+ *  `posAtCoords` (click → document position) stays accurate at non-default font
+ *  sizes, not just at 14px (R-28-11). Defaults to 14 to match the host default. */
+let currentFontSize = 14;
+export function setFontSize(size: number) {
+  if (size > 0) currentFontSize = size;
+}
 
-/** Real per-row height of a rendered table row. Cells use `padding: 6px 13px`
- *  and `line-height: 1.6` at `font-size: 0.95em`, so a row paints at ≈ 34px —
- *  noticeably taller than a plain line. Using this for the table estimate
- *  (instead of LINE_PX) keeps the pre-measure block height close to reality,
- *  reducing click-position drift before the `requestMeasure` correction lands
- *  (R-28-10). */
-const TABLE_ROW_PX = 34;
+/** Plain editor line height (px) at the current font size. The editor body uses
+ *  `line-height: 1.6` (media/editor.css). Deriving this from `currentFontSize`
+ *  (rather than a hard-coded 22) keeps block-height estimates correct when the
+ *  user changes the font size, which is the dominant cause of click-position
+ *  drift below a block widget (R-28-11). */
+function linePx(): number {
+  return Math.round(currentFontSize * 1.6);
+}
+
+/** Real per-row height of a rendered table row at the current font size. Cells
+ *  use `padding: 6px 13px` (12px vertical) and `line-height: 1.6` at
+ *  `font-size: 0.95em`, plus 1px border-collapse, so a row paints at
+ *  ≈ fontSize·0.95·1.6 + 13. Scaling with `currentFontSize` (instead of a fixed
+ *  34) keeps the pre-measure block height close to reality at any font size,
+ *  removing the click-position drift that `requestMeasure` alone could not fully
+ *  fix mid-frame (R-28-11). */
+function tableRowPx(): number {
+  return Math.round(currentFontSize * 0.95 * 1.6) + 13;
+}
 
 class TableWidget extends WidgetType {
   constructor(private readonly json: string, private readonly startLine: number) {
@@ -122,10 +134,11 @@ class TableWidget extends WidgetType {
   eq(other: TableWidget) {
     return other.json === this.json && other.startLine === this.startLine;
   }
-  /** header + body rows × real row height + margin chrome (≈15px for
-   *  `margin: 0.5em 0` plus 1px border-collapse). Uses TABLE_ROW_PX (≈34px,
-   *  not LINE_PX) because padded table cells paint taller than a plain line;
-   *  the `updateDOM` `requestMeasure()` corrects any residual (R-28-10). */
+  /** header + body rows × real row height + margin chrome (`margin: 0.5em 0`
+   *  ≈ font-size). Uses the font-size-aware `tableRowPx()` (padded table cells
+   *  paint taller than a plain line) so the pre-measure estimate is close to
+   *  reality at any font size; `updateDOM` `requestMeasure()` corrects the
+   *  residual (R-28-11). */
   get estimatedHeight() {
     let rows = 1; // header
     try {
@@ -133,9 +146,9 @@ class TableWidget extends WidgetType {
     } catch {
       /* fall back to header-only */
     }
-    return rows * TABLE_ROW_PX + 15;
+    return rows * tableRowPx() + currentFontSize;
   }
-  toDOM(view: EditorView) {
+  toDOM() {
     let data: ParsedTable;
     try {
       data = JSON.parse(this.json);
@@ -172,10 +185,11 @@ class TableWidget extends WidgetType {
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
-    // Request a re-measure immediately after the initial mount so CodeMirror
-    // reconciles block heights against the real painted DOM on the next frame
-    // (R-28-10). The measure runs after the DOM is inserted into the tree.
-    view.requestMeasure();
+    // Do NOT requestMeasure here: toDOM runs *inside* CodeMirror's measure
+    // cycle, so re-requesting a measure pushes height reconciliation to the next
+    // frame and leaves `posAtCoords` stale for that frame (the click-drift bug).
+    // The font-size-aware estimatedHeight gets us close on first paint; the
+    // residual is reconciled by updateDOM on the next update (R-28-11).
     return table;
   }
   /** Called when the widget DOM already exists in the tree (update path).
@@ -209,13 +223,18 @@ class DetailsWidget extends WidgetType {
   eq(other: DetailsWidget) {
     return other.summary === this.summary && JSON.stringify(other.body) === JSON.stringify(this.body);
   }
-  /** Closed ≈ 1 line; open ≈ summary + body lines. The accordion can change
-   *  height at runtime (toggle) — `toDOM` requests a re-measure so CodeMirror
-   *  re-reconciles block heights after the user opens/closes it. */
+  /** Closed ≈ 1 summary line; open ≈ summary + every body line. Body lines paint
+   *  at `line-height: 1.4` plus 2px vertical padding (media/editor.css), the
+   *  summary at `line-height: 1.4`. Scaling with `currentFontSize` keeps the
+   *  estimate accurate at any font size *and* reflects the real open-state body
+   *  height — the previous hard-coded LINE_PX(22) under-counted open accordions
+   *  and drifted clicks below them (R-28-11). The `toggle` listener requests a
+   *  re-measure when the user opens/closes it at runtime. */
   get estimatedHeight() {
-    const open = openDetails.has(this.summary);
-    const lines = open ? 1 + this.body.length : 1;
-    return lines * LINE_PX + 4;
+    const summaryPx = Math.round(currentFontSize * 1.4) + 2;
+    if (!openDetails.has(this.summary)) return summaryPx + 2;
+    const bodyLinePx = Math.round(currentFontSize * 1.4) + 2; // line-height 1.4 + 2px padding
+    return summaryPx + this.body.length * bodyLinePx + 2;
   }
   toDOM(view: EditorView) {
     const details = document.createElement('details');
@@ -259,10 +278,11 @@ class DetailsWidget extends WidgetType {
       else openDetails.delete(this.summary);
       view.requestMeasure();
     });
-    // Request a re-measure immediately after the initial mount so CodeMirror
-    // reconciles block heights against the real painted DOM on the next frame
-    // (R-28-10). The measure runs after the DOM is inserted into the tree.
-    view.requestMeasure();
+    // Do NOT requestMeasure here: toDOM runs inside CodeMirror's measure cycle,
+    // so re-requesting defers reconciliation a frame and leaves `posAtCoords`
+    // stale (click-drift). The font-size-aware, open-state-aware estimatedHeight
+    // gets the first paint close; updateDOM reconciles the residual, and the
+    // `toggle` listener above handles runtime open/close (R-28-11).
     return details;
   }
   /** Called when the widget DOM already exists in the tree (update path).
