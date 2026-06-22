@@ -4,6 +4,13 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.14.2 — チェックボックス CSS の視認性改善 (2026-06-23)
+
+### 修正
+
+- **未チェックボックスの枠が一部テーマで透明・淡すぎて見えない問題を修正（R-08-08 改訂、CSS のみ）。** `.cm-lp-task-checkbox` の `border` を `1px solid var(--vscode-input-border, …)` から `1.5px solid var(--vscode-checkbox-border, #767676)` へ変更した。`--vscode-input-border` はチェックボックス専用変数ではなくテーマによって透明になり得るため削除し、チェックボックス専用の `--vscode-checkbox-border` を優先する。フォールバックを WCAG AA 対応の `#767676` にしたことで、変数未定義のテーマでも枠が確実に視認できる。枠幅を 1px → 1.5px に拡大し存在感を強化した（`media/editor.css`）。
+- **チェック済み本文（`.cm-lp-task-done`）の暗転色が他インライン装飾に上書きされる問題を修正（R-08-08 改訂、CSS のみ）。** `color: var(--vscode-descriptionForeground)` に `!important` を追加し、さらにより暗い `--vscode-disabledForeground` を先に参照する `var(--vscode-disabledForeground, var(--vscode-descriptionForeground, #888)) !important` に変更した。これにより、リンク色等のインライン装飾が付いたタスク本文でも取り消し線色が正しく暗転する（`media/editor.css`）。
+
 ## v1.14.1 — クリック位置ずれの根本修正／チェックボックストグル後のスクロールジャンプ修正 (2026-06-23)
 
 ### 修正

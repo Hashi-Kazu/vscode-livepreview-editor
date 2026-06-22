@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.14.1  
+**バージョン**: 1.14.2  
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-23  
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-23 時点 / v1.14.1）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.14.1 では、ブロックウィジェットのクリック位置ずれの根本修正（`requestMeasure` を `toDOM` ではなく `updateDOM` で呼ぶ方式へ変更、`TABLE_ROW_PX` 31→33・chrome 8→14px に精度向上、R-28-10 再改訂）、チェックボックス切り替え時のスクロール位置ジャンプを修正（`setText` の `dispatch` でセレクション保持、R-08-07 補完）を行う。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-06-23 時点 / v1.14.2）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.14.2 では、チェックボックス CSS の視認性改善（未チェック枠を `1.5px solid var(--vscode-checkbox-border, #767676)` へ変更しテーマ透明問題を解消、R-08-08 改訂）、チェック済み本文色に `!important` を追加して他インライン装飾の上書きを防止（R-08-08 改訂）を行う。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -167,7 +167,7 @@
 - ■■■ R-08-03 カーソル行では `- [ ]` の生記法を表示すること（チェックボックス置換を行わない）。
 - ■■■ R-08-04 インデントされたネストタスクも検知し、インデントレベルを属性 `indent` に保持すること。
 - ■■□ R-08-06 タスク行（`.cm-lp-task`）の本文はリンク色・下線を継承せず、本文（`var(--vscode-editor-foreground)`）色・下線なしで表示すること（MAIO プレビュー同様）。本文中の実リンク（`.cm-lp-link`）は従来どおりリンク装飾を保持すること。
-- ■■□ R-08-08 チェックボックスウィジェットの外観を CSS のみで次のとおりにすること（DOM・クラス名は不変）。未チェック（`.cm-lp-task-checkbox`）はテーマ追従の暗い角丸四角とし、`border-radius: 4px`・塗り `var(--vscode-input-background, var(--vscode-editorWidget-background, #2b2b2b))`・枠 `1px solid var(--vscode-input-border, var(--vscode-checkbox-border, #555))` とする。チェック済み（`.cm-lp-task-checkbox-checked`）は**固定の赤** `background: #e5484d; border-color: #e5484d;` とし、チェックマーク（`::after`）は**白固定** `border-color: #fff`（回転四角コーナー形状を維持し、位置・サイズを角丸四角の中央に視覚的に収まるよう調整）とする。
+- ■■□ R-08-08 チェックボックスウィジェットの外観を CSS のみで次のとおりにすること（DOM・クラス名は不変）。未チェック（`.cm-lp-task-checkbox`）はテーマ追従の暗い角丸四角とし、`border-radius: 4px`・塗り `var(--vscode-input-background, var(--vscode-editorWidget-background, #2b2b2b))`・枠 `1.5px solid var(--vscode-checkbox-border, #767676)` とする（`--vscode-checkbox-border` はチェックボックス専用変数を優先し、フォールバックは WCAG AA 対応の `#767676`。`--vscode-input-border` は使用しない）。チェック済み（`.cm-lp-task-checkbox-checked`）は**固定の赤** `background: #e5484d; border-color: #e5484d;` とし、チェックマーク（`::after`）は**白固定** `border-color: #fff`（回転四角コーナー形状を維持し、位置・サイズを角丸四角の中央に視覚的に収まるよう調整）とする。完了タスクの本文色（`.cm-lp-task-done` の `color`）は `var(--vscode-disabledForeground, var(--vscode-descriptionForeground, #888)) !important` とし、`!important` によって他インライン装飾（リンク色等）による上書きを防ぐこと。
 
 ###### ＜操作＞
 

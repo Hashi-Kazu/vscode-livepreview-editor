@@ -211,7 +211,7 @@ table.cm-lp-table tr:nth-child(2n) td {
   height: 1em;
   margin: 0 8px 0 0;
   vertical-align: -0.15em;
-  border: 1px solid var(--vscode-input-border, var(--vscode-checkbox-border, #555));
+  border: 1.5px solid var(--vscode-checkbox-border, #767676);
   border-radius: 4px;
   background: var(--vscode-input-background, var(--vscode-editorWidget-background, #2b2b2b));
   cursor: pointer;
@@ -238,7 +238,7 @@ table.cm-lp-table tr:nth-child(2n) td {
 }
 .cm-lp-task-done {
   text-decoration: line-through;
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground, #888)) !important;
 }
 
 .cm-lp-strike {
