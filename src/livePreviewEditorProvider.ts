@@ -65,6 +65,14 @@ export class LivePreviewEditorProvider implements vscode.CustomTextEditorProvide
     const targetViewType = target === 'live' ? LivePreviewEditorProvider.viewType : 'default';
     const fromFlavor = target === 'live' ? 'source' : 'live';
 
+    // dirty なら内容を退避してリバート → ステールタブがクリーンになりダイアログを防ぐ。
+    // この時点ではまだ旧エディタがアクティブなので revertFile は正しいファイルに作用する。
+    const doc = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
+    const dirtyContent = doc?.isDirty ? doc.getText() : undefined;
+    if (dirtyContent !== undefined) {
+      await vscode.commands.executeCommand('workbench.action.revertFile');
+    }
+
     await vscode.commands.executeCommand('vscode.openWith', uri, targetViewType, {
       viewColumn: vscode.ViewColumn.Active,
     });
@@ -86,6 +94,29 @@ export class LivePreviewEditorProvider implements vscode.CustomTextEditorProvide
     if (staleTab && staleTab !== activeTab) {
       const stillOpen = vscode.window.tabGroups.all.some((g) => g.tabs.includes(staleTab));
       if (stillOpen) await vscode.window.tabGroups.close(staleTab);
+    }
+
+    // ダーティだった内容を新エディタに書き戻す（ディスクには保存しない）。
+    if (dirtyContent !== undefined) {
+      const freshDoc = vscode.workspace.textDocuments.find(
+        (d) => d.uri.toString() === uri.toString(),
+      );
+      if (freshDoc) {
+        const edit = new vscode.WorkspaceEdit();
+        const fullRange = new vscode.Range(
+          0,
+          0,
+          freshDoc.lineCount - 1,
+          freshDoc.lineAt(freshDoc.lineCount - 1).text.length,
+        );
+        edit.replace(freshDoc.uri, fullRange, dirtyContent);
+        const ok = await vscode.workspace.applyEdit(edit);
+        if (!ok) {
+          vscode.window.showErrorMessage(
+            '編集内容の復元に失敗しました。Ctrl+Z で元に戻せる場合があります。',
+          );
+        }
+      }
     }
   }
 

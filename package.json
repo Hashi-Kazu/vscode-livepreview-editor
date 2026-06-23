@@ -2,7 +2,7 @@
   "name": "vscode-livepreview-editor",
   "displayName": "Markdown ライブプレビューエディタ",
   "description": "Obsidian ライクな Markdown ライブプレビュー編集エディタ (CodeMirror 6)",
-  "version": "1.17.1",
+  "version": "1.17.2",
   "publisher": "Hashi-Kazu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -49,7 +49,10 @@
         "command": "livePreview.openWith",
         "title": "Live Preview エディタで開く",
         "category": "Live Preview",
-        "icon": "$(eye)"
+        "icon": {
+          "light": "./media/icon.png",
+          "dark": "./media/icon.png"
+        }
       },
       {
         "command": "livePreview.toggleSource",
