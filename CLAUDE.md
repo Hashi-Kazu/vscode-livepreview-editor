@@ -101,6 +101,10 @@ dist/             # ビルド出力（自動生成）
 - フェーズ／バージョン完了ごとに `package.json` の version を上げ、`releases/CHANGELOG.md` に変更点を追記する。
 - **Marketplace への自動公開が設定済み**。`main` ブランチへ push すると GitHub Actions（`.github/workflows/publish.yml`）が起動し、ビルド・テスト・VSIX 生成・Marketplace 公開まで自動実行される。`publisher` は commit〜push まで担当し、以降は CI が引き継ぐ。
 
+## アーキテクチャ判断
+
+重要な設計判断は `docs/adr/` に記録されている。新機能実装や既存コードの変更前に、関連する ADR を確認すること。
+
 ## 注意事項
 
 - Webview バンドル（`dist/webview.js`）は CodeMirror を含むため約 0.5MB と大きいが正常。
