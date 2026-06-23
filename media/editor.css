@@ -14,7 +14,7 @@ body {
 
 #editor {
   height: 100vh;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .cm-editor {

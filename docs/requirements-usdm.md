@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.15.0  
+**バージョン**: 1.16.0  
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-23  
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-23 時点 / v1.15.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.15.0 では、ブロックウィジェット直下のクリック位置ずれを根本修正（`toDOM` の `requestMeasure` 撤去・`estimatedHeight` をフォントサイズ／開閉状態依存へ動的化・テーブルセル `line-height` 固定、R-28-10 再定義／R-28-11 新規）、上下矢印がテーブル／アコーディオンをまたぐ際の複数行ジャンプを修正（`ArrowUp`/`ArrowDown` カスタムコマンドで 1 ソース行ずつ着地、R-28-12 新規）の 2 件を修正。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-06-23 時点 / v1.16.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.15.0 では、ブロックウィジェット直下のクリック位置ずれを根本修正（`toDOM` の `requestMeasure` 撤去・`estimatedHeight` をフォントサイズ／開閉状態依存へ動的化・テーブルセル `line-height` 固定、R-28-10 再定義／R-28-11 新規）、上下矢印がテーブル／アコーディオンをまたぐ際の複数行ジャンプを修正（`ArrowUp`/`ArrowDown` カスタムコマンドで 1 ソース行ずつ着地、R-28-12 新規）の 2 件を修正。v1.16.0 では、スクロール後のクリック位置ずれを根本修正（`#editor { overflow: hidden }` で二重スクロールコンテナを解消し `.cm-scroller` を唯一のスクロール所有者に一本化、R-28-13 新規）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -349,3 +349,4 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **estimatedHeight 主導**とし（R-28-11 で再定義）、`toDOM` 内では `view.requestMeasure()` を**呼ばない**こと（`toDOM` は CodeMirror の measure サイクル内で実行されるため、ここで再 measure を要求すると高さ確定が次フレームへ遅れ、その間 `posAtCoords` が旧値のままクリックずれを生む）。更新パスの `updateDOM(_dom, view)` でのみ `view.requestMeasure()` を呼び（`return true` で既存 DOM を再利用）、初回描画は `estimatedHeight` で実態に近づける。`DetailsWidget` は開閉で高さが変わるため、`toggle` イベントリスナー内でも `view.requestMeasure()` を呼ぶこと（toggle は measure サイクル外・DOM がツリー内にあるタイミングのため有効）。
 - ■■□ R-28-11 ブロックウィジェットの `get estimatedHeight()` は**現在のフォントサイズ**（ホストの `fontSize` 設定。既定 14px。`setFontSize` で webview の装飾層へ同期）と、アコーディオンの**開閉状態**を反映した値を返し、measure 確定前でもブロック直下のクリック位置が一致すること。具体的には、プレーン行高は `fontSize × 1.6`、テーブル行高は `fontSize × 0.95 × 1.6 + 13`（セル `padding: 6px 13px` の縦 12px＋border 1px）として、テーブル＝（ヘッダ 1＋本文行数）× テーブル行高＋`fontSize`（`margin: 0.5em 0`）、アコーディオン＝サマリ行（`fontSize × 1.4 + 2`）＋（開状態のみ）本文行数 ×（`fontSize × 1.4 + 2`）とすること（22/34px のハードコードは廃止）。あわせて、テーブルセルの行高を CSS で固定（`table.cm-lp-table th/td { line-height: 1.6; }`、インライン `<strong>`/`<code>`/`<em>` は `line-height/font-size: inherit`）し、セル内インライン記法（`**bold**`/`` `code` ``）や折返しで行高がブレないようにして推定と実測の乖離自体を縮めること。これによりフォントサイズ 14 以外・セル内インライン記法・details 開閉直後でもブロック直下クリックが正しい行に着地すること。
 - ■■□ R-28-12 ブロックウィジェット（テーブル・`<details>`）は `block: true` で atomic 扱いのため、上下矢印（既定の `cursorLineUp/Down`）はブロック全体を 1 ストロークでスキップし、複数ソース行を飛び越えてしまう。これを防ぐため、上下矢印用のカスタムコマンド（`ArrowUp`/`ArrowDown`、既定キーマップより優先登録）を設け、キャレットが折りたたみブロックを越える場合は**1 ソース行ずつ**隣接行へ着地させること。判定は「CodeMirror の既定の縦移動（`moveVertically`）が現在行から 2 ソース行以上ジャンプするか」で行い（折返し段落の視覚行移動は同一/隣接ソース行に留まるため誤発火しない）、該当時のみ現在行 ±1 のソース行先頭へキャレットを移す。非該当（通常移動・折返し段落内の視覚行移動）は既定キーマップにフォールバックすること。
+- ■■■ R-28-13 スクロール後にクリックしても、クリックした行に正確にカーソルが置かれること。`#editor { overflow: auto }` と CodeMirror の `.cm-scroller { overflow: auto }` が**二重スクロールコンテナ**を形成すると、`#editor.scrollTop` が増加する一方で `.cm-scroller.scrollTop` は 0 のままとなり、CodeMirror の `posAtCoords` がスクロール量ぶん座標変換をずらしてしまう（スクロールするほど同じクリック位置でもずれ量が増大する症状）。対策として `#editor` の `overflow` を `hidden` に変更し、スクロールを唯一のコンテナである `.cm-scroller` に完全委譲すること（`media/editor.css`）。

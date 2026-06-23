@@ -4,6 +4,12 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.16.0 — スクロール量依存のクリック位置ずれを根本修正 (2026-06-23)
+
+### 修正
+
+- **`#editor { overflow: hidden }` で二重スクロールコンテナを解消し、スクロール後クリック位置ずれを根本修正（R-28-13）。** `#editor { overflow: auto }` と CodeMirror が付与する `.cm-scroller { overflow: auto }` の二重スクロールコンテナが原因で、`#editor.scrollTop` が増加しても `.cm-scroller.scrollTop` は 0 のままになっていた。`posAtCoords` は `.cm-scroller.scrollTop` 基準で座標変換するため、スクロール量に比例してクリック位置がずれる症状が発生していた。`#editor` の `overflow` を `hidden` に変更することでスクロールを `.cm-scroller` に完全委譲し、`posAtCoords` の計算と実際のスクロール位置が一致するようにした（`media/editor.css` の 1 行変更のみ）。
+
 ## v1.15.2 — テーブル margin→padding 移管によるクリック位置ずれを修正 (2026-06-23)
 
 ### 修正
