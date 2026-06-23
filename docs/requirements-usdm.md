@@ -1,7 +1,7 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.16.1  
+**バージョン**: 1.16.2  
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-23  
 **ステータス**: 承認済み  
@@ -178,7 +178,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-08-02 完了タスク（`[x]`）の本文に取り消し線スタイル（`cm-lp-task-done`）を当てること。
 - ■■■ R-08-03 カーソル行では `- [ ]` の生記法を表示すること（チェックボックス置換を行わない）。
 - ■■■ R-08-04 インデントされたネストタスクも検知し、インデントレベルを属性 `indent` に保持すること。
-- ■■□ R-08-06 タスク行（`.cm-lp-task`）の本文はリンク色・下線を継承せず、本文（`var(--vscode-editor-foreground)`）色・下線なしで表示すること（MAIO プレビュー同様）。本文中の実リンク（`.cm-lp-link`）は従来どおりリンク装飾を保持すること。
+- ■■□ R-08-06 タスク行（`.cm-lp-task`）の本文はリンク色・下線を継承しないこと（`.cm-line.cm-lp-task` に `color: var(--vscode-editor-foreground); text-decoration: none` を当てる）。ただし本文中の実リンク（`.cm-lp-link`）は R-21-04 に従いリンク色・下線を表示すること（`color` の上書きをせず `.cm-lp-link` のスタイルを継承させる）。
 - ■■□ R-08-08 チェックボックスウィジェットの外観を CSS のみで次のとおりにすること（DOM・クラス名は不変）。未チェック（`.cm-lp-task-checkbox`）は `background: transparent`（エディタ背景と同化しない）・`border: 1.5px solid #888`（dark/light 両テーマで視認可能な中間グレー）・`border-radius: 4px` とする。チェック済み（`.cm-lp-task-checkbox-checked`）は**固定の赤** `background: #e5484d; border-color: #e5484d;` とし、チェックマーク（`::after`）は**白固定** `border-color: #fff`（回転四角コーナー形状を維持し、位置・サイズを角丸四角の中央に視覚的に収まるよう調整）とする。完了タスクの本文色（`.cm-lp-task-done` の `color`）は `var(--vscode-disabledForeground, var(--vscode-descriptionForeground, #888)) !important` とし、さらに `.cm-lp-task-done .cm-lp-link { color: inherit !important }` を追加してチェック済みタスク内のリンクも同じ暗転色で描画すること（`.cm-line.cm-lp-task .cm-lp-link` の明示 color による !important 上書きを防ぐ）。
 
 ###### ＜操作＞
@@ -236,15 +236,16 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-20-01 `\*` `\#` `\[` 等のエスケープは記法を発火させず、非カーソル行ではバックスラッシュを隠すこと。
 
-### R-21 オートリンク #autolink
+### R-21 オートリンク・リンク視認性 #autolink
 
-> **理由：** `<url>` 形式のオートリンクを表示・到達可能にするため。
+> **理由：** `<url>` 形式のオートリンクを表示・到達可能にするため。また、リンクの存在をユーザーが気づけるよう、常時下線で視認性を確保するため。
 
 ###### ＜表示＞
 
 - ■■■ R-21-01 `<https://…>` をリンク化し `< >` を非カーソル行で隠すこと。
 - ■■■ R-21-02 `<a@b.com>` には `mailto:` を付与すること。
 - ■■■ R-21-03 CommonMark の山括弧宛先 `[ラベル](<相対パス>)`（パスにスペースを含み得る）を開く際、`openLink`（`src/livePreviewEditorProvider.ts`）が href の外側 1 組の山括弧 `< >` のみを除去（`/^<([\s\S]*)>$/`）してから解決すること。山括弧内のスペースは保持する（`Uri.joinPath` がそのまま扱う）。`model` のパース（`LINK_RE`）は href に山括弧を残す仕様とし、除去はホスト側 `openLink` で吸収する（`data-href`/title 表示には影響させない）。全角スラッシュ `／`(U+FF0F) は実フォルダ名の一部として不変に扱うこと。
+- ■■□ R-21-04 リンク（`.cm-lp-link`）は常時下線（`text-decoration: underline`）を表示し、ホバー時も下線を維持すること。タスク行内のリンク（`.cm-line.cm-lp-task .cm-lp-link`）も同様に `.cm-lp-link` のリンク色と下線を継承して表示すること（本文色への上書きをしない）。
 
 ### R-22 表のレンダリング #table
 
@@ -344,7 +345,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
   - すべての色は `var(--vscode-*)` 変数でテーマ追従を維持し（ハードコード色禁止・フォールバックのみ可）、`.cm-lp-table-row` の `font-variant-numeric: tabular-nums` を維持する。カーソル行で生記法が見えても体裁が崩れないこと（カーソル行表示ロジックは変更しない）。
 - ■■□ R-28-06 「Markdown All in One」プレビューに体裁を寄せる追加の磨き込みを行うこと（CSS のみ／装飾ロジック不変）: ブロックコードに淡いボーダー（`border: 1px solid var(--vscode-panel-border)`）、引用に淡い背景バンド（`var(--vscode-textBlockQuote-background)`）、`<details>` アコーディオンのマーカーを小さめ・控えめ（`▶`/`▼`、`font-size: 0.8em` 目安）にし、マーカーとサマリテキストの間に余白（`margin-right: 0.4em` 目安）を設け、サマリテキストを通常ウェイト（`font-weight: 400`）にすること。チェックボックスとタスク本文の間に十分な余白を設けること。
 - ■■□ R-28-07 左右の読みやすい余白を「Markdown All in One」プレビューに寄せること（`.cm-content` のパディングを `20px 40px 24px 48px` 目安〔上 `20px`／右 `40px`／下 `24px`／左 `48px`〕とする。CodeMirror のインラインスタイル上書きを防ぐため `!important` を付与する）。見出しは行装飾のためインデントを増やさず、見出しと本文の左端が揃うこと。本文フォントは Markdown サンセリフスタックを明示指定（継承のみに頼らない）し、`font-weight: 400`（通常ウェイト）で等幅へフォールバックしないこと。
-- ■■□ R-28-08 タスク行（`.cm-line.cm-lp-task`）内のインラインリンク（`.cm-lp-task .cm-lp-link`）はリンク色・下線（hover 含む）を継承せず本文色・下線なしで描画し、`- [ ] [ラベル](URL)` 形式のチェックリストが本文テキストとして読めること（R-08-06 の補完）。
+- ■■□ R-28-08 タスク行（`.cm-line.cm-lp-task`）内のインラインリンク（`.cm-lp-task .cm-lp-link`）は R-21-04 に従いリンク色（`.cm-lp-link` の `color` を継承）と下線（hover 含む）を表示すること。`color` の上書きは行わない（R-08-06 の補完）。
 - ■■■ R-28-09 `<details>` アコーディオンは**ビューア専用**（R-27-03）のため、ブロック本文を生記法で表示する編集モードは持たない。本文・サマリのインライン記法（太字・斜体・インラインコード）は `details-block` ウィジェット側（`<summary>` は `appendInlineCell`）でのみ描画し、ブロック内カーソル時に生のマーカー（例 `**ワークパッケージ**`）が見えることはない。本文の編集は標準ソースエディタで行う。装飾は表示のみで入力文字列を変更しないこと。
 - ■■□ R-28-10 ブロックウィジェット（`TableWidget`・`DetailsWidget`）は `block: true` で挿入されるため、ブロック高さ会計と実 DOM のズレを抑え、ウィジェットより**下の行**の `posAtCoords`（クリック位置と編集位置の不一致）を防ぐこと。高さ整合は **estimatedHeight 主導**とし（R-28-11 で再定義）、`toDOM` 内では `view.requestMeasure()` を**呼ばない**こと（`toDOM` は CodeMirror の measure サイクル内で実行されるため、ここで再 measure を要求すると高さ確定が次フレームへ遅れ、その間 `posAtCoords` が旧値のままクリックずれを生む）。更新パスの `updateDOM(_dom, view)` でのみ `view.requestMeasure()` を呼び（`return true` で既存 DOM を再利用）、初回描画は `estimatedHeight` で実態に近づける。`DetailsWidget` は開閉で高さが変わるため、`toggle` イベントリスナー内でも `view.requestMeasure()` を呼ぶこと（toggle は measure サイクル外・DOM がツリー内にあるタイミングのため有効）。
 - ■■□ R-28-11 ブロックウィジェットの `get estimatedHeight()` は**現在のフォントサイズ**（ホストの `fontSize` 設定。既定 14px。`setFontSize` で webview の装飾層へ同期）と、アコーディオンの**開閉状態**を反映した値を返し、measure 確定前でもブロック直下のクリック位置が一致すること。具体的には、プレーン行高は `fontSize × 1.6`、テーブル行高は `fontSize × 0.95 × 1.6 + 13`（セル `padding: 6px 13px` の縦 12px＋border 1px）として、テーブル＝（ヘッダ 1＋本文行数）× テーブル行高＋`fontSize`（`margin: 0.5em 0`）、アコーディオン＝サマリ行（`fontSize × 1.4 + 2`）＋（開状態のみ）本文行数 ×（`fontSize × 1.4 + 2`）とすること（22/34px のハードコードは廃止）。あわせて、テーブルセルの行高を CSS で固定（`table.cm-lp-table th/td { line-height: 1.6; }`、インライン `<strong>`/`<code>`/`<em>` は `line-height/font-size: inherit`）し、セル内インライン記法（`**bold**`/`` `code` ``）や折返しで行高がブレないようにして推定と実測の乖離自体を縮めること。これによりフォントサイズ 14 以外・セル内インライン記法・details 開閉直後でもブロック直下クリックが正しい行に着地すること。

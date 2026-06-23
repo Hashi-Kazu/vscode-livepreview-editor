@@ -143,7 +143,7 @@ body {
 
 .cm-lp-link {
   color: var(--vscode-textLink-foreground);
-  text-decoration: none;
+  text-decoration: underline;
   cursor: pointer;
 }
 .cm-lp-link:hover {
@@ -221,16 +221,15 @@ table.cm-lp-table tr:nth-child(2n) td {
   color: var(--vscode-editor-foreground);
   text-decoration: none;
 }
-/* Task-list text often contains an inline link (e.g. `- [ ] [87. …](…)`); MAIO
-   renders the task label as plain body text, not as a blue underlined link.
-   Force the body color and drop the underline for links inside a task line so
-   the checklist reads as ordinary text (R-08-06 / R-28-06). */
+/* Task-list text often contains an inline link (e.g. `- [ ] [87. …](…)`); show
+   the link with the standard link color and underline so users can identify it
+   as a clickable link (R-21-04). The color is inherited from `.cm-lp-link`
+   (no override here). */
 .cm-line.cm-lp-task .cm-lp-link {
-  color: var(--vscode-editor-foreground);
-  text-decoration: none;
+  text-decoration: underline;
 }
 .cm-line.cm-lp-task .cm-lp-link:hover {
-  text-decoration: none;
+  text-decoration: underline;
 }
 
 /* Unchecked box: transparent background so it does not blend into the editor
