@@ -190,7 +190,16 @@ class TableWidget extends WidgetType {
     // frame and leaves `posAtCoords` stale for that frame (the click-drift bug).
     // The font-size-aware estimatedHeight gets us close on first paint; the
     // residual is reconciled by updateDOM on the next update (R-28-11).
-    return table;
+
+    // Wrap the table in a div so that spacing is applied as padding (not margin).
+    // `getBoundingClientRect()` excludes CSS margin but includes padding, so the
+    // wrapper's padding lets CodeMirror measure the full painted height — margin
+    // on the table itself was silently dropped from the measurement and caused
+    // clicks below the table to land one row too low (R-28-10).
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cm-lp-table-wrapper';
+    wrapper.appendChild(table);
+    return wrapper;
   }
   /** Called when the widget DOM already exists in the tree (update path).
    *  Reuse existing DOM (return true) and schedule a re-measure so CodeMirror

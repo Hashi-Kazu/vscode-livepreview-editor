@@ -163,9 +163,16 @@ body {
 }
 
 /* --- Tables (GitHub-preview look) ----------------------------------------- */
+/* Wrapper div around the <table> so spacing is applied as padding rather than
+   margin. `getBoundingClientRect()` excludes CSS margin but includes padding,
+   so moving the 0.5em spacing here lets CodeMirror measure the full painted
+   height and keep `posAtCoords` accurate for lines below the table (R-28-10). */
+.cm-lp-table-wrapper {
+  padding: 0.5em 0;
+}
 table.cm-lp-table {
   border-collapse: collapse;
-  margin: 0.5em 0;
+  /* margin removed: spacing moved to .cm-lp-table-wrapper padding (R-28-10) */
   font-size: 0.95em;
 }
 table.cm-lp-table th,
