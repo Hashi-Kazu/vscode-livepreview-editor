@@ -66,6 +66,12 @@ body {
 .cm-content ::selection {
   background: var(--vscode-editor-selectionBackground) !important;
 }
+/* Clip the selection layer to the content area so selection highlights do not
+   bleed into the left/right padding zones. Values match .cm-content padding:
+   left=48px right=40px (no vertical clip needed). */
+.cm-selectionLayer {
+  clip-path: inset(0 40px 0 48px);
+}
 
 /* --- Live-preview decoration styles --------------------------------------- */
 /* All text colors below follow VS Code theme variables (no hard-coded colors). */
