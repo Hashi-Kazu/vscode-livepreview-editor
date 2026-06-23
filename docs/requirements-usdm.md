@@ -151,6 +151,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-05-05 装飾範囲をビューポート内に限定し（`viewportWindow`）、数千行でも処理時間が上限内に収まる。
 - ■■■ R-05-06 CRLF 行末の文書でも記法検知・タスクトグルが正しく動作し、Webview 編集の反映時にファイルの EOL（CRLF）を保持して最小差分のみ適用すること（`toLF`/`fromLF`、`splitLines` の CR 除外、`toggleTaskAt` の CR 許容）。
+- ■■□ R-05-07 `buildDecorations` の `RangeSetBuilder.add()` 呼び出しは CodeMirror が要求する `(from, startSide)` 昇順を遵守すること。`MarkDecoration` の `startSide`（500000000）は `Decoration.replace` の `startSide`（499999999）より大きいため、同一 `from` では `hide`/`replaceWidget` を `mark` より前に追加すること（`sideOf` の順序を修正）。また `builder.add()` が例外をスローした場合は `onError` で報告し `Decoration.none` を返してエディタが空白になることを防ぐこと。
 
 ### R-06 設定 #settings
 

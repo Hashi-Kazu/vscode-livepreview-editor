@@ -368,18 +368,23 @@ export function buildDecorations(
     .sort((a, b) => a.s.from - b.s.from || sideOf(a.s) - sideOf(b.s) || a.idx - b.idx);
 
   const builder = new RangeSetBuilder<Decoration>();
-  for (const { s } of sorted) {
-    const deco = toDecoration(s);
-    if (!deco) continue;
-    builder.add(s.from, s.type === 'line' ? s.from : s.to, deco);
+  try {
+    for (const { s } of sorted) {
+      const deco = toDecoration(s);
+      if (!deco) continue;
+      builder.add(s.from, s.type === 'line' ? s.from : s.to, deco);
+    }
+    return builder.finish();
+  } catch (err) {
+    onError?.(err instanceof Error ? err.message : String(err));
+    return Decoration.none;
   }
-  return builder.finish();
 }
 
 function sideOf(s: DecoSpec): number {
   if (s.type === 'line') return -2;
-  if (s.type === 'mark') return -1;
-  return 0; // hide / replaceWidget
+  if (s.type === 'mark') return 0;
+  return -1; // hide / replaceWidget: startSide=499999999 < mark's startSide=500000000
 }
 
 function toDecoration(s: DecoSpec): Decoration | null {

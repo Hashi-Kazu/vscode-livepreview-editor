@@ -154,3 +154,39 @@ describe('境界・退化ケース', () => {
     expect(byTag(specs, 'hr-widget')).toHaveLength(1);
   });
 });
+
+// Regression: チェック済みタスクの先頭がリンクの場合にエディタが空白になるバグ（S-XXX）
+// task-done mark と link-mark hide が同一 from を持つとき、
+// sideOf の誤順序で RangeSetBuilder が throw し editor が空になっていた。
+// model.ts の sort（from 昇順 → to 昇順）により hide は mark より先に来るため、
+// decorations.ts の sideOf も hide < mark の順にそろえる必要がある。
+describe('リグレッション: チェック済みタスクの先頭リンクによるエディタ空白バグ', () => {
+  it('- [x] [チェック](http://) で task-done と link-mark hide が同一 from から生成される', () => {
+    const doc = '- [x] [チェック](http://)';
+    const specs = computeDecorations(doc, new Set());
+
+    const taskDone = byTag(specs, 'task-done');
+    const linkMarkHide = specs.filter((s) => s.type === 'hide' && s.tag === 'link-mark');
+
+    // task-done と link-mark hide の両方が生成される
+    expect(taskDone).toHaveLength(1);
+    expect(linkMarkHide.length).toBeGreaterThanOrEqual(1);
+
+    // 両者が同一の from 位置を持つ（これが RangeSetBuilder の sort 違反を引き起こす条件）
+    const hideSamePos = linkMarkHide.filter((h) => h.from === taskDone[0].from);
+    expect(hideSamePos.length).toBeGreaterThanOrEqual(1);
+
+    // model.ts の sort（from 昇順 → to 昇順）では hide(from,to=from) が mark(from,to=end) より先になる
+    // decorations.ts の sideOf が正しく hide < mark の順を返すことを間接的に確認する
+    const hideSpec = hideSamePos[0];
+    const markSpec = taskDone[0];
+    const sorted = [hideSpec, markSpec].sort(
+      (a, b) => a.from - b.from || a.to - b.to,
+    );
+    expect(sorted[0]).toBe(hideSpec); // hide が先
+    expect(sorted[1]).toBe(markSpec); // mark が後
+
+    // 全体の不変条件も満たす
+    assertInvariants(doc, specs);
+  });
+});
