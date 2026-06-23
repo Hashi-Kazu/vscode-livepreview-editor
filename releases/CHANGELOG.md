@@ -4,6 +4,12 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.15.2 — テーブル margin→padding 移管によるクリック位置ずれを修正 (2026-06-23)
+
+### 修正
+
+- **`TableWidget.toDOM()` でテーブルを div ラッパーに包み、`margin` を `padding` へ移管してクリック位置ずれを修正（`src/webview/decorations.ts`・`media/editor.css`）。** `getBoundingClientRect()` は CSS `margin` を含まないため、`table.cm-lp-table { margin: 0.5em 0 }` が付いた状態で CodeMirror が実測すると spacing 分（約 14px）が欠落し、ブロック高さが推定値より低くなっていた。`toDOM()` の戻り値を `div.cm-lp-table-wrapper` で包み、spacing を `padding: 0.5em 0` として wrapper に移管。`getBoundingClientRect()` は padding を含むため測定値が推定値に一致し、テーブル下のテキストへのクリックが正しい行に着地する（R-28-10）。
+
 ## v1.15.1 — テーブル行高さ推定誤差・初回 measure タイミングを修正 (2026-06-23)
 
 ### 修正
