@@ -98,8 +98,8 @@ dist/             # ビルド出力（自動生成）
 
 ## リリース運用
 
-- フェーズ／バージョン完了ごとに `package.json` の version を上げ、`vsce package` で生成した VSIX を `releases/v{version}/` に配置、`releases/CHANGELOG.md` に変更点を追記する。
-- Marketplace への公開は未設定（手動 VSIX 配布）。`publisher` は commit〜push まで担当する。
+- フェーズ／バージョン完了ごとに `package.json` の version を上げ、`releases/CHANGELOG.md` に変更点を追記する。
+- **Marketplace への自動公開が設定済み**。`main` ブランチへ push すると GitHub Actions（`.github/workflows/publish.yml`）が起動し、ビルド・テスト・VSIX 生成・Marketplace 公開まで自動実行される。`publisher` は commit〜push まで担当し、以降は CI が引き継ぐ。
 
 ## 注意事項
 
