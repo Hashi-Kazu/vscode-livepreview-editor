@@ -124,7 +124,7 @@ function linePx(): number {
  *  removing the click-position drift that `requestMeasure` alone could not fully
  *  fix mid-frame (R-28-11). */
 function tableRowPx(): number {
-  return Math.round(currentFontSize * 0.95 * 1.6) + 13;
+  return Math.ceil(currentFontSize * 0.95 * 1.6) + 13;
 }
 
 class TableWidget extends WidgetType {
@@ -135,10 +135,10 @@ class TableWidget extends WidgetType {
     return other.json === this.json && other.startLine === this.startLine;
   }
   /** header + body rows × real row height + margin chrome (`margin: 0.5em 0`
-   *  ≈ font-size). Uses the font-size-aware `tableRowPx()` (padded table cells
-   *  paint taller than a plain line) so the pre-measure estimate is close to
-   *  reality at any font size; `updateDOM` `requestMeasure()` corrects the
-   *  residual (R-28-11). */
+   *  ≈ font-size) + 1px for the border-collapse thead/tbody boundary.
+   *  Uses the font-size-aware `tableRowPx()` (padded table cells paint taller
+   *  than a plain line) so the pre-measure estimate is close to reality at any
+   *  font size; `updateDOM` `requestMeasure()` corrects the residual (R-28-11). */
   get estimatedHeight() {
     let rows = 1; // header
     try {
@@ -146,7 +146,7 @@ class TableWidget extends WidgetType {
     } catch {
       /* fall back to header-only */
     }
-    return rows * tableRowPx() + currentFontSize;
+    return rows * tableRowPx() + currentFontSize + 1;
   }
   toDOM() {
     let data: ParsedTable;

@@ -4,6 +4,14 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.15.1 — テーブル行高さ推定誤差・初回 measure タイミングを修正 (2026-06-23)
+
+### 修正
+
+- **`tableRowPx()` の `Math.round` を `Math.ceil` に変更し、行数増加による累積誤差を解消（`src/webview/decorations.ts`）。** font-size 14px では `round(21.28)=21` → `ceil(21.28)=22` となり、行ごとに 1px 過小評価されていた累積ずれが正確な推定値へ収束する。
+- **`TableWidget.estimatedHeight` の chrome に border-collapse 境界 1px を追加（`src/webview/decorations.ts`）。** `rows * tableRowPx() + currentFontSize` に `+ 1` を加え、thead/tbody 間の collapse 境界線を推定高さに計上した。
+- **`case 'init':` ブロックの `view.setState()` 直後に `requestAnimationFrame(() => view.requestMeasure())` を追加（`src/webview/main.ts`）。** 初回描画後、最初のクリック前に実高さを再測定させることで、初回 `updateDOM` が来る前でも正しい行位置を CodeMirror が把握できるようにした。
+
 ## v1.15.0 — クリック位置ずれ・上下矢印の複数行ジャンプを根本修正 (2026-06-23)
 
 ### 修正

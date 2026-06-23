@@ -349,6 +349,7 @@ window.addEventListener('message', (event) => {
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
       // Blocks start expanded; the user folds/unfolds via the ▸/▾ gutter.
       view.setState(makeState(msg.text ?? ''));
+      requestAnimationFrame(() => view.requestMeasure());
       break;
     case 'update': // external / host-side document change
       if (msg.text !== view.state.doc.toString()) setText(msg.text);
