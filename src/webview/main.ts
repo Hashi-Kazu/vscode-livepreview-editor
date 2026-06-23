@@ -308,6 +308,8 @@ function applyFontSize(size: number) {
   // Keep the decoration layer's block-height estimates in sync with the font
   // size so `posAtCoords` stays accurate below tables/accordions (R-28-11).
   setFontSize(size);
+  // フォントサイズ変更で全行の実寸が変わるため、height oracle を更新する (R-28-14)。
+  requestAnimationFrame(() => view.requestMeasure());
 }
 
 function setText(text: string) {

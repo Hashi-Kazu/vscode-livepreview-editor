@@ -4,6 +4,14 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.16.1 — 見出し・HR の margin→padding 変換によるクリック位置ずれ残存修正 (2026-06-23)
+
+### 修正
+
+- **見出し行（`.cm-line.cm-lp-h1`〜`h6`）の `margin-top`/`margin-bottom` を `padding-top`/`padding-bottom` に変換（R-28-14、`media/editor.css`）。** `getBoundingClientRect().height` は CSS `margin` を含まないため、CodeMirror の height oracle が見出し行の上下余白を計上できず、スクロール量に比例してクリック位置ずれが累積していた。R-28-10 でテーブルに対して同原則の修正（margin→padding）を行ったが、見出しと HR に同問題が残存していた。h1/h2 は `padding-bottom: 0.3em`（下余白）と `0.25em`（border-bottom 上の空き）を `0.55em` に統合。
+- **HR 行（`.cm-lp-hr-line`）の `margin: 1em 0` を `padding: 0.4em 0` に変換（R-28-14、`media/editor.css`）。** 同じ理由（margin は height oracle に計上されない）で修正。同時に余白を 1em → 0.4em に縮小し、`border-top` を 2px（透明度 0.4）→ 3px（透明度 0.5）に変更して区切り線の視認性を向上。
+- **`applyFontSize` 末尾に `requestAnimationFrame(() => view.requestMeasure())` を追加（R-28-14、`src/webview/main.ts`）。** フォントサイズ変更後に全行の実寸が変わるため、height oracle を強制更新するようにした。
+
 ## v1.16.0 — スクロール量依存のクリック位置ずれを根本修正 (2026-06-23)
 
 ### 修正
