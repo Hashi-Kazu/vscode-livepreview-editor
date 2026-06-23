@@ -157,7 +157,8 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "vscode:prepublish": "node esbuild.js --production",
-    "package": "npx --yes @vscode/vsce package"
+    "package": "npx --yes @vscode/vsce package",
+    "publish": "npx --yes @vscode/vsce publish"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
