@@ -163,10 +163,10 @@ body {
   display: block;
   /* 2px → 3px: 見やすい太さへ。不透明度も 0.4 → 0.5 に微調整。 */
   border-top: 3px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.5));
-  /* margin: 1em 0 → padding: 0.4em 0: getBoundingClientRect() は margin を含まないため
+  /* margin: 1em 0 → padding: 0.15em 0: getBoundingClientRect() は margin を含まないため
      margin を使うと height oracle が HR 行の実寸を過小評価する (R-28-14)。
-     同時に余白を 1em → 0.4em へ縮小して視覚的にも区切りが分かりやすくなるよう調整。 */
-  padding: 0.4em 0;
+     余白を 1em → 0.4em → 0.15em へ縮小して区切り線の上下の空きをさらに詰めた。 */
+  padding: 0.15em 0;
   width: 100%;
 }
 
