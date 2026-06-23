@@ -278,18 +278,18 @@ table.cm-lp-table tr:nth-child(2n) td {
   background: #e5484d;
   border-color: #e5484d;
 }
-/* White check glyph (fixed) — a rotated open square corner; left/top/size tuned
-   to sit centered in the 1em rounded box. */
+/* White check glyph (fixed) — a rotated open square corner; centered via
+   50%/translate so it stays in the box regardless of font-size or zoom. */
 .cm-lp-task-checkbox-checked::after {
   content: '';
   position: absolute;
-  left: 0.34em;
-  top: 0.12em;
+  left: 50%;
+  top: 50%;
   width: 0.26em;
   height: 0.52em;
   border: solid #fff;
   border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+  transform: translate(-50%, -60%) rotate(45deg);
 }
 .cm-lp-task-done {
   text-decoration: line-through;
