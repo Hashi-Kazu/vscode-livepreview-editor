@@ -2,14 +2,9 @@
 
 Obsidian の Live Preview に近い、Markdown ファイル用の **1 枚ビュー編集エディタ** を提供する VS Code 拡張です。記法を保持したまま見た目を装飾し、カーソルがある行では生の Markdown 記法を表示します。
 
-> ▶️ **開発継続中（v1.15.2）。** 開発中のバージョンです。
+> 🎉 **v1.17.0 を VS Code Marketplace に公開しました。**
 
 ## スクリーンショット
-
-<!-- スクリーンショット枠（正式公開時に差し替え） -->
-<!-- ![Live Preview のデモ](media/screenshot.png) -->
-
-> 📷 スクリーンショットは公開時に追加予定です。
 
 ## 特徴
 
@@ -33,8 +28,13 @@ HTML タグについては「ビューアとして正しく成立すること」
 
 ## インストール
 
-1. `releases/v1.15.2/` の VSIX を取得（または `npm run package` で生成）
-2. VS Code で `拡張機能: VSIX からのインストール...`（コマンドパレット）を実行し、`.vsix` を選択
+VS Code Marketplace から直接インストールできます。
+
+1. VS Code の拡張機能パネル（`Ctrl+Shift+X`）を開く
+2. `Markdown ライブプレビューエディタ` で検索
+3. **インストール** をクリック
+
+または、コマンドパレット（`Ctrl+Shift+P`）で `ext install Hashi-Kazu.vscode-livepreview-editor` を実行。
 
 ## 対応記法
 
