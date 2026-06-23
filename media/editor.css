@@ -66,11 +66,13 @@ body {
 .cm-content ::selection {
   background: var(--vscode-editor-selectionBackground) !important;
 }
-/* Give the selection layer an explicit width so clip-path has a non-zero box
-   to work with (contain:size would otherwise collapse it to zero).
-   Left=48px / right=40px match .cm-content padding. */
+/* .cm-layer has only left:0;top:0 in CodeMirror's base theme — width and height
+   default to 0 under contain:size. Give the selection layer explicit dimensions
+   so clip-path has a real box to work against; then clip the left/right padding
+   zones (48px / 40px match .cm-content padding). */
 .cm-selectionLayer {
   width: 100% !important;
+  height: 100% !important;
   clip-path: inset(0 40px 0 48px);
 }
 
