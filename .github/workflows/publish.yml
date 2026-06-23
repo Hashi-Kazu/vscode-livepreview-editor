@@ -2,8 +2,13 @@ name: Publish to VS Code Marketplace
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'media/**'
+      - 'package.json'
+      - 'README.md'
 
 jobs:
   publish:
@@ -34,8 +39,3 @@ jobs:
       - name: Publish to Marketplace
         run: npx @vscode/vsce publish --pat ${{ secrets.VSCE_PAT }}
 
-      - name: Upload VSIX to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: '*.vsix'
-          generate_release_notes: true
