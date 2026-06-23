@@ -254,10 +254,15 @@ table.cm-lp-table tr:nth-child(2n) td {
 
 /* Unchecked box: transparent background so it does not blend into the editor
    background; a mid-grey border (#888) is visible on both dark and light themes
-   without relying on theme variables that may be undefined (R-08-08). */
+   without relying on theme variables that may be undefined (R-08-08).
+   position: relative is set here (not only on the checked variant) so that
+   vertical-align behaves identically in both states — adding position: relative
+   only on the checked class caused the checked box to shift upward relative to
+   the text baseline (R-08-08 bugfix). */
 .cm-lp-task-checkbox {
   display: inline-block;
   box-sizing: border-box;
+  position: relative;
   width: 1em;
   height: 1em;
   margin: 0 8px 0 0;
@@ -272,7 +277,6 @@ table.cm-lp-table tr:nth-child(2n) td {
 .cm-lp-task-checkbox-checked {
   background: #e5484d;
   border-color: #e5484d;
-  position: relative;
 }
 /* White check glyph (fixed) — a rotated open square corner; left/top/size tuned
    to sit centered in the 1em rounded box. */
