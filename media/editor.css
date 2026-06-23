@@ -66,11 +66,25 @@ body {
 .cm-content ::selection {
   background: var(--vscode-editor-selectionBackground) !important;
 }
-/* Clip the selection layer to the content area so selection highlights do not
-   bleed into the left/right padding zones. Values match .cm-content padding:
-   left=48px right=40px (no vertical clip needed). */
+/* Mask the selection layer so highlights don't bleed into the left/right
+   padding zones. Uses a gradient mask so the right boundary stays relative to
+   the actual layer width (unlike clip-path inset which uses absolute pixels).
+   Left=48px / right=40px match .cm-content padding. */
 .cm-selectionLayer {
-  clip-path: inset(0 40px 0 48px);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 48px,
+    black 48px,
+    black calc(100% - 40px),
+    transparent calc(100% - 40px)
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 48px,
+    black 48px,
+    black calc(100% - 40px),
+    transparent calc(100% - 40px)
+  );
 }
 
 /* --- Live-preview decoration styles --------------------------------------- */
