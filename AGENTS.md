@@ -46,7 +46,6 @@ npm run compile   # 型チェック(tsc --noEmit) + esbuild バンドル → dis
 npm test          # Vitest（受け入れテスト）
 npm run coverage  # カバレッジ付きテスト
 npm run watch     # ウォッチビルド
-npm run package    # .vsix 生成（@vscode/vsce package）
 ```
 
 ## ディレクトリ構成
@@ -58,7 +57,7 @@ src/              # 拡張ホスト（extension.ts / livePreviewEditorProvider.t
 test/             # Vitest テスト
 docs/             # 要求仕様書（USDM形式）・アーキテクチャ・受け入れテスト
 media/            # アイコン・CSS
-releases/         # 各バージョンの VSIX と CHANGELOG
+releases/         # リリース履歴と CHANGELOG
 dist/             # ビルド出力（自動生成）
 ```
 
@@ -99,7 +98,7 @@ dist/             # ビルド出力（自動生成）
 ## リリース運用
 
 - フェーズ／バージョン完了ごとに `package.json` の version を上げ、`releases/CHANGELOG.md` に変更点を追記する。
-- **Marketplace への自動公開が設定済み**。`main` ブランチへ push すると GitHub Actions（`.github/workflows/publish.yml`）が起動し、ビルド・テスト・VSIX 生成・Marketplace 公開まで自動実行される。`publisher` は commit〜push まで担当し、以降は CI が引き継ぐ。
+- **Marketplace への自動公開が設定済み**。`main` ブランチへ push すると GitHub Actions（`.github/workflows/publish.yml`）が起動し、ビルド・テスト・Marketplace 公開まで自動実行される。`publisher` は commit〜push まで担当し、以降は CI が引き継ぐ。
 
 ## アーキテクチャ判断
 
