@@ -2,7 +2,7 @@
 
 > ▶️ **開発継続中（2026-06-23 時点 / v1.15.2）**
 >
-> v1.11.0 の開発凍結は **v1.12.0 で解除**し、開発を再開した。以降は通常どおり機能追加・変更・バグ修正を行う（すべて AGENTS.md の開発ルール＝`feature-dev` 経由）。
+> v1.11.0 の開発凍結は **v1.12.0 で解除**し、開発を再開した。以降は通常どおり機能追加・変更・バグ修正を行う（すべてこのプロジェクト指示の開発ルール＝`feature-dev` 経由）。
 >
 > **ライブ編集ポリシー（v1.12.0 〜）**:
 > - **標準 Markdown 記法**（CommonMark + GFM）= **ライブ編集対象**（カーソル行で生記法・他行で装飾表示）
@@ -94,7 +94,7 @@ dist/             # ビルド出力（自動生成）
 | `acceptance-test` | 受け入れテスト実行・ステータス `■■■` 反映 |
 | `publisher` | build＋git push |
 
-> **エージェント定義の管理**: `.Codex/agents/*.md` は `C:\Codex\_agent-templates`（正本）から同期されたコピー。**直接編集せず**、正本を編集して `_agent-templates\sync-agents.ps1` を実行すること。プロジェクト固有の事情はエージェントではなくこの AGENTS.md に書く。
+> **エージェント定義の管理**: エージェント定義（Claude Code = `.claude/agents/*.md`、Codex = `.codex/agents/*.toml`）は `C:\Claude Code\_agent-templates`（正本）から配布された同期コピー。**直接編集せず**、正本を編集して `_agent-templates\sync-agents.ps1` を実行すること（直接編集は次回同期で上書きされる）。プロジェクト固有の事情はエージェントではなく、このプロジェクト指示ファイル（`AGENTS.md`＝正本 / `CLAUDE.md` は `@AGENTS.md` で取り込み）に書く。
 
 ## リリース運用
 
