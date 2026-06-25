@@ -7,12 +7,14 @@ metadata:
 
 # ADR-0012: ビュー切り替えの単一タブ保持方式
 
-- **ステータス**: 採択済み（v1.7.0 で再定義）
+- **ステータス**: 廃止（v1.20.0、ADR-0015 により置換）
 - **確信度**: 高（src/livePreviewEditorProvider.ts:50-90・architecture.md から明示的に確認）
 
 ## コンテキスト
 
 `livePreview.toggleSource` コマンドで Live エディタ ↔ 標準テキストエディタを切り替える際、VS Code の `vscode.openWith` は Custom Editor と Standard Editor を **異なる EditorInput** として扱うため、既存タブを置き換えるのではなく新しいタブを開いてしまう。その結果、切り替えのたびにタブが増殖する問題があった。
+
+> v1.20.0 で同一タブ切り替え自体を廃止した。Live Preview は標準ソース横の editable WebviewPanel として開き、`livePreview.toggleSource` と stale tab cleanup は削除した。現行決定は ADR-0015 を参照。
 
 ## 決定
 

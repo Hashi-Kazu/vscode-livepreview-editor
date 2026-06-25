@@ -4,6 +4,17 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.20.0 — ソース横 Live Preview ビューア (2026-06-26)
+
+### 変更
+
+- **CustomTextEditorProvider／同一タブ切り替えを editable WebviewPanel 方式へ置換（R-03）。** `livePreview.openWith` は標準 Markdown ソースを閉じず、横に Live Preview ビューアを開く。異なる URI の複数ビューアを許可し、同一 URI は既存ビューアを再利用する。`customEditors` contribution と `livePreview.toggleSource`、stale tab cleanup を削除した。
+- **active editor follow を追加。** `livePreview.followActiveEditor`（既定 `true`）により、最後に操作したビューアがアクティブな Markdown ソースへ追従する。対象 URI を別ビューアが所有済みの場合は重複を作らない。
+- **文書切り替えを安全化。** Viewer ごとの operation queue で保留編集後に切り替え、binding generation で旧文書由来の遅延 message を拒否する。切り替え時にタイトル、resource roots/base、TextDocument listener を再バインドする。
+- **ソースタブ終了後の編集を維持。** `workspace.openTextDocument(uri)` で TextDocument を reveal せず再取得し、従来の CodeMirror 編集、書式、チェックボックス、リンク、Undo、IME、CRLF、最小差分同期を維持する。
+- **レンダリングエラー動作を変更（R-05-04）。** 警告のみ表示し、標準ソースエディタへ切り替えない。
+- URI 重複防止、follow 対象選択、binding generation 判定を `src/core/viewer.ts` に分離し、単体テスト定義を追加した。
+
 ## v1.19.0 — Ctrl/Cmd＋マウスホイールズーム (2026-06-25)
 
 ### 追加

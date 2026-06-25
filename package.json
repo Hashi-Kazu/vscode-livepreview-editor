@@ -2,7 +2,7 @@
   "name": "vscode-livepreview-editor",
   "displayName": "Markdown ライブプレビューエディタ",
   "description": "Obsidian ライクな Markdown ライブプレビュー編集エディタ (CodeMirror 6)",
-  "version": "1.19.0",
+  "version": "1.20.0",
   "publisher": "Hashi-Kazu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -32,18 +32,6 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
-    "customEditors": [
-      {
-        "viewType": "livePreview.markdown",
-        "displayName": "Live Preview (Markdown)",
-        "selector": [
-          {
-            "filenamePattern": "*.md"
-          }
-        ],
-        "priority": "option"
-      }
-    ],
     "commands": [
       {
         "command": "livePreview.openWith",
@@ -53,12 +41,6 @@
           "light": "./media/icon.png",
           "dark": "./media/icon.png"
         }
-      },
-      {
-        "command": "livePreview.toggleSource",
-        "title": "標準（ソース）エディタで開く",
-        "category": "Live Preview",
-        "icon": "$(code)"
       },
       {
         "command": "livePreview.format.bold",
@@ -91,43 +73,38 @@
         "command": "livePreview.format.bold",
         "key": "ctrl+b",
         "mac": "cmd+b",
-        "when": "activeCustomEditorId == livePreview.markdown"
+        "when": "activeWebviewPanelId == livePreview.viewer"
       },
       {
         "command": "livePreview.format.italic",
         "key": "ctrl+i",
         "mac": "cmd+i",
-        "when": "activeCustomEditorId == livePreview.markdown"
+        "when": "activeWebviewPanelId == livePreview.viewer"
       },
       {
         "command": "livePreview.format.strikethrough",
         "key": "ctrl+shift+x",
         "mac": "cmd+shift+x",
-        "when": "activeCustomEditorId == livePreview.markdown"
+        "when": "activeWebviewPanelId == livePreview.viewer"
       },
       {
         "command": "livePreview.format.highlight",
         "key": "ctrl+shift+h",
         "mac": "cmd+shift+h",
-        "when": "activeCustomEditorId == livePreview.markdown"
+        "when": "activeWebviewPanelId == livePreview.viewer"
       },
       {
         "command": "livePreview.format.code",
         "key": "ctrl+e",
         "mac": "cmd+e",
-        "when": "activeCustomEditorId == livePreview.markdown"
+        "when": "activeWebviewPanelId == livePreview.viewer"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "livePreview.toggleSource",
-          "when": "activeCustomEditorId == livePreview.markdown",
-          "group": "navigation"
-        },
-        {
           "command": "livePreview.openWith",
-          "when": "resourceExtname == .md && !activeCustomEditorId",
+          "when": "resourceExtname == .md",
           "group": "navigation"
         }
       ],
@@ -148,6 +125,11 @@
           "minimum": 8,
           "maximum": 40,
           "description": "エディタのフォントサイズ (px)"
+        },
+        "livePreview.followActiveEditor": {
+          "type": "boolean",
+          "default": true,
+          "description": "最後に操作した Live Preview ビューアを、アクティブな Markdown ソースエディタに追従させます。"
         }
       }
     }

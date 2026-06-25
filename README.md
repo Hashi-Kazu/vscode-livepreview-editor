@@ -2,15 +2,16 @@
 
 Obsidian の Live Preview に近い、Markdown ファイル用の **1 枚ビュー編集エディタ** を提供する VS Code 拡張です。記法を保持したまま見た目を装飾し、カーソルがある行では生の Markdown 記法を表示します。
 
-> 🎉 **v1.17.0 を VS Code Marketplace に公開しました。**
+> ▶️ **v1.20.0 開発版** — ソース横の editable Live Preview ビューアと active editor follow に対応。
 
 ## スクリーンショット
 
 ## 特徴
 
-- CodeMirror 6 を Webview に埋め込んだ `CustomTextEditorProvider` 実装
+- CodeMirror 6 を editable `WebviewPanel` に埋め込んだ実装
 - カーソル行は生記法、それ以外の行は装飾表示（Obsidian ライク）
-- Live エディター／VS Code 標準エディタ（ソース）の切り替え（同一タブ・Markdown All in One 風。独自ソースビューは持たない）
+- VS Code 標準エディタ（ソース）横の編集可能な Live Preview ビューア
+- 異なる Markdown 文書の複数ビューア、同一 URI の重複防止、アクティブソース追従
 - `<details>` アコーディオンのビューアレンダリング（`<summary>` クリックで開閉）
 - 外部ファイル変更（Git pull・他エディタ編集）を検知して再同期
 - 装飾判定ロジックを CodeMirror から分離した純粋関数として実装し、Vitest でユニットテスト
@@ -68,6 +69,7 @@ VS Code Marketplace から直接インストールできます。
 | 設定キー | 既定値 | 説明 |
 | --- | --- | --- |
 | `livePreview.fontSize` | `14` | エディタのフォントサイズ (px, 8〜40 にクランプ) |
+| `livePreview.followActiveEditor` | `true` | 最後に操作した Live Preview ビューアをアクティブな Markdown ソースへ追従 |
 
 設定変更は開いているエディタへ即時反映されます。
 
@@ -78,19 +80,19 @@ VS Code Marketplace から直接インストールできます。
 - 未終了フェンスの安全な扱い
 - IME 入力中（日本語変換中）は同期を遅延し装飾ちらつきを防止
 - 大きいファイル（数千行）では装飾範囲をビューポート内に限定
-- Webview レンダリング失敗時は VS Code 標準エディタへ自動フォールバック
+- Webview レンダリング失敗時は警告を表示し、安全な無装飾表示を維持
 - Webview の編集は最小差分で適用し、VS Code 標準の Undo/Redo 粒度を維持
 - CRLF 行末のファイルでも正しく動作し、保存時に EOL を維持
 
 ## 使い方
 
 1. 拡張をインストール
-2. `*.md` は既定で VS Code 標準テキストエディタ（ソース）で開きます。標準エディタのタイトルバーの **目アイコン**（`Live Preview エディタで開く`）で Live エディターに切り替えます。
-3. Live エディター表示中は、タイトルバーの **code アイコン**（`標準（ソース）エディタで開く`）で VS Code 標準エディタへ同一タブで戻せます。
+2. `*.md` は VS Code 標準テキストエディタ（ソース）で開きます。標準エディタのタイトルバーの **目アイコン**（`Live Preview エディタで開く`）で、編集可能な Live Preview ビューアを横に開きます。
+3. `livePreview.followActiveEditor`（既定 `true`）が有効な場合、最後に操作した Live Preview ビューアがアクティブな Markdown ソースへ追従します。同じ URI のビューアは重複作成されません。
 4. `<details>` アコーディオンは `<summary>` をクリックして開閉します（本文の編集は標準エディタで行ってください）。
-5. Live エディター表示中にリンク先（`.md`）を開くと、Live エディター状態の別タブで開きます。
+5. Live Preview 表示中にリンク先（`.md`）を開くと、その文書の Live Preview ビューアを開きます。既に開いている場合は既存ビューアを再利用します。
 
-このエディタは `option` priority で登録されているため、デフォルトのテキストエディタ（ソース表示）は置き換えません。
+Live Preview は custom editor として登録せず、標準テキストエディタ（ソース表示）を置き換えません。
 
 ## 開発
 

@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import { LivePreviewEditorProvider } from './livePreviewEditorProvider';
+import { LivePreviewViewerManager } from './livePreviewViewerManager';
 
 export function activate(context: vscode.ExtensionContext) {
-  const provider = new LivePreviewEditorProvider(context);
-  context.subscriptions.push(provider.register());
+  const manager = new LivePreviewViewerManager(context);
+  context.subscriptions.push(manager);
 
   context.subscriptions.push(
     vscode.commands.registerCommand('livePreview.openWith', (uri?: vscode.Uri) => {
@@ -12,20 +12,14 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage('開く Markdown ファイルが選択されていません。');
         return;
       }
-      provider.openLive(target);
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('livePreview.toggleSource', () => {
-      provider.toggleActiveSource();
+      void manager.openLive(target);
     }),
   );
 
   // Formatting commands (also bound to keyboard shortcuts in package.json).
   for (const kind of ['bold', 'italic', 'strikethrough', 'highlight', 'code']) {
     context.subscriptions.push(
-      vscode.commands.registerCommand(`livePreview.format.${kind}`, () => provider.runFormat(kind)),
+      vscode.commands.registerCommand(`livePreview.format.${kind}`, () => manager.runFormat(kind)),
     );
   }
 }

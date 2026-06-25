@@ -22,6 +22,7 @@ declare function acquireVsCodeApi(): VsCodeApi;
 const vscode = acquireVsCodeApi();
 
 let fontSize = 14;
+let binding = 0;
 /** True while we are applying an edit that came from the extension host, so we
  *  do not echo it straight back and create a feedback loop. */
 let applyingRemote = false;
@@ -30,11 +31,10 @@ let applyingRemote = false;
 // forbids block decorations — used by the HTML table widget — from plugins.
 let renderErrorReported = false;
 function onRenderError(message: string) {
-  // Ask the host to switch to VS Code's standard text editor (we no longer ship
-  // an in-webview source view). Report once to avoid a warning storm.
+  // Warn once through the host. The editable viewer remains open.
   if (!renderErrorReported) {
     renderErrorReported = true;
-    vscode.postMessage({ type: 'renderError', message });
+    vscode.postMessage({ type: 'renderError', message, binding });
   }
 }
 
@@ -109,7 +109,7 @@ const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
   if (!shouldEmitEdit({ docChanged: update.docChanged, composing: update.view.composing, applyingRemote })) {
     return;
   }
-  vscode.postMessage({ type: 'edit', text: update.state.doc.toString() });
+  vscode.postMessage({ type: 'edit', text: update.state.doc.toString(), binding });
 });
 
 /** Apply a pure {@link WrapResult} to the editor as one transaction. */
@@ -308,7 +308,7 @@ view.dom.addEventListener(
       try {
         const pos = view.posAtDOM(box as HTMLElement);
         const line = view.state.doc.lineAt(pos).number - 1; // 0-based
-        vscode.postMessage({ type: 'toggleTask', line });
+        vscode.postMessage({ type: 'toggleTask', line, binding });
       } catch {
         /* widget not currently mapped (mid-render); ignore this click */
       }
@@ -322,7 +322,7 @@ view.dom.addEventListener(
       if (!shouldOpenLinkOnMouseDown(event.button)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      vscode.postMessage({ type: 'openLink', href: href.getAttribute('data-href') });
+      vscode.postMessage({ type: 'openLink', href: href.getAttribute('data-href'), binding });
       return;
     }
     // Rendered <details> accordion (viewer-only). Clicking the summary toggles
@@ -459,6 +459,8 @@ window.addEventListener('message', (event) => {
   const msg = event.data;
   switch (msg.type) {
     case 'init':
+      if (typeof msg.binding === 'number') binding = msg.binding;
+      renderErrorReported = false;
       applyFontSize(msg.fontSize ?? 14);
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
       // Blocks start expanded; the user folds/unfolds via the ▸/▾ gutter.
@@ -469,6 +471,7 @@ window.addEventListener('message', (event) => {
       });
       break;
     case 'update': // external / host-side document change
+      if (msg.binding !== binding) break;
       if (msg.text !== view.state.doc.toString()) setText(msg.text);
       break;
     case 'settings':
@@ -482,3 +485,8 @@ window.addEventListener('message', (event) => {
 
 // Tell the host we are ready to receive the initial document.
 vscode.postMessage({ type: 'ready' });
+
+// The host uses the last-interacted viewer when active source editors change or
+// formatting commands are invoked after focus has returned to the source.
+window.addEventListener('focus', () => vscode.postMessage({ type: 'interacted' }));
+view.dom.addEventListener('pointerdown', () => vscode.postMessage({ type: 'interacted' }), true);
