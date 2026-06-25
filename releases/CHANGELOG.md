@@ -4,6 +4,11 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.17.5 — 選択ハイライト全消失の根本修正 (2026-06-25)
+
+### 修正
+
+- **v1.17.4 で発生したドラッグ選択ハイライト全消失の回帰を根本修正（R-28-15、`src/webview/main.ts`・`media/editor.css`）。** `.cm-selectionLayer` は `contain:size` かつ子要素が absolute 配置のため、v1.17.4 で CSS の高さ指定を削除すると used height が 0 となり、選択矩形がすべてクリップされていた。専用 `ViewPlugin` を追加し、CodeMirror の `requestMeasure` read フェーズで `EditorView.contentHeight` と対象レイヤーを取得、write フェーズで inline height を文書高へ同期する方式へ変更した。初期生成、文書・装飾・viewport の DOM 更新、geometry/doc 変更、フォント変更、表・`<details>` の再測定に追従し、同一キーで重複要求を集約する。destroy 時は付与した inline height を除去する。CSS の `width:100%` と左右余白用 `clip-path` は維持し、固定 height は指定しない。
 
 ## v1.17.4 — 長文途中以降のドラッグ選択ハイライト消失を修正 (2026-06-25)
 

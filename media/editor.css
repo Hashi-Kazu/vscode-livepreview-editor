@@ -67,10 +67,11 @@ body {
   background: var(--vscode-editor-selectionBackground) !important;
 }
 /* .cm-layer has only left:0;top:0 in CodeMirror's base theme, so give the
-   selection layer an explicit width for clip-path under contain:size. Keep its
-   height unfixed so document-coordinate selection rectangles are not clipped
-   to the viewport height; clip only the horizontal padding zones
-   (48px / 40px match .cm-content padding). */
+   selection layer an explicit width for clip-path under contain:size. Its
+   inline height is synchronized to EditorView.contentHeight by a ViewPlugin;
+   CSS must not fix it to the viewport or leave the contain:size layer at zero
+   height. Clip only the horizontal padding zones (48px / 40px match
+   .cm-content padding). */
 .cm-selectionLayer {
   width: 100% !important;
   clip-path: inset(0 40px 0 48px);

@@ -4,7 +4,7 @@
  * over `postMessage`.
  */
 import { EditorState, Transaction, StateField } from '@codemirror/state';
-import { EditorView, ViewUpdate, DecorationSet, keymap, drawSelection } from '@codemirror/view';
+import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
@@ -52,6 +52,56 @@ function livePreviewField() {
     provide: (f) => EditorView.decorations.from(f),
   });
 }
+
+const selectionLayerMeasureKey = {};
+
+/**
+ * Keep CodeMirror's absolutely positioned selection layer as tall as the
+ * document. `.cm-layer` uses `contain:size`, so the layer cannot derive a used
+ * height from its absolutely positioned selection rectangles (R-28-15).
+ */
+class SelectionLayerHeightSync {
+  private layer: HTMLElement | null = null;
+
+  constructor(private readonly view: EditorView) {
+    this.schedule();
+  }
+
+  schedule() {
+    this.view.requestMeasure({
+      key: selectionLayerMeasureKey,
+      read: (view) => ({
+        layer: view.dom.querySelector<HTMLElement>('.cm-selectionLayer'),
+        contentHeight: view.contentHeight,
+      }),
+      write: ({ layer, contentHeight }) => {
+        if (this.layer && this.layer !== layer) this.layer.style.removeProperty('height');
+        this.layer = layer;
+        if (layer) {
+          const height = `${contentHeight}px`;
+          if (layer.style.height !== height) layer.style.height = height;
+        }
+      },
+    });
+  }
+
+  update(update: ViewUpdate) {
+    if (update.docChanged || update.geometryChanged) this.schedule();
+  }
+
+  docViewUpdate() {
+    // Covers document, decoration, and viewport-driven DOM replacement,
+    // including table/details widget updates and their follow-up measurement.
+    this.schedule();
+  }
+
+  destroy() {
+    this.layer?.style.removeProperty('height');
+    this.layer = null;
+  }
+}
+
+const selectionLayerHeightPlugin = ViewPlugin.fromClass(SelectionLayerHeightSync);
 
 const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
   // Defer during IME composition / remote application to avoid flicker & loops.
@@ -217,6 +267,7 @@ function makeState(text: string): EditorState {
       // Draw CodeMirror's own cursor/selection elements so we can style the
       // caret with the VS Code cursor color (R-28-02).
       drawSelection(),
+      selectionLayerHeightPlugin,
       EditorView.theme({}),
     ],
   });
@@ -226,6 +277,10 @@ const view = new EditorView({
   state: makeState(''),
   parent: document.getElementById('editor')!,
 });
+
+function requestSelectionLayerHeightSync() {
+  view.plugin(selectionLayerHeightPlugin)?.schedule();
+}
 
 // Click routing for interactive widgets (task checkboxes, links, tables).
 //
@@ -308,8 +363,12 @@ function applyFontSize(size: number) {
   // Keep the decoration layer's block-height estimates in sync with the font
   // size so `posAtCoords` stays accurate below tables/accordions (R-28-11).
   setFontSize(size);
-  // フォントサイズ変更で全行の実寸が変わるため、height oracle を更新する (R-28-14)。
-  requestAnimationFrame(() => view.requestMeasure());
+  // Font changes invalidate both CodeMirror's height oracle and the selection
+  // layer's document-height synchronization (R-28-14 / R-28-15).
+  requestAnimationFrame(() => {
+    view.requestMeasure();
+    requestSelectionLayerHeightSync();
+  });
 }
 
 function setText(text: string) {
@@ -351,7 +410,10 @@ window.addEventListener('message', (event) => {
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
       // Blocks start expanded; the user folds/unfolds via the ▸/▾ gutter.
       view.setState(makeState(msg.text ?? ''));
-      requestAnimationFrame(() => view.requestMeasure());
+      requestAnimationFrame(() => {
+        view.requestMeasure();
+        requestSelectionLayerHeightSync();
+      });
       break;
     case 'update': // external / host-side document change
       if (msg.text !== view.state.doc.toString()) setText(msg.text);
