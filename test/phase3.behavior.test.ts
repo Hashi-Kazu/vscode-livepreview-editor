@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeDecorations, DecoSpec } from '../src/core/model';
 import { diffRange, shouldEmitEdit } from '../src/core/sync';
-import { resolveSettings, viewportWindow, DEFAULT_SETTINGS } from '../src/core/viewport';
+import { resolveSettings, viewportWindow, DEFAULT_SETTINGS, zoomFontSize } from '../src/core/viewport';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
 
@@ -60,6 +60,28 @@ describe('Phase 3: settings', () => {
     expect(resolveSettings({ fontSize: 2 }).fontSize).toBe(8);
     expect(resolveSettings({ fontSize: 999 }).fontSize).toBe(40);
     expect(resolveSettings({ fontSize: 18 }).fontSize).toBe(18);
+  });
+});
+
+describe('Phase 3: tab-local mouse-wheel zoom', () => {
+  // R-28-16: one 1px step per Ctrl/Cmd + wheel gesture.
+  it('changes exactly one pixel based on wheel direction, not magnitude', () => {
+    expect(zoomFontSize(14, -1)).toBe(15);
+    expect(zoomFontSize(14, -999)).toBe(15);
+    expect(zoomFontSize(14, 1)).toBe(13);
+    expect(zoomFontSize(14, 999)).toBe(13);
+  });
+
+  // R-28-16: the effective tab-local font size remains within 8..40px.
+  it('clamps zoom to the supported font-size range', () => {
+    expect(zoomFontSize(40, -1)).toBe(40);
+    expect(zoomFontSize(8, 1)).toBe(8);
+  });
+
+  // R-28-16: a non-gesture delta leaves the normalized size unchanged.
+  it('does not change the size for zero or invalid wheel deltas', () => {
+    expect(zoomFontSize(14, 0)).toBe(14);
+    expect(zoomFontSize(14, Number.NaN)).toBe(14);
   });
 });
 

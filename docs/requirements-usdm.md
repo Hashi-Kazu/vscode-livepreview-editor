@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.18.0
+**バージョン**: 1.19.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-25
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-25 時点 / v1.18.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.18.0 では、リンクの左クリックのみを遷移対象とし、右クリックではリンクを開かず Webview のコンテキストメニューを表示できるようにした（R-02-03／R-26-02）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-06-25 時点 / v1.19.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.19.0 では、Ctrl/Cmd＋マウスホイールによるタブローカルなフォントサイズ変更を追加した（R-28-16）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -354,3 +354,4 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-28-13 スクロール後にクリックしても、クリックした行に正確にカーソルが置かれること。`#editor { overflow: auto }` と CodeMirror の `.cm-scroller { overflow: auto }` が**二重スクロールコンテナ**を形成すると、`#editor.scrollTop` が増加する一方で `.cm-scroller.scrollTop` は 0 のままとなり、CodeMirror の `posAtCoords` がスクロール量ぶん座標変換をずらしてしまう（スクロールするほど同じクリック位置でもずれ量が増大する症状）。対策として `#editor` の `overflow` を `hidden` に変更し、スクロールを唯一のコンテナである `.cm-scroller` に完全委譲すること（`media/editor.css`）。
 - ■■■ R-28-14 見出し行（`.cm-line.cm-lp-h1`〜`h6`）と HR 行（`.cm-lp-hr-line`）の上下余白が `margin` ではなく `padding` で表現されており、CodeMirror の height oracle が正確な行高さを計測できること。`getBoundingClientRect().height` は CSS `margin` を含まないため、見出し・HR 行の `margin-top`/`margin-bottom` が height oracle に計上されず、スクロール量に比例してクリック位置ずれが累積していた（R-28-10 でテーブルに対して同原則の修正を行ったが、見出し・HR に同問題が残存していた）。対策として `media/editor.css` の見出し `margin-top: 0.8em` → `padding-top: 0.8em`・`margin-bottom: 0.3em` → `padding-bottom: 0.3em`（h1/h2 は border-bottom 上の空きを統合し `padding-bottom: 0.55em`）、HR の `margin: 1em 0` → `padding: 0.15em 0`（余白縮小も兼ねる）へ変換すること。あわせて HR の `border-top` を 2px → 3px（`rgba(127,127,127,0.5)`）に変更し視認性を高めること。`applyFontSize` の末尾で `requestAnimationFrame(() => view.requestMeasure())` を呼び、フォントサイズ変更後に全行の実寸を再測定させること（`src/webview/main.ts`）。
 - ■■■ R-28-15 ドラッグ選択範囲が左右余白にはみ出さず、かつ長文の上部・中盤・末尾やスクロール後でも確実に視認できること。`.cm-selectionLayer` は `contain:size` かつ子要素が absolute 配置のため、CSS 高さ未指定では used height が 0 となり選択矩形がすべてクリップされ、`height:100%` では viewport 高に固定され文書途中以降がクリップされる。対策として `src/webview/main.ts` の専用 `ViewPlugin` が CodeMirror の `requestMeasure` read/write フェーズを使い、read で `view.contentHeight` と対象レイヤーを取得し、write で inline `height: ${view.contentHeight}px` を同期すること。同一キーで重複 measure を集約し、初期生成、`docViewUpdate`（文書・装飾・viewport 由来の DOM 更新）、`geometryChanged` / `docChanged`、フォントサイズ変更、表・`<details>` の再測定後をカバーし、destroy 時は付与した inline height を除去すること。CSS は `width:100%` と `clip-path: inset(0 40px 0 48px)` を維持して左右余白を除外し、固定 height は指定しないこと。
+- ■■□ R-28-16 Live エディター上で Ctrl（Windows/Linux）または Cmd（macOS）を押しながらマウスホイールを操作すると、ホイール上方向で 1px 拡大、下方向で 1px 縮小すること。ホイールの `deltaY` の大きさにかかわらず 1 回の gesture につき 1px のみ変更し、有効範囲は `livePreview.fontSize` と同じ 8〜40px にクランプする。計算は CodeMirror/DOM 非依存の純粋関数 `zoomFontSize`（`src/core/viewport.ts`）で行う。変更は現在の Webview タブ内の `fontSize` 状態だけに適用し、VS Code 設定、他タブ、再度開いたタブには保存・伝播しない。通常の修飾キーなしホイールは従来どおりスクロールし、キーボードショートカットによるズームは追加しない。ズーム時はポインタ直下の文書位置と行内 Y オフセットを変更前に記録し、既存 `applyFontSize` の再計測後に `.cm-scroller.scrollTop` を補正して表示アンカーを維持すること。

@@ -14,7 +14,7 @@
 | `test/phase2.syntax.test.ts` | R-02（斜体・コード・リンク・画像・引用・コードブロック・表）、R-01-02（モデル純粋性：入力不変・決定性） |
 | `test/phase2.sync.test.ts` | R-04（diffRange・shouldResync・cursorLines） |
 | `test/phase3.edge.test.ts` | R-05-01/02/04（ネスト・誤装飾防止・フォールバック） |
-| `test/phase3.behavior.test.ts` | R-04-01（Undo round-trip）・R-05-03/05（IME・性能）・R-06-02（fontSize 設定） |
+| `test/phase3.behavior.test.ts` | R-04-01（Undo round-trip）・R-05-03/05（IME・性能）・R-06-02（fontSize 設定）・R-28-16（ホイールズーム計算） |
 | `test/feature.task.test.ts` | R-08（GFM タスク検知・完了スタイル・カーソル行・ネスト・トグル・CRLF・EOL） |
 | `test/feature.richtext.test.ts` | R-09（取消線・ハイライト） |
 | `test/robustness.combinations.test.ts` | R-01-06（語中アンダースコア）・R-05-06（CRLF）・記法組み合わせ・構造不変条件（オフセット境界・replace 非重複） |
@@ -40,3 +40,4 @@ npm run coverage  # カバレッジ確認
   - R-28-01〜03（左余白、キャレット視認、チェックボックスの確実なトグル）
   - R-26-02（標準リンクとオートリンクを左クリックすると従来どおり遷移し、右クリックでは遷移せず Webview のコンテキストメニューが表示されること）
   - R-28-15（十分にスクロールでき、表と `<details>` を含む長文を用意する。文書の上部・中盤・末尾でドラッグ選択ハイライトが表示され、スクロール後や表／`<details>` の直前・直後をまたぐ選択でも消えないこと。`livePreview.fontSize` の変更、Webview の縦横 resize、`<details>` の開閉後にも同じ位置で表示されること。いずれの状態でもハイライトが本文の左 48px・右 40px の余白へ漏れないこと。開発者ツールで `.cm-selectionLayer` の inline `style.height` が更新され、数値が `EditorView.contentHeight` 以上（丸め誤差は 1px 未満）であり、レイヤーの used height が 0 や viewport 高のままになっていないこと）
+  - R-28-16（長文を途中までスクロールし、本文上にポインタを置いて Ctrl/Cmd＋ホイールを上下へ操作する。1 gesture ごとにフォントサイズが正確に 1px 変化し、8px/40px で停止すること。ズーム後もポインタ直下の文書位置が維持され、通常ホイールは従来どおりスクロールすること。他の Live タブと `livePreview.fontSize` 設定値は変化せず、タブを閉じて再度開くと設定値へ戻ること。Ctrl/Cmd＋`+`/`-` 等のキーボードズームは追加されていないこと）

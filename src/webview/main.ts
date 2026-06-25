@@ -11,6 +11,7 @@ import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import { shouldEmitEdit } from '../core/sync';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
+import { zoomFontSize } from '../core/viewport';
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -360,7 +361,13 @@ view.dom.addEventListener(
   true, // capture phase
 );
 
-function applyFontSize(size: number) {
+interface FontSizeScrollAnchor {
+  pos: number;
+  pointerY: number;
+  offsetY: number;
+}
+
+function applyFontSize(size: number, scrollAnchor?: FontSizeScrollAnchor) {
   fontSize = size;
   (document.getElementById('editor') as HTMLElement).style.fontSize = `${size}px`;
   // Keep the decoration layer's block-height estimates in sync with the font
@@ -369,10 +376,53 @@ function applyFontSize(size: number) {
   // Font changes invalidate both CodeMirror's height oracle and the selection
   // layer's document-height synchronization (R-28-14 / R-28-15).
   requestAnimationFrame(() => {
-    view.requestMeasure();
+    view.requestMeasure({
+      read: (target) => {
+        if (!scrollAnchor) return null;
+        const coords = target.coordsAtPos(scrollAnchor.pos);
+        return coords ? coords.top + scrollAnchor.offsetY - scrollAnchor.pointerY : null;
+      },
+      write: (scrollDelta) => {
+        if (scrollDelta != null) view.scrollDOM.scrollTop += scrollDelta;
+      },
+    });
     requestSelectionLayerHeightSync();
   });
 }
+
+// Ctrl/Cmd + mouse wheel changes only this Webview tab's effective font size.
+// The host setting is not mutated, and unmodified wheel events remain entirely
+// under CodeMirror/browser control (R-28-16).
+view.dom.addEventListener(
+  'wheel',
+  (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+
+    const nextSize = zoomFontSize(fontSize, event.deltaY);
+    if (nextSize === fontSize) return;
+
+    let scrollAnchor: FontSizeScrollAnchor | undefined;
+    try {
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos != null) {
+        const coords = view.coordsAtPos(pos);
+        if (coords) {
+          scrollAnchor = {
+            pos,
+            pointerY: event.clientY,
+            offsetY: event.clientY - coords.top,
+          };
+        }
+      }
+    } catch {
+      // A transient unmapped widget should not prevent the zoom itself.
+    }
+
+    applyFontSize(nextSize, scrollAnchor);
+  },
+  { passive: false },
+);
 
 function setText(text: string) {
   const doc = view.state.doc.toString();

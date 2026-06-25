@@ -44,6 +44,17 @@ export function resolveSettings(partial?: Partial<LivePreviewSettings>): LivePre
   };
 }
 
+/**
+ * Calculate the tab-local font size for one Ctrl/Cmd + mouse-wheel gesture.
+ * Wheel magnitude is deliberately ignored so every gesture changes exactly
+ * one pixel regardless of the device's delta scale.
+ */
+export function zoomFontSize(currentSize: number, deltaY: number): number {
+  const size = clampFontSize(currentSize);
+  if (!Number.isFinite(deltaY) || deltaY === 0) return size;
+  return clampFontSize(size + (deltaY < 0 ? 1 : -1));
+}
+
 function clampFontSize(size: number): number {
   if (!Number.isFinite(size)) return DEFAULT_SETTINGS.fontSize;
   return Math.max(8, Math.min(40, Math.round(size)));
