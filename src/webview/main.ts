@@ -10,7 +10,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import { shouldEmitEdit } from '../core/sync';
 import { toggleWrap, WrapResult } from '../core/format';
-import { continueList, changeIndent, toggleHeading } from '../core/editing';
+import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -316,6 +316,9 @@ view.dom.addEventListener(
     // Standard link / autolink → open externally or as a workspace file.
     const href = el.closest('[data-href]') as HTMLElement | null;
     if (href) {
+      // Only primary-button presses navigate. In particular, leave secondary
+      // presses entirely untouched so the Webview context menu can open.
+      if (!shouldOpenLinkOnMouseDown(event.button)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       vscode.postMessage({ type: 'openLink', href: href.getAttribute('data-href') });

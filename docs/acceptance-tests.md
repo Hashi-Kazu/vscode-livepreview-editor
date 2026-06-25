@@ -20,7 +20,7 @@
 | `test/robustness.combinations.test.ts` | R-01-06（語中アンダースコア）・R-05-06（CRLF）・記法組み合わせ・構造不変条件（オフセット境界・replace 非重複） |
 | `test/feature.format.test.ts` | R-16（toggleWrap：囲む・解除・空選択・往復） |
 | `test/feature.markdown.test.ts` | R-19（水平線）・R-20（エスケープ）・R-21（オートリンク）・R-22（表のレンダリング/parseTable） |
-| `test/feature.editing.test.ts` | R-23（リスト継続）・R-24（インデント）・R-25（見出しトグル） |
+| `test/feature.editing.test.ts` | R-23（リスト継続）・R-24（インデント）・R-25（見出しトグル）・R-26-02（リンクのマウスボタン判定） |
 
 ## 実行方法
 
@@ -38,4 +38,5 @@ npm run coverage  # カバレッジ確認
   - R-03-01〜04（Live↔標準エディタの同一タブ切り替え、リンク先 `.md` の Live 別タブ起動、テキスト不変）
   - R-27-01〜03（見出しブロック折りたたみ、初期全閉、`▸`/`▾` ガター開閉）
   - R-28-01〜03（左余白、キャレット視認、チェックボックスの確実なトグル）
+  - R-26-02（標準リンクとオートリンクを左クリックすると従来どおり遷移し、右クリックでは遷移せず Webview のコンテキストメニューが表示されること）
   - R-28-15（十分にスクロールでき、表と `<details>` を含む長文を用意する。文書の上部・中盤・末尾でドラッグ選択ハイライトが表示され、スクロール後や表／`<details>` の直前・直後をまたぐ選択でも消えないこと。`livePreview.fontSize` の変更、Webview の縦横 resize、`<details>` の開閉後にも同じ位置で表示されること。いずれの状態でもハイライトが本文の左 48px・右 40px の余白へ漏れないこと。開発者ツールで `.cm-selectionLayer` の inline `style.height` が更新され、数値が `EditorView.contentHeight` 以上（丸め誤差は 1px 未満）であり、レイヤーの used height が 0 や viewport 高のままになっていないこと）

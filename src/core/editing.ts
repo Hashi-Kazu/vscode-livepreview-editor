@@ -1,10 +1,19 @@
 /**
- * Pure editing helpers for list continuation, indentation and heading toggling.
+ * Pure editing helpers for list continuation, indentation, heading toggling,
+ * and pointer-button routing.
  * No CodeMirror dependency — the webview keymap consumes the results.
  */
 
 const ULIST_LINE = /^(\s*)([-*+])(\s+)(\[[ xX]\]\s+)?(.*)$/;
 const OLIST_LINE = /^(\s*)(\d+)([.)])(\s+)(.*)$/;
+
+/**
+ * Links open only for the primary mouse button. Secondary-button presses must
+ * remain untouched so the Webview/browser context menu can be shown.
+ */
+export function shouldOpenLinkOnMouseDown(button: number): boolean {
+  return button === 0;
+}
 
 export interface ListContinuation {
   /** Whether the line is a list item at all. */

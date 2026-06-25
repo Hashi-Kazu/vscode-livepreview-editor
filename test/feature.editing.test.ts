@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { continueList, changeIndent, toggleHeading } from '../src/core/editing';
+import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../src/core/editing';
+
+// R-26-02: リンクのマウスボタン別操作
+describe('R-26-02 shouldOpenLinkOnMouseDown', () => {
+  it('左クリックだけリンク遷移を実行する', () => {
+    expect(shouldOpenLinkOnMouseDown(0)).toBe(true);
+  });
+
+  it('右クリックはリンク遷移せずコンテキストメニューへ委ねる', () => {
+    expect(shouldOpenLinkOnMouseDown(2)).toBe(false);
+  });
+
+  it('中クリックも独自リンク遷移を実行しない', () => {
+    expect(shouldOpenLinkOnMouseDown(1)).toBe(false);
+  });
+});
 
 // R-23: リスト継続入力
 describe('R-23 continueList', () => {
