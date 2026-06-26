@@ -37,7 +37,6 @@
 - `viewersByUri` が URI ごとの所有者を管理する。同一 URI の再オープンは既存パネルを reveal し、異なる URI は複数パネルを許可する。
 - パネルの active 状態と Webview の focus/pointer 操作で `lastInteractedViewerId` を更新する。書式コマンドと active editor follow はこのビューアを対象にする。
 - `livePreview.followActiveEditor`（既定 `true`）が有効なとき、アクティブな Markdown ソースへ最後に操作したビューアを再バインドする。対象 URI の所有者が既に存在する場合は重複を作らず、その所有者を維持する。ビューアがまだなければ follow だけでは新規作成しない。
-- ビューアが active だった直後に別 Markdown ソースが active になった場合だけ、`onDidChangeViewState` で記録した一回限りの復帰状態を `onDidChangeActiveTextEditor` で消費し、文書切り替え完了後に対象 `WebviewPanel.reveal(..., false)` でビューアへフォーカスを戻す。標準エディタ操作中の Markdown 切り替え、非 Markdown、同一 URI、`livePreview.followActiveEditor=false` では復帰状態を破棄する。
 
 ## 安全な文書切り替え
 

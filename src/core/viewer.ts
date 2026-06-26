@@ -13,11 +13,6 @@ export type FollowDecision =
   | { type: 'use-existing'; viewerId: string }
   | { type: 'switch'; viewerId: string };
 
-export interface PendingViewerFocusRestore {
-  viewerId: string;
-  uri: string;
-}
-
 /**
  * Pick the viewer affected by an active-editor follow event.
  *
@@ -36,20 +31,6 @@ export function decideFollow(
   if (!lastInteractedViewerId) return { type: 'none' };
   const target = viewers.find((viewer) => viewer.id === lastInteractedViewerId);
   return target ? { type: 'switch', viewerId: target.id } : { type: 'none' };
-}
-
-/**
- * Consume a one-shot focus restore request captured when a viewer was active
- * immediately before a Markdown source editor became active.
- */
-export function decideFocusRestoreViewer(
-  decision: FollowDecision,
-  targetUri: string,
-  pending: PendingViewerFocusRestore | undefined,
-): string | undefined {
-  if (!pending || pending.uri === targetUri) return undefined;
-  if (decision.type === 'none') return undefined;
-  return decision.viewerId;
 }
 
 /** Return the existing owner of a URI so callers never create a duplicate. */

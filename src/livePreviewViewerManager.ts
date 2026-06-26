@@ -1,14 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { diffRange, fromLF, shouldResync, toggleTaskAt, toLF } from './core/sync';
-import {
-  decideFocusRestoreViewer,
-  decideFollow,
-  findViewerForUri,
-  isCurrentBinding,
-  PendingViewerFocusRestore,
-  ViewerState,
-} from './core/viewer';
+import { decideFollow, findViewerForUri, isCurrentBinding, ViewerState } from './core/viewer';
 import { resolveSettings } from './core/viewport';
 
 interface ViewerBinding {
@@ -44,24 +37,14 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   private readonly viewersByUri = new Map<string, Viewer>();
   private readonly subscriptions: vscode.Disposable[] = [];
   private lastInteractedViewerId: string | undefined;
-  private activeViewerId: string | undefined;
-  private pendingFocusRestore: PendingViewerFocusRestore | undefined;
   private nextViewerId = 1;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.subscriptions.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => {
-        if (!editor || editor.document.languageId !== 'markdown') {
-          this.pendingFocusRestore = undefined;
-          return;
-        }
-        if (!this.followActiveEditorEnabled()) {
-          this.pendingFocusRestore = undefined;
-          return;
-        }
-        const focusRestore = this.pendingFocusRestore;
-        this.pendingFocusRestore = undefined;
-        void this.followActiveEditor(editor.document.uri, focusRestore);
+        if (!editor || editor.document.languageId !== 'markdown') return;
+        if (!this.followActiveEditorEnabled()) return;
+        void this.followActiveEditor(editor.document.uri);
       }),
     );
   }
@@ -124,16 +107,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       this.handleMessage(viewer, message);
     });
     viewer.viewStateSubscription = panel.onDidChangeViewState((event) => {
-      if (event.webviewPanel.active) {
-        this.activeViewerId = viewer.id;
-        this.markInteracted(viewer);
-      } else if (this.activeViewerId === viewer.id) {
-        this.pendingFocusRestore = {
-          viewerId: viewer.id,
-          uri: viewer.binding.key,
-        };
-        this.activeViewerId = undefined;
-      }
+      if (event.webviewPanel.active) this.markInteracted(viewer);
     });
     viewer.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('livePreview.fontSize')) return;
@@ -154,7 +128,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
     switch (message?.type) {
       case 'ready':
-        void this.postInit(viewer);
+        this.postInit(viewer);
         break;
       case 'edit':
         this.enqueue(viewer, async () => {
@@ -224,37 +198,22 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     await vscode.workspace.applyEdit(edit);
   }
 
-  private async followActiveEditor(
-    uri: vscode.Uri,
-    pendingFocusRestore?: PendingViewerFocusRestore,
-  ): Promise<void> {
-    const targetKey = uri.toString();
+  private async followActiveEditor(uri: vscode.Uri): Promise<void> {
     const decision = decideFollow(
       this.viewerStates(),
-      targetKey,
+      uri.toString(),
       this.lastInteractedViewerId,
     );
-    const restoreViewerId = decideFocusRestoreViewer(decision, targetKey, pendingFocusRestore);
     if (decision.type === 'none') return;
     if (decision.type === 'use-existing') {
       const existing = this.viewers.get(decision.viewerId);
-      if (existing) {
-        this.markInteracted(existing);
-        if (restoreViewerId === existing.id) {
-          existing.panel.reveal(existing.panel.viewColumn, false);
-        }
-      }
+      if (existing) this.markInteracted(existing);
       return;
     }
 
     const viewer = this.viewers.get(decision.viewerId);
     if (!viewer) return;
-    this.enqueue(viewer, async () => {
-      await this.switchDocument(viewer, uri);
-      if (restoreViewerId === viewer.id && viewer.binding.key === targetKey) {
-        viewer.panel.reveal(viewer.panel.viewColumn, false);
-      }
-    });
+    this.enqueue(viewer, async () => this.switchDocument(viewer, uri));
   }
 
   /**
@@ -281,7 +240,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     this.viewersByUri.set(targetKey, viewer);
     viewer.panel.title = this.titleFor(uri);
     this.configureWebview(viewer.panel.webview, uri);
-    await this.postInit(viewer);
+    this.postInit(viewer);
   }
 
   private createBinding(
@@ -321,27 +280,29 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     return binding;
   }
 
-  private async postInit(viewer: Viewer): Promise<void> {
+  private postInit(viewer: Viewer): void {
     const { binding, panel } = viewer;
-    try {
-      const document = await vscode.workspace.openTextDocument(binding.uri);
-      if (viewer.binding !== binding) return;
-      binding.webviewText = toLF(document.getText());
-      const resourceBase = panel.webview
-        .asWebviewUri(vscode.Uri.joinPath(binding.uri, '..'))
-        .toString();
-      await panel.webview.postMessage({
-        type: 'init',
-        text: binding.webviewText,
-        fontSize: this.currentFontSize(),
-        resourceBase,
-        binding: binding.generation,
-      });
-    } catch (error) {
-      vscode.window.showWarningMessage(
-        `Live Preview の文書を読み込めませんでした: ${String(error)}`,
-      );
-    }
+    void vscode.workspace.openTextDocument(binding.uri).then(
+      (document) => {
+        if (viewer.binding !== binding) return;
+        binding.webviewText = toLF(document.getText());
+        const resourceBase = panel.webview
+          .asWebviewUri(vscode.Uri.joinPath(binding.uri, '..'))
+          .toString();
+        void panel.webview.postMessage({
+          type: 'init',
+          text: binding.webviewText,
+          fontSize: this.currentFontSize(),
+          resourceBase,
+          binding: binding.generation,
+        });
+      },
+      (error) => {
+        vscode.window.showWarningMessage(
+          `Live Preview の文書を読み込めませんでした: ${String(error)}`,
+        );
+      },
+    );
   }
 
   private configureWebview(webview: vscode.Webview, uri: vscode.Uri): void {
@@ -358,7 +319,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private markInteracted(viewer: Viewer): void {
     this.lastInteractedViewerId = viewer.id;
-    if (viewer.panel.active) this.activeViewerId = viewer.id;
   }
 
   private disposeViewer(viewer: Viewer): void {
@@ -374,8 +334,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     if (this.lastInteractedViewerId === viewer.id) {
       this.lastInteractedViewerId = [...this.viewers.keys()].at(-1);
     }
-    if (this.activeViewerId === viewer.id) this.activeViewerId = undefined;
-    if (this.pendingFocusRestore?.viewerId === viewer.id) this.pendingFocusRestore = undefined;
   }
 
   private viewerStates(): ViewerState[] {

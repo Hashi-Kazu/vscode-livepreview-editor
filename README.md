@@ -2,7 +2,7 @@
 
 Obsidian の Live Preview に近い、Markdown ファイル用の **1 枚ビュー編集エディタ** を提供する VS Code 拡張です。記法を保持したまま見た目を装飾し、カーソルがある行では生の Markdown 記法を表示します。
 
-> ▶️ **v1.21.0 開発版** — ビューア操作中に別 Markdown へ切り替えた場合だけ、追従後にビューアへフォーカス復帰。
+> ▶️ **v1.20.0 開発版** — ソース横の editable Live Preview ビューアと active editor follow に対応。
 
 ## スクリーンショット
 
