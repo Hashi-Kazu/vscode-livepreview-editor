@@ -4,6 +4,13 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.22.1 — Live Preview 編集後の遅延保存 (2026-06-26)
+
+### 修正
+
+- Live Preview ビューアからの編集は `WorkspaceEdit` を即時適用したまま、適用成功後のみ 500ms debounce で `document.save()` するように変更した。保存時は `workspace.openTextDocument(binding.uri)` で現在の TextDocument を再取得し、標準ソースエディタを表示しない。
+- 差分なし、`workspace.applyEdit` の false/失敗時は保存しない。文書切り替え前とビューア破棄時は保留保存を flush し、URI/generation が変わった旧バインドを保存しない。
+
 ## v1.22.0 — Marketplace 再公開用バージョン更新 (2026-06-26)
 
 ### 変更

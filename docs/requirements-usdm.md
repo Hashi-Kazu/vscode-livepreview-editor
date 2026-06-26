@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.22.0
+**バージョン**: 1.22.1
 **作成日**: 2026-06-21  
 **最終更新**: 2026-06-26
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-26 時点 / v1.22.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.22.0 では、Live Preview をソース横の編集可能な WebviewPanel ビューアへ変更し、アクティブエディタ追従と複数文書ビューアを追加した（R-03）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-06-26 時点 / v1.22.1）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.22.1 では、Live Preview からの編集適用後に 500ms debounce で保存し、ソースタブ終了後の編集結果をファイルへ確実に反映する（R-03-08）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -127,7 +127,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
 - ■■□ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、標準ソースエディタを表示しないこと。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、標準ソースエディタを表示しないこと。Webview 編集および `toggleTask` は `WorkspaceEdit` を即時適用し、適用成功後のみ現在のバインドの TextDocument を再取得して 500ms debounce で `document.save()` すること。差分なし、`workspace.applyEdit` の false/失敗時は保存しないこと。文書切り替え前とビューア破棄時は保留保存を flush し、URI または世代が変わった旧バインドを保存しないこと。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
 
 ### R-04 ドキュメント同期 #sync

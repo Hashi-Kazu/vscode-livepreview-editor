@@ -17,10 +17,16 @@ interface Viewer {
   panel: vscode.WebviewPanel;
   binding: ViewerBinding;
   operationQueue: Promise<void>;
+  pendingSave?: PendingSave;
   messageSubscription?: vscode.Disposable;
   viewStateSubscription?: vscode.Disposable;
   configSubscription?: vscode.Disposable;
   disposeSubscription?: vscode.Disposable;
+}
+
+interface PendingSave {
+  binding: ViewerBinding;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -195,7 +201,30 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       ),
       diff.newText,
     );
-    await vscode.workspace.applyEdit(edit);
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (!applied || viewer.binding !== binding) return;
+    this.scheduleSave(viewer, binding);
+  }
+
+  private scheduleSave(viewer: Viewer, binding: ViewerBinding): void {
+    if (viewer.pendingSave?.timer) clearTimeout(viewer.pendingSave.timer);
+    const pending: PendingSave = { binding };
+    pending.timer = setTimeout(() => {
+      this.enqueue(viewer, async () => this.flushPendingSave(viewer, binding));
+    }, 500);
+    viewer.pendingSave = pending;
+  }
+
+  private async flushPendingSave(viewer: Viewer, binding = viewer.pendingSave?.binding): Promise<void> {
+    const pending = viewer.pendingSave;
+    if (!pending || pending.binding !== binding) return;
+    if (pending.timer) clearTimeout(pending.timer);
+    viewer.pendingSave = undefined;
+    if (viewer.binding !== pending.binding) return;
+
+    const document = await vscode.workspace.openTextDocument(pending.binding.uri);
+    if (viewer.binding !== pending.binding) return;
+    await document.save();
   }
 
   private async followActiveEditor(uri: vscode.Uri): Promise<void> {
@@ -227,6 +256,8 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     if (owner && owner !== viewer) {
       return;
     }
+
+    await this.flushPendingSave(viewer, viewer.binding);
 
     const document = await vscode.workspace.openTextDocument(uri);
     if (document.languageId !== 'markdown') return;
@@ -322,6 +353,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   }
 
   private disposeViewer(viewer: Viewer): void {
+    const binding = viewer.binding;
+    void viewer.operationQueue
+      .then(() => this.flushPendingSave(viewer, binding))
+      .catch((error) => console.error('Live Preview viewer save flush failed', error));
     viewer.binding.changeSubscription.dispose();
     viewer.messageSubscription?.dispose();
     viewer.viewStateSubscription?.dispose();

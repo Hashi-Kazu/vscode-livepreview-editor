@@ -10,7 +10,7 @@
 │ src/extension.ts                                    │
 │ src/livePreviewViewerManager.ts                     │
 │ - editable WebviewPanel の生成・URI 重複防止          │
-│ - TextDocument 再取得・最小差分 WorkspaceEdit        │
+│ - TextDocument 再取得・最小差分 WorkspaceEdit・遅延保存 │
 │ - active text editor follow・文書再バインド           │
 └───────────────────────┬─────────────────────────────┘
                         │ init/update/edit/openLink/…
@@ -40,7 +40,7 @@
 
 ## 安全な文書切り替え
 
-各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` 完了後に実行される。
+各 Viewer は `operationQueue` を持ち、Webview 編集、遅延保存、文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` 完了後、かつ保留中の保存を flush した後に実行される。
 
 各文書バインドには単調増加する `generation` を付ける。Webview は `edit`、`toggleTask`、`openLink`、`renderError` に現在の generation を付与し、ホストは現在値と異なる遅延メッセージを拒否する。切り替え時は次を一括して更新する。
 
@@ -54,7 +54,7 @@
 
 Webview 編集のたびに `workspace.openTextDocument(uri)` で対象を取得する。この API は文書をロードするがエディタを reveal しないため、標準ソースタブを閉じた後も Live Preview から編集できる。
 
-編集は `diffRange` で最小差分を計算し、文書 EOL に `fromLF` で戻して `WorkspaceEdit.replace` を 1 回適用する。これにより Undo 粒度、CRLF、IME 抑制、外部変更との echo 判定を従来どおり維持する。
+編集は `diffRange` で最小差分を計算し、文書 EOL に `fromLF` で戻して `WorkspaceEdit.replace` を 1 回適用する。これにより Undo 粒度、CRLF、IME 抑制、外部変更との echo 判定を従来どおり維持する。`WorkspaceEdit` は即時適用し、保存だけを適用成功後に 500ms debounce する。保存時も `workspace.openTextDocument(binding.uri)` で現在の TextDocument を再取得し、文書切り替え・ビューア破棄時は保留保存を flush する。旧 URI/generation のバインドは保存しない。
 
 ## Webview 描画
 
