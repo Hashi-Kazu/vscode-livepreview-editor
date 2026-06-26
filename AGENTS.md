@@ -1,110 +1,63 @@
 # vscode-livepreview-editor
 
-> ▶️ **開発継続中（2026-06-23 時点 / v1.15.2）**
->
-> v1.11.0 の開発凍結は **v1.12.0 で解除**し、開発を再開した。以降は通常どおり機能追加・変更・バグ修正を行う（すべてこのプロジェクト指示の開発ルール＝`feature-dev` 経由）。
->
-> **ライブ編集ポリシー（v1.12.0 〜）**:
-> - **標準 Markdown 記法**（CommonMark + GFM）= **ライブ編集対象**（カーソル行で生記法・他行で装飾表示）
-> - **HTML タグ**（`<details>` アコーディオン等）= **ビューア専用**（常にウィジェット描画。ビューアとして正しく成立すればよい。編集は標準ソースエディタで）
->
-> v1.15.0〜v1.15.2 の主な内容:
-> - ブロックウィジェット直下のクリック位置ずれを根本修正（`toDOM` の `requestMeasure` 撤去・`estimatedHeight` 動的化・テーブルセル `line-height` 固定。R-28-10／R-28-11）
-> - 上下矢印がテーブル／アコーディオンをまたぐ際の複数行ジャンプを修正（`ArrowUp`/`ArrowDown` カスタムコマンド。R-28-12）
->
-> v1.12.0〜v1.14.x の主な内容:
-> - 表・`<details>` アコーディオンを**ビューア専用化**（R-22-02／R-27-03 再定義、R-28-09）
-> - アコーディオンの開閉状態を summary キーで保持（R-27-02）
-> - チェックボックス ON/OFF のホスト→Webview 反映を修正（R-08-07）
-> - 相対パスリンクの山括弧宛先 `[ラベル](<…>)` を `openLink` で除去（R-21-03）
-> - 本文余白を `20px 40px 24px 48px` へ調整（R-28-07）
->
-> 以前の主な内容（v1.7.0〜v1.11.0）:
-> - 表セルのインライン記法（太字・斜体・インラインコード）描画（R-22-03、`appendInlineCell`）
-> - ビュー切り替えを同一タブ内の再描画方式へ変更（保存確認ダイアログを出さない、R-03 再定義）
-> - 折りたたみ対象を見出しから HTML `<details><summary>` アコーディオンへ再定義（デフォルト折りたたみ、R-27 再定義）
->
-> 改めて凍結する場合は、このバナーを凍結表記に戻すこと。
+VS Code extension for a Markdown live-preview editing editor.
+TypeScript + CodeMirror 6 + esbuild + VS Code API.
 
-VS Code 拡張機能。Obsidian ライクな Markdown ライブプレビュー編集エディタ。TypeScript + CodeMirror 6 + esbuild + VS Code API（`CustomTextEditorProvider`）構成。
+## 必須ルール
 
-## 技術スタック
+- 開発タスクは `feature-dev` を使う。
+- `feature-dev` はコード修正・仕様書更新・バージョン更新・受け入れテスト更新まで担当する。
+- `feature-dev` は `npm test` を実行しない。テストコードの更新・追加は行ってよい。
+- 受け入れテストは、ユーザーから明示指示がある場合のみ `acceptance-test` で実行する。
+- publish は `publisher` が build / commit / push まで担当する。
+- 要求仕様書の正本は `docs/requirements-usdm.md`。
+- 要求・仕様を変えたら `docs/requirements-usdm.md` を更新し、`package.json` の version を揃える。
+- アーキテクチャ変更時は `docs/architecture.md` と関連 ADR を確認・更新する。
+- ユーザーの Markdown 本文は書き換えない。装飾は表示のみ。
 
-- TypeScript
-- CodeMirror 6（`@codemirror/view` / `@codemirror/state` / `@codemirror/lang-markdown` / `@codemirror/commands`）
-- VS Code Extension API（@types/vscode ^1.85.0）、`CustomTextEditorProvider`
-- ビルド: esbuild（拡張ホスト=CJS / Webview=IIFE の 2 エントリ）
-- テスト: Vitest（`src/core` の純粋ロジックを対象）
-- エントリポイント: `src/extension.ts`（拡張ホスト）/ `src/webview/main.ts`（Webview）
-- ビルド出力: `dist/extension.js`・`dist/webview.js`
+## 必要時に読む詳細
 
-## コマンド
+- 要求・仕様変更時: `docs/requirements-usdm.md`
+- アーキテクチャ・データモデル・設計制約変更時: `docs/architecture.md` と `docs/adr/`
+- エージェント運用判断時: `docs/ai/agent-workflow.md`
+- リリース・バージョン・公開判断時: `docs/ai/release-policy.md`
+- 技術スタック・構成確認時: `docs/ai/project-overview.md`
+- 過去経緯が必要な調査時のみ: `docs/ai/development-history.md`
+
+## よく使うコマンド
 
 ```bash
-npm install
-npm run compile   # 型チェック(tsc --noEmit) + esbuild バンドル → dist/
-npm test          # Vitest（受け入れテスト）
-npm run coverage  # カバレッジ付きテスト
-npm run watch     # ウォッチビルド
+npm run compile
+npm test
+npm run coverage
 ```
 
-## ディレクトリ構成
+## publisher 最短フロー
 
-```
-src/core/         # 純粋ロジック（CodeMirror/VS Code 非依存・テスト対象）
-src/webview/      # CodeMirror 6 統合（core の記述子を Decoration に変換）
-src/              # 拡張ホスト（extension.ts / livePreviewEditorProvider.ts）
-test/             # Vitest テスト
-docs/             # 要求仕様書（USDM形式）・アーキテクチャ・受け入れテスト
-media/            # アイコン・CSS
-releases/         # リリース履歴と CHANGELOG
-dist/             # ビルド出力（自動生成）
-```
+publisher は以下だけ行う:
 
-## 設計の肝
+1. `git status -sb`
+2. `npm run compile`
+3. `git diff --stat`
+4. 必要な変更だけ stage
+5. commit
+6. push
 
-- **装飾判定ロジックは CodeMirror から完全分離した純粋関数**として `src/core/model.ts`（`computeDecorations` / `computeDecorationsSafe`）に実装する。Webview 層（`src/webview/decorations.ts`）が `DecoSpec` 記述子を CodeMirror の `Decoration` にマッピングする。
-- **新しい記法を追加するときは、まず `src/core/model.ts` に純粋関数として実装し `test/` にユニットテストを追加する。** Webview の描画は後段。これによりテストが DOM/エディタ非依存に保たれる。
-- 同期・差分・IME 抑制・カーソル行判定は `src/core/sync.ts`、ビューポート限定・設定解決は `src/core/viewport.ts`。
-- ユーザーの Markdown テキストを書き換えない。装飾はあくまで表示のみで、`computeDecorations` は入力文字列を変更しない（テストで担保）。
+禁止:
 
-## 開発ルール
+- リポジトリ全体の再調査
+- docs 全体の読み直し
+- 不要なレビュー
+- `npm test` の実行
+- 機能コードの編集
 
-**コード修正・機能追加・バグ修正など、あらゆる開発タスクは必ず `feature-dev` エージェントを通して行うこと。**
+`npm run compile` 後に生成物が変わった場合は、追跡対象かどうかを `git status -sb` で確認し、必要なものだけ含める。
 
-- `feature-dev` がコード修正・仕様書更新（ステータス `■■□`）・バージョンバンプ・受け入れテスト更新を一括で行う
-- バグ調査が必要な場合は `debugger` を呼ぶ（**すべてのエージェント起動は main が行う**。サブエージェント間で直接指示はできない）
-- **開発完了後のフロー**（すべて main が順に起動する）:
-  1. `feature-dev` が成功報告（型チェック/build 通過、ステータス `■■□` 更新済み）
-  2. **受け入れテストはユーザーから明示的に指示があった場合のみ実行する。** 指示がない場合はスキップして手順 3 へ進む。実行する場合: main が `acceptance-test` を起動 → `npm test` 実行・ステータス `■■■` 反映・結果返却
-     - **FAIL あり**: main が `feature-dev` を再起動して修正させる
-     - **PASS / SKIP のみ**: 手順 3 へ
-  3. main が `publisher` を起動 → build〜commit〜push まで
-- バージョンポリシー: **要件変更あり → マイナーアップ / コード修正のみ → パッチアップ**
-- **`feature-dev` はテストを実行しない**（`npm test` の実行は `acceptance-test` の責務。テストコードの更新・追加は行ってよい）
-- 要求仕様書は `docs/requirements-usdm.md` を正とする。要件を変えたらこれを更新し `package.json` のバージョンを揃える。アーキテクチャを変えたら `docs/architecture.md` も更新する。
+## 参照先
 
-## エージェント一覧
-
-| エージェント | 役割 |
-|---|---|
-| `feature-dev` | 開発全部（コード・仕様書・バージョン・受け入れテスト更新） |
-| `debugger` | バグ調査のみ（読み取り専用） |
-| `acceptance-test` | 受け入れテスト実行・ステータス `■■■` 反映 |
-| `publisher` | build＋git push |
-
-> **エージェント定義の管理**: エージェント定義（Claude Code = `.claude/agents/*.md`、Codex = `.codex/agents/*.toml`）は `C:\Claude Code\_agent-templates`（正本）から配布された同期コピー。**直接編集せず**、正本を編集して `_agent-templates\sync-agents.ps1` を実行すること（直接編集は次回同期で上書きされる）。プロジェクト固有の事情はエージェントではなく、このプロジェクト指示ファイル（`AGENTS.md`＝正本 / `CLAUDE.md` は `@AGENTS.md` で取り込み）に書く。
-
-## リリース運用
-
-- フェーズ／バージョン完了ごとに `package.json` の version を上げ、`releases/CHANGELOG.md` に変更点を追記する。
-- **Marketplace への自動公開が設定済み**。`main` ブランチへ push すると GitHub Actions（`.github/workflows/publish.yml`）が起動し、ビルド・テスト・Marketplace 公開まで自動実行される。`publisher` は commit〜push まで担当し、以降は CI が引き継ぐ。
-
-## アーキテクチャ判断
-
-重要な設計判断は `docs/adr/` に記録されている。新機能実装や既存コードの変更前に、関連する ADR を確認すること。
-
-## 注意事項
-
-- Webview バンドル（`dist/webview.js`）は CodeMirror を含むため約 0.5MB と大きいが正常。
-- スコープは素の Markdown（CommonMark + GFM）の編集・プレビュー。Obsidian 独自機能（Wikilink/埋め込み/コールアウト/タグ/脚注/バックリンク等）は v1.5.0 で削除済み（再追加時は品質リスク＝ホスト側ワークスペース I/O を避ける方針）。
+- 詳細な開発履歴: `docs/ai/development-history.md`
+- 技術スタック・構成: `docs/ai/project-overview.md`
+- エージェント運用詳細: `docs/ai/agent-workflow.md`
+- リリース運用: `docs/ai/release-policy.md`
+- 要求仕様: `docs/requirements-usdm.md`
+- アーキテクチャ: `docs/architecture.md`
