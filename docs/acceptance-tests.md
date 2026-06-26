@@ -2,7 +2,7 @@
 
 **関連文書**: [requirements-usdm.md](requirements-usdm.md)
 
-> ▶️ **開発継続中（2026-06-26 / v1.22.1）**: Live Preview 編集後の 500ms debounce 保存と切り替え・破棄時 flush の受け入れ定義を追加した。
+> ▶️ **開発継続中（2026-06-26 / v1.22.2）**: Live Preview 編集後の即時保存の受け入れ定義を更新した。
 
 テストは Vitest（`npm test`）で実行する。対象は `src/core` の純粋ロジック。各テストは仕様 ID（RXX-YY）と対応付ける。
 
@@ -37,7 +37,7 @@ npm run coverage  # カバレッジ確認
 - Webview 上の副作用（チェックボックスのトグル反映）は純粋ロジック外のため自動テスト対象外。クリック→postMessage の経路は手動確認（VSIX インストール後）に委ねる。対応仕様 R-08-05 は純粋ロジック側（行トグル計算 `toggleTaskAt`）のみ自動検証し、UI 結線は手動確認とする。
 - **v1.6.0 で追加・変更した以下は VS Code 上の手動確認項目（純粋ロジック外）**。VSIX インストール後に確認する:
   - R-03-01〜09（ソース横への editable WebviewPanel 起動、異なる URI の複数ビューア、同一 URI の重複防止、`.md` リンク、`livePreview.followActiveEditor` の有効／無効、最後に操作したビューアの追従、保留編集後の安全な切り替え、タイトル・画像 resource base・変更リスナーの再バインド、ソースタブを閉じた後の編集継続、書式・チェックボックス・Undo・IME・CRLF・最小差分同期の維持）
-  - R-03-08（Live Preview 編集と `toggleTask` の `WorkspaceEdit` は即時反映され、適用成功後のみ 500ms debounce で保存されること。差分なし・`applyEdit` false/失敗時に保存されず、文書切り替え前とビューア破棄時に保留保存が flush され、旧 URI/generation が保存されないこと。ソースタブを閉じた状態でも標準ソースエディタを表示せず保存されること）
+  - R-03-08（Live Preview 編集と `toggleTask` の `WorkspaceEdit` は即時反映され、適用成功後のみ現在の TextDocument を再取得して即時保存されること。差分なし・`applyEdit` false/失敗時・バインド変更時に保存されないこと。ソースタブを閉じた状態でも標準ソースエディタを表示せず保存されること）
   - R-05-04（レンダリング例外時に警告を表示し、Live Preview ビューアを閉じたり標準ソースエディタへ切り替えたりしないこと）
   - R-27-01〜03（見出しブロック折りたたみ、初期全閉、`▸`/`▾` ガター開閉）
   - R-28-01〜03（左余白、キャレット視認、チェックボックスの確実なトグル）
