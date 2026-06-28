@@ -96,7 +96,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-02-01 斜体 `*text*` を装飾し、`**`（太字）と誤認しない。
 - ■■■ R-02-02 インラインコード `` `code` `` を装飾し、内部の Markdown は装飾しない。
-- ■■□ R-02-03 リンク `[text](url)` をラベル装飾＋href 保持で表示し、構文を非カーソル行で隠す。リンク遷移は左クリック時のみ実行し、右クリック時はリンクを開かず Webview のコンテキストメニューを表示すること。`.md` リンクの左クリックは同一 URI を重複させない別 Live Preview ビューアで開き、現在のビューアは維持する。`http(s)`/`mailto` は外部ブラウザ、その他相対パスは既定エディタで `preview: false`。
+- ■■■ R-02-03 リンク `[text](url)` をラベル装飾＋href 保持で表示し、構文を非カーソル行で隠す。リンク遷移は左クリック時のみ実行し、右クリック時はリンクを開かず Webview のコンテキストメニューを表示すること。`.md` リンクの左クリックは同一 URI を重複させない別 Live Preview ビューアで開き、現在のビューアは維持する。`http(s)`/`mailto` は外部ブラウザ、その他相対パスは既定エディタで `preview: false`。
 - ■■■ R-02-04 画像 `![alt](url)` を非カーソル行で画像ウィジェットに置換する。
 
 ###### ＜ブロック＞
@@ -117,15 +117,15 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜起動・重複防止＞
 
-- ■■□ R-03-01 標準 Markdown エディタのタイトルバーボタンまたは Explorer コンテキストメニューの `livePreview.openWith` で、ソースを閉じずに Live Preview ビューアを `ViewColumn.Beside` へ開けること。
-- ■■□ R-03-02 異なる Markdown URI の Live Preview ビューアは複数同時に開けるが、同一 URI のビューアは重複作成せず既存ビューアを再表示すること。
-- ■■□ R-03-03 `.md` リンクは同一 URI の重複を作らず Live Preview ビューアで開き、現在のビューアを維持すること。外部 URL はブラウザ、その他の相対パスは `preview: false` の既定エディタで開くこと。
-- ■■□ R-03-04 Live Preview は CodeMirror 編集、書式コマンド、チェックボックス、リンク、Undo、IME 抑制、CRLF 保持、最小差分同期を従来どおり提供し、Markdown テキストを表示目的で書き換えないこと。
+- ■■■ R-03-01 標準 Markdown エディタのタイトルバーボタンまたは Explorer コンテキストメニューの `livePreview.openWith` で、ソースを閉じずに Live Preview ビューアを `ViewColumn.Beside` へ開けること。
+- ■■■ R-03-02 異なる Markdown URI の Live Preview ビューアは複数同時に開けるが、同一 URI のビューアは重複作成せず既存ビューアを再表示すること。
+- ■■■ R-03-03 `.md` リンクは同一 URI の重複を作らず Live Preview ビューアで開き、現在のビューアを維持すること。外部 URL はブラウザ、その他の相対パスは `preview: false` の既定エディタで開くこと。
+- ■■■ R-03-04 Live Preview は CodeMirror 編集、書式コマンド、チェックボックス、リンク、Undo、IME 抑制、CRLF 保持、最小差分同期を従来どおり提供し、Markdown テキストを表示目的で書き換えないこと。
 
 ###### ＜アクティブエディタ追従＞
 
-- ■■□ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
-- ■■□ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
+- ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
+- ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
 - ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、標準ソースエディタを表示しないこと。Webview 編集および `toggleTask` は `WorkspaceEdit` を即時適用し、適用成功後のみ現在のバインドの TextDocument を再取得して即時に `document.save()` すること。差分なし、`workspace.applyEdit` の false/失敗時、またはバインド変更時は保存しないこと。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
@@ -152,13 +152,13 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-05-01 ネストしたリスト（インデント付き）をレベル付きで検知する。
 - ■■■ R-05-02 コードブロック内の `#` `**` `` ` `` `>` を誤装飾しない。未終了フェンスも安全に扱う。
 - ■■■ R-05-03 IME 入力中（変換中）は同期を遅延し装飾ちらつきを防止する（`shouldEmitEdit`）。
-- ■■□ R-05-04 レンダリング失敗時は警告を表示し、安全な無装飾表示を維持すること。標準ソースエディタへの切り替えや追加表示は行わないこと（`computeDecorationsSafe`）。
+- ■■■ R-05-04 レンダリング失敗時は警告を表示し、安全な無装飾表示を維持すること。標準ソースエディタへの切り替えや追加表示は行わないこと（`computeDecorationsSafe`）。
 
 ###### ＜性能＞
 
 - ■■■ R-05-05 装飾範囲をビューポート内に限定し（`viewportWindow`）、数千行でも処理時間が上限内に収まる。
 - ■■■ R-05-06 CRLF 行末の文書でも記法検知・タスクトグルが正しく動作し、Webview 編集の反映時にファイルの EOL（CRLF）を保持して最小差分のみ適用すること（`toLF`/`fromLF`、`splitLines` の CR 除外、`toggleTaskAt` の CR 許容）。
-- ■■□ R-05-07 `buildDecorations` の `RangeSetBuilder.add()` 呼び出しは CodeMirror が要求する `(from, startSide)` 昇順を遵守すること。`MarkDecoration` の `startSide`（500000000）は `Decoration.replace` の `startSide`（499999999）より大きいため、同一 `from` では `hide`/`replaceWidget` を `mark` より前に追加すること（`sideOf` の順序を修正）。また `builder.add()` が例外をスローした場合は `onError` で報告し `Decoration.none` を返してエディタが空白になることを防ぐこと。
+- ■■■ R-05-07 `buildDecorations` の `RangeSetBuilder.add()` 呼び出しは CodeMirror が要求する `(from, startSide)` 昇順を遵守すること。`MarkDecoration` の `startSide`（500000000）は `Decoration.replace` の `startSide`（499999999）より大きいため、同一 `from` では `hide`/`replaceWidget` を `mark` より前に追加すること（`sideOf` の順序を修正）。また `builder.add()` が例外をスローした場合は `onError` で報告し `Decoration.none` を返してエディタが空白になることを防ぐこと。
 
 ### R-06 設定 #settings
 
@@ -314,7 +314,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜描画・遷移＞
 
 - ■■□ R-26-01 Webview の `localResourceRoots` と `asWebviewUri` による `resourceBase` で、相対パス画像（`![](img.png)`）を実描画すること。（リソース解決ロジック `resolveSrc` を実装。表示確認は手動）
-- ■■□ R-26-02 標準リンク/オートリンクの左クリックで、外部 URL はブラウザ、相対パスはファイルを開くこと。リンク先が `.md` の場合は同一 URI を重複させない Live Preview ビューアで開き、それ以外は既定エディタで開くこと。右クリックでは `openLink` を送信せず、イベントを消費しないことで Webview のコンテキストメニューを表示すること。（マウスボタン判定を自動検証。UI 結線は手動確認）
+- ■■■ R-26-02 標準リンク/オートリンクの左クリックで、外部 URL はブラウザ、相対パスはファイルを開くこと。リンク先が `.md` の場合は同一 URI を重複させない Live Preview ビューアで開き、それ以外は既定エディタで開くこと。右クリックでは `openLink` を送信せず、イベントを消費しないことで Webview のコンテキストメニューを表示すること。（マウスボタン判定を自動検証。UI 結線は手動確認）
 
 ---
 
