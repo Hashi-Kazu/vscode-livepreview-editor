@@ -5,3 +5,5 @@ coverage/
 *.vsix
 !releases/**/*.vsix
 .DS_Store
+
+*.tmp
