@@ -6,9 +6,9 @@
 - コード修正のみ: パッチアップ。
 - フェーズまたはバージョン完了ごとに `package.json` の `version` を上げ、`releases/CHANGELOG.md` に変更点を追記する。
 
-## publisher の責務
+## publish 手順（main が直接実行）
 
-`publisher` は build / commit / push までを担当する。機能コードの変更、不要なレビュー、リポジトリ全体の再調査、docs 全体の読み直し、`npm test` の実行はしない。
+main は build / commit / push までを直接実行する。機能コードの変更、不要なレビュー、リポジトリ全体の再調査、docs 全体の読み直し、`npm test` の実行はしない。
 
 標準フロー:
 
@@ -23,6 +23,4 @@
 
 ## Marketplace 公開
 
-Marketplace への自動公開が設定済み。`main` ブランチへ push すると GitHub Actions（`.github/workflows/publish.yml`）が起動し、ビルド・テスト・Marketplace 公開まで自動実行される。
-
-`publisher` は commit と push まで担当し、以降は CI が引き継ぐ。
+Marketplace への自動公開が設定済み。`main` ブランチへ push すると GitHub Actions（`.github/workflows/publish.yml`）が起動し、ビルド・テスト・Marketplace 公開まで自動実行される。commit と push 後、以降は CI が引き継ぐ。
