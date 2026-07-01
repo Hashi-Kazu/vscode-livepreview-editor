@@ -1,0 +1,76 @@
+name: AI Coder
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  ai-coder:
+    if: github.event.label.name == 'ai-task'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Create feature branch
+        run: git checkout -b feature/issue-${{ github.event.issue.number }}
+
+      - name: Run Codex
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          codex exec --sandbox workspace-write "あなたは vscode-livepreview-editor（VS Code 拡張機能、TypeScript + CodeMirror 6 + esbuild）の実装担当です。
+
+          以下の Issue を実装してください。
+
+          Issue番号: ${{ github.event.issue.number }}
+          タイトル: ${{ github.event.issue.title }}
+          本文:
+          ${{ github.event.issue.body }}
+
+          作業手順:
+          1. AGENTS.md を読み、必須ルールに従う
+          2. ソースコードは src/core（コアロジック）、src/webview（WebView側）、src/livePreviewViewerManager.ts（ビューア管理）、スタイルは media/editor.css
+          3. Issue の要求を実装する。要件変更なら docs/requirements-usdm.md のバージョンと package.json の version をマイナーアップで整合させ、コード修正のみ（バグ修正含む）ならパッチアップする（docs/ai/release-policy.md 準拠）
+          4. ユーザーの Markdown 本文を書き換えない。装飾は表示にのみ適用する
+          5. コミットメッセージは日本語で簡潔に（例: feat: ○○機能を追加 (#issue番号)）
+
+          注意事項:
+          - .claude/agents/feature-dev.md の作業範囲・完了条件に準じて、指定範囲外のファイルを広く探索・変更しない
+          - dist/ は編集しない（ビルド出力）
+          - コメントは WHY が非自明な場合のみ"
+
+      - name: Push branch
+        run: git push origin feature/issue-${{ github.event.issue.number }}
+
+      - name: Create draft PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "feat: ${{ github.event.issue.title }}" \
+            --body "$(cat <<'EOF'
+          ## 概要
+          Issue #${{ github.event.issue.number }} を Codex が自動実装しました。
+
+          Closes #${{ github.event.issue.number }}
+          EOF
+          )" \
+            --base main \
+            --head feature/issue-${{ github.event.issue.number }} \
+            --draft
