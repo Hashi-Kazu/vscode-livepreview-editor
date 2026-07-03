@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.22.2
+**バージョン**: 1.22.3
 **作成日**: 2026-06-21  
-**最終更新**: 2026-06-26
+**最終更新**: 2026-07-04
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-06-26 時点 / v1.22.2）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.22.2 では、Live Preview からの編集適用成功後に即時保存し、ソースタブ終了後の編集結果をファイルへ確実に反映する（R-03-08）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-07-04 時点 / v1.22.3）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.22.3 では、Webview の編集版数に基づいて古い remote update を破棄し、IME 合成中の update 保留と確定テキストのフラッシュを行う（R-04-03、R-05-08）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -127,7 +127,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
 - ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、標準ソースエディタを表示しないこと。Webview 編集および `toggleTask` は `WorkspaceEdit` を即時適用し、適用成功後のみ現在のバインドの TextDocument を再取得して即時に `document.save()` すること。差分なし、`workspace.applyEdit` の false/失敗時、またはバインド変更時は保存しないこと。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、標準ソースエディタを表示しないこと。Webview 編集および `toggleTask` は `WorkspaceEdit` を即時適用し、適用成功後のみ現在のバインドの TextDocument を再取得して即時に `document.save()` すること。差分なし、`workspace.applyEdit` の false/失敗時、またはバインド変更時は保存しないこと。`workspace.applyEdit` が false の場合は警告を表示し、document の現テキストで Webview を再同期する。`document.save()` が false の場合は警告を表示する。破棄済み webview へは postMessage しない。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
 
 ### R-04 ドキュメント同期 #sync
@@ -138,6 +138,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。
 - ■■■ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。
+- ■■■ R-04-03 Webview のローカル編集版数より古い `baseVersion` を持つ remote update は破棄し、入力直後のキャレットを古い全文で巻き戻さないこと（`shouldApplyRemoteUpdate`）。`baseVersion` がない旧メッセージは版数比較をスキップすること。
 
 ---
 
@@ -159,6 +160,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-05-05 装飾範囲をビューポート内に限定し（`viewportWindow`）、数千行でも処理時間が上限内に収まる。
 - ■■■ R-05-06 CRLF 行末の文書でも記法検知・タスクトグルが正しく動作し、Webview 編集の反映時にファイルの EOL（CRLF）を保持して最小差分のみ適用すること（`toLF`/`fromLF`、`splitLines` の CR 除外、`toggleTaskAt` の CR 許容）。
 - ■■■ R-05-07 `buildDecorations` の `RangeSetBuilder.add()` 呼び出しは CodeMirror が要求する `(from, startSide)` 昇順を遵守すること。`MarkDecoration` の `startSide`（500000000）は `Decoration.replace` の `startSide`（499999999）より大きいため、同一 `from` では `hide`/`replaceWidget` を `mark` より前に追加すること（`sideOf` の順序を修正）。また `builder.add()` が例外をスローした場合は `onError` で報告し `Decoration.none` を返してエディタが空白になることを防ぐこと。
+- ■■■ R-05-08 IME 合成中に受信した remote update は最新1件を保留し、合成終了時に適用すること。IME の確定変更は remote 適用中でない場合に現在の全文を `edit` として確実にフラッシュすること（`shouldFlushComposition`）。
 
 ### R-06 設定 #settings
 
@@ -266,6 +268,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-22-01 表ブロック全体を 1 つの `table-block` ウィジェットに置換し、ヘッダ・整列・行データを保持すること。ウィジェットの `attrs` にブロック開始行（`startLine`）を載せ、Webview が各 `<tr>` に `data-line`（ヘッダ=`startLine`、区切り行はスキップ、`rows[k]`=`startLine+2+k`）を付与できるようにすること。
 - ■■■ R-22-02 表は、カーソルがブロック内にあるときは `table-block` ウィジェットを出さず生の行を表示し**セル内テキストを編集可能**とすること。非カーソル時のみ従来どおりウィジェットへ置換すること。Webview 側でテーブルのクリックは、クリックされた `<tr>` の `data-line` を読み、その行頭へキャレットを移動（`view.dispatch({selection})`＋`view.focus()`）して編集モードへ遷移させること（`data-line` が無い区切り行などはキャレット移動しない）。コードブロック内の表もどきは表にしないこと。
 - ■■□ R-22-03 表セル内の最小限のインライン記法（太字 `**` / `__`、斜体 `*` / `_`、インラインコード `` ` ``）を装飾描画し、生のマーカー（例 `**CPM**`）をそのまま表示しないこと（MAIO プレビュー同様）。装飾は Webview 層（`appendInlineCell`）でテキストノードへ安全に変換し、生 HTML を挿入しないこと。
+- ■■■ R-22-04 区切り行は `|` を含み、セル数がヘッダ行と一致する場合のみ表と判定する（水平線 `---` や単独 `-` を区切り行と誤検知しない）。
 
 ---
 

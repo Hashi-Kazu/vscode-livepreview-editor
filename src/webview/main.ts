@@ -8,7 +8,7 @@ import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelectio
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
-import { shouldEmitEdit } from '../core/sync';
+import { shouldApplyRemoteUpdate, shouldEmitEdit, shouldFlushComposition } from '../core/sync';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
 import { zoomFontSize } from '../core/viewport';
@@ -26,6 +26,9 @@ let binding = 0;
 /** True while we are applying an edit that came from the extension host, so we
  *  do not echo it straight back and create a feedback loop. */
 let applyingRemote = false;
+let editVersion = 0;
+let pendingCompositionChange = false;
+let pendingRemoteText: string | undefined;
 
 // Decorations are provided via a StateField (not a ViewPlugin): CodeMirror
 // forbids block decorations — used by the HTML table widget — from plugins.
@@ -104,12 +107,37 @@ class SelectionLayerHeightSync {
 
 const selectionLayerHeightPlugin = ViewPlugin.fromClass(SelectionLayerHeightSync);
 
+function postEdit(text: string) {
+  editVersion++;
+  vscode.postMessage({ type: 'edit', text, version: editVersion, binding });
+}
+
 const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
+  if (update.docChanged && update.view.composing) pendingCompositionChange = true;
+
+  if (!update.view.composing && pendingRemoteText !== undefined) {
+    const text = pendingRemoteText;
+    pendingRemoteText = undefined;
+    if (text !== update.view.state.doc.toString()) setText(text);
+  }
+
+  if (
+    shouldFlushComposition({
+      composing: update.view.composing,
+      pendingCompositionChange,
+      applyingRemote,
+    })
+  ) {
+    pendingCompositionChange = false;
+    postEdit(view.state.doc.toString());
+    return;
+  }
+
   // Defer during IME composition / remote application to avoid flicker & loops.
   if (!shouldEmitEdit({ docChanged: update.docChanged, composing: update.view.composing, applyingRemote })) {
     return;
   }
-  vscode.postMessage({ type: 'edit', text: update.state.doc.toString(), binding });
+  postEdit(update.state.doc.toString());
 });
 
 /** Apply a pure {@link WrapResult} to the editor as one transaction. */
@@ -460,6 +488,9 @@ window.addEventListener('message', (event) => {
   switch (msg.type) {
     case 'init':
       if (typeof msg.binding === 'number') binding = msg.binding;
+      editVersion = 0;
+      pendingCompositionChange = false;
+      pendingRemoteText = undefined;
       renderErrorReported = false;
       applyFontSize(msg.fontSize ?? 14);
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
@@ -472,6 +503,23 @@ window.addEventListener('message', (event) => {
       break;
     case 'update': // external / host-side document change
       if (msg.binding !== binding) break;
+      if (
+        !shouldApplyRemoteUpdate({
+          baseVersion: msg.baseVersion,
+          localVersion: editVersion,
+          composing: view.composing,
+        })
+      ) {
+        const blockedOnlyByComposition =
+          view.composing &&
+          shouldApplyRemoteUpdate({
+            baseVersion: msg.baseVersion,
+            localVersion: editVersion,
+            composing: false,
+          });
+        if (blockedOnlyByComposition && typeof msg.text === 'string') pendingRemoteText = msg.text;
+        break;
+      }
       if (msg.text !== view.state.doc.toString()) setText(msg.text);
       break;
     case 'settings':

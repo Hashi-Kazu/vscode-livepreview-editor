@@ -116,6 +116,26 @@ export function shouldEmitEdit(params: { docChanged: boolean; composing: boolean
   return true;
 }
 
+/** Decide whether an update received from the host is safe to apply. */
+export function shouldApplyRemoteUpdate(params: {
+  baseVersion: number | undefined;
+  localVersion: number;
+  composing: boolean;
+}): boolean {
+  if (params.composing) return false;
+  if (typeof params.baseVersion === 'number' && params.baseVersion < params.localVersion) return false;
+  return true;
+}
+
+/** Decide whether an IME composition change deferred by the Webview should be sent. */
+export function shouldFlushComposition(params: {
+  composing: boolean;
+  pendingCompositionChange: boolean;
+  applyingRemote: boolean;
+}): boolean {
+  return !params.composing && params.pendingCompositionChange && !params.applyingRemote;
+}
+
 /** Normalise any CRLF/CR to LF (the convention used on the webview/CodeMirror side). */
 export function toLF(text: string): string {
   return text.replace(/\r\n?/g, '\n');

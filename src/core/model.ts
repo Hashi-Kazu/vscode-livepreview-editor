@@ -124,7 +124,13 @@ export function detectTableBlocks(lines: LineInfo[], code: CodeBlockInfo): Table
   const delimRe = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
   for (let i = 0; i < lines.length - 1; i++) {
     if (code.role[i] || code.role[i + 1]) continue;
-    if (lines[i].text.includes('|') && delimRe.test(lines[i + 1].text) && lines[i + 1].text.includes('-')) {
+    if (
+      lines[i].text.includes('|') &&
+      lines[i + 1].text.includes('|') &&
+      delimRe.test(lines[i + 1].text) &&
+      lines[i + 1].text.includes('-') &&
+      parseTableRow(lines[i].text).length === parseTableRow(lines[i + 1].text).length
+    ) {
       let j = i + 2;
       while (j < lines.length && !code.role[j] && lines[j].text.includes('|') && lines[j].text.trim() !== '') j++;
       blocks.push({ start: i, end: j - 1 });

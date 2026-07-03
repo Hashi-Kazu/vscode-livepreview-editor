@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { computeDecorations, DecoSpec } from '../src/core/model';
-import { diffRange, shouldEmitEdit } from '../src/core/sync';
+import {
+  diffRange,
+  shouldApplyRemoteUpdate,
+  shouldEmitEdit,
+  shouldFlushComposition,
+} from '../src/core/sync';
 import { resolveSettings, viewportWindow, DEFAULT_SETTINGS, zoomFontSize } from '../src/core/viewport';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
@@ -49,6 +54,42 @@ describe('Phase 3: IME composition handling', () => {
   });
   it('suppresses while applying a remote change (no echo loop)', () => {
     expect(shouldEmitEdit({ docChanged: true, composing: false, applyingRemote: true })).toBe(false);
+  });
+});
+
+describe('stale update / IME flush', () => {
+  it('shouldApplyRemoteUpdate: baseVersion がローカル版数未満の update は適用しない', () => {
+    expect(shouldApplyRemoteUpdate({ baseVersion: 1, localVersion: 2, composing: false })).toBe(false);
+  });
+
+  it('shouldApplyRemoteUpdate: 版数が追いついていれば適用する', () => {
+    expect(shouldApplyRemoteUpdate({ baseVersion: 2, localVersion: 2, composing: false })).toBe(true);
+  });
+
+  it('shouldApplyRemoteUpdate: IME 合成中は適用しない', () => {
+    expect(shouldApplyRemoteUpdate({ baseVersion: 2, localVersion: 2, composing: true })).toBe(false);
+  });
+
+  it('shouldApplyRemoteUpdate: baseVersion 欠落時は版数比較をスキップして適用する', () => {
+    expect(shouldApplyRemoteUpdate({ baseVersion: undefined, localVersion: 5, composing: false })).toBe(true);
+  });
+
+  it('shouldFlushComposition: 合成終了時に保留変更をフラッシュする', () => {
+    expect(
+      shouldFlushComposition({ composing: false, pendingCompositionChange: true, applyingRemote: false }),
+    ).toBe(true);
+  });
+
+  it('shouldFlushComposition: 合成中・保留なし・remote 適用中はフラッシュしない', () => {
+    expect(
+      shouldFlushComposition({ composing: true, pendingCompositionChange: true, applyingRemote: false }),
+    ).toBe(false);
+    expect(
+      shouldFlushComposition({ composing: false, pendingCompositionChange: false, applyingRemote: false }),
+    ).toBe(false);
+    expect(
+      shouldFlushComposition({ composing: false, pendingCompositionChange: true, applyingRemote: true }),
+    ).toBe(false);
   });
 });
 

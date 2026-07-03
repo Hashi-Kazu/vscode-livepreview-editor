@@ -100,6 +100,30 @@ describe('R-22 表のレンダリング', () => {
     expect(t.rows).toEqual([['1', '2'], ['3', '4']]);
   });
 
+  it('R-22-04: パイプを含む本文行直後の水平線 --- を表と誤検知しない', () => {
+    const horizontalRule = ['本文 a | b を含む行', '---', '次の段落'].join('\n');
+    const lines = splitLines(horizontalRule);
+    expect(detectTableBlocks(lines, detectCodeBlocks(lines))).toHaveLength(0);
+
+    const specs = computeDecorations(horizontalRule, new Set());
+    expect(byTag(specs, 'table-block')).toHaveLength(0);
+    expect(byTag(specs, 'hr').some((spec) => spec.type === 'line')).toBe(true);
+  });
+
+  it('R-22-04: 区切り行のセル数がヘッダと一致しない場合は表と判定しない', () => {
+    const mismatched = ['| a | b |', '| - |', '| 1 | 2 |'].join('\n');
+    const lines = splitLines(mismatched);
+    expect(detectTableBlocks(lines, detectCodeBlocks(lines))).toHaveLength(0);
+  });
+
+  it('R-22-04: 外側パイプなしの正規の表は引き続き検知する', () => {
+    const withoutOuterPipes = ['a | b', '- | -', '1 | 2'].join('\n');
+    const lines = splitLines(withoutOuterPipes);
+    const blocks = detectTableBlocks(lines, detectCodeBlocks(lines));
+    expect(blocks).toHaveLength(1);
+    expect(parseTable(lines, blocks[0]).header).toEqual(['a', 'b']);
+  });
+
   it('R-22-01: 非カーソル時は単一の table-block ウィジェットに置換する', () => {
     const specs = computeDecorations(doc, new Set());
     const block = byTag(specs, 'table-block');

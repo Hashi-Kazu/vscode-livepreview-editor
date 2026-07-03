@@ -9,6 +9,7 @@ interface ViewerBinding {
   key: string;
   generation: number;
   webviewText: string;
+  lastEditVersion: number;
   changeSubscription: vscode.Disposable;
 }
 
@@ -17,6 +18,7 @@ interface Viewer {
   panel: vscode.WebviewPanel;
   binding: ViewerBinding;
   operationQueue: Promise<void>;
+  disposed?: boolean;
   messageSubscription?: vscode.Disposable;
   viewStateSubscription?: vscode.Disposable;
   configSubscription?: vscode.Disposable;
@@ -134,6 +136,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         this.enqueue(viewer, async () => {
           if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
           if (typeof message.text !== 'string') return;
+          if (typeof message.version === 'number') {
+            viewer.binding.lastEditVersion = Math.max(viewer.binding.lastEditVersion, message.version);
+          }
           await this.applyEdit(viewer, message.text);
         });
         break;
@@ -143,10 +148,12 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           const result = toggleTaskAt(viewer.binding.webviewText, message.line);
           if (!result.changed) return;
           await this.applyEdit(viewer, result.text);
+          if (viewer.disposed || viewer.binding.webviewText !== result.text) return;
           await viewer.panel.webview.postMessage({
             type: 'update',
             text: result.text,
             binding: viewer.binding.generation,
+            baseVersion: viewer.binding.lastEditVersion,
           });
         });
         break;
@@ -165,7 +172,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private enqueue(viewer: Viewer, operation: () => Promise<void>): void {
     viewer.operationQueue = viewer.operationQueue
-      .then(operation)
+      .then(async () => {
+        if (viewer.disposed) return;
+        await operation();
+      })
       .catch((error) => {
         console.error('Live Preview viewer operation failed', error);
         vscode.window.showWarningMessage(`Live Preview の更新に失敗しました: ${String(error)}`);
@@ -196,10 +206,26 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       diff.newText,
     );
     const applied = await vscode.workspace.applyEdit(edit);
-    if (!applied || viewer.binding !== binding) return;
+    if (viewer.binding !== binding) return;
+    if (!applied) {
+      binding.webviewText = toLF(document.getText());
+      vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ適用できませんでした。');
+      if (!viewer.disposed) {
+        await viewer.panel.webview.postMessage({
+          type: 'update',
+          text: binding.webviewText,
+          binding: binding.generation,
+          baseVersion: binding.lastEditVersion,
+        });
+      }
+      return;
+    }
     const savedDocument = await vscode.workspace.openTextDocument(binding.uri);
     if (viewer.binding !== binding) return;
-    await savedDocument.save();
+    const saved = await savedDocument.save();
+    if (!saved) {
+      vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
+    }
   }
 
   private async followActiveEditor(uri: vscode.Uri): Promise<void> {
@@ -269,6 +295,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           type: 'update',
           text: documentText,
           binding: binding.generation,
+          baseVersion: binding.lastEditVersion,
         });
       } else {
         binding.webviewText = documentText;
@@ -279,6 +306,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       key: document.uri.toString(),
       generation,
       webviewText: toLF(document.getText()),
+      lastEditVersion: 0,
       changeSubscription,
     };
     return binding;
@@ -326,6 +354,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   }
 
   private disposeViewer(viewer: Viewer): void {
+    viewer.disposed = true;
     viewer.binding.changeSubscription.dispose();
     viewer.messageSubscription?.dispose();
     viewer.viewStateSubscription?.dispose();
