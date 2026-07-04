@@ -8,6 +8,20 @@ export interface ViewerState {
   uri: string;
 }
 
+export type ViewerFileEvent =
+  | {
+      type: 'rename';
+      files: readonly { oldUri: string; newUri: string }[];
+    }
+  | {
+      type: 'delete';
+      uris: readonly string[];
+    };
+
+export type FileEventAction =
+  | { type: 'rebind'; viewerId: string; oldKey: string; newKey: string }
+  | { type: 'close'; viewerId: string };
+
 export type FollowDecision =
   | { type: 'none' }
   | { type: 'use-existing'; viewerId: string }
@@ -39,6 +53,38 @@ export function findViewerForUri(
   targetUri: string,
 ): string | undefined {
   return viewers.find((viewer) => viewer.uri === targetUri)?.id;
+}
+
+/** Decide how open viewers follow workspace rename and delete events. */
+export function decideFileEventAction(
+  viewers: readonly ViewerState[],
+  event: ViewerFileEvent,
+): FileEventAction[] {
+  if (event.type === 'delete') {
+    const deleted = new Set(event.uris);
+    return viewers
+      .filter((viewer) => deleted.has(viewer.uri))
+      .map((viewer) => ({ type: 'close' as const, viewerId: viewer.id }));
+  }
+
+  const owners = new Map(viewers.map((viewer) => [viewer.uri, viewer]));
+  const actions: FileEventAction[] = [];
+  for (const file of event.files) {
+    const viewer = owners.get(file.oldUri);
+    if (!viewer) continue;
+    const newOwner = owners.get(file.newUri);
+    if (newOwner && newOwner.id !== viewer.id) {
+      actions.push({ type: 'close', viewerId: viewer.id });
+    } else {
+      actions.push({
+        type: 'rebind',
+        viewerId: viewer.id,
+        oldKey: file.oldUri,
+        newKey: file.newUri,
+      });
+    }
+  }
+  return actions;
 }
 
 /** Ignore delayed webview messages emitted for a previous document binding. */

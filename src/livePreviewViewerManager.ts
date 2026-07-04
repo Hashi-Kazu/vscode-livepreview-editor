@@ -1,7 +1,14 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { diffRange, fromLF, shouldResync, toggleTaskAt, toLF } from './core/sync';
-import { decideFollow, findViewerForUri, isCurrentBinding, ViewerState } from './core/viewer';
+import { diffRange, fromLFPreserving, shouldResync, toggleTaskAt, toLF } from './core/sync';
+import {
+  decideFileEventAction,
+  decideFollow,
+  FileEventAction,
+  findViewerForUri,
+  isCurrentBinding,
+  ViewerState,
+} from './core/viewer';
 import { resolveSettings } from './core/viewport';
 
 interface ViewerBinding {
@@ -47,6 +54,23 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         if (!editor || editor.document.languageId !== 'markdown') return;
         if (!this.followActiveEditorEnabled()) return;
         void this.followActiveEditor(editor.document.uri);
+      }),
+      vscode.workspace.onDidRenameFiles((event) => {
+        const actions = decideFileEventAction(this.viewerStates(), {
+          type: 'rename',
+          files: event.files.map((file) => ({
+            oldUri: file.oldUri.toString(),
+            newUri: file.newUri.toString(),
+          })),
+        });
+        this.applyFileEventActions(actions);
+      }),
+      vscode.workspace.onDidDeleteFiles((event) => {
+        const actions = decideFileEventAction(this.viewerStates(), {
+          type: 'delete',
+          uris: event.files.map((uri) => uri.toString()),
+        });
+        this.applyFileEventActions(actions);
       }),
     );
   }
@@ -189,7 +213,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
     const eol = document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
     const current = document.getText();
-    const target = fromLF(newLF, eol);
+    const target = fromLFPreserving(newLF, current, eol);
     binding.webviewText = newLF;
     const diff = diffRange(current, target);
     if (!diff) return;
@@ -244,6 +268,21 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const viewer = this.viewers.get(decision.viewerId);
     if (!viewer) return;
     this.enqueue(viewer, async () => this.switchDocument(viewer, uri));
+  }
+
+  private applyFileEventActions(actions: readonly FileEventAction[]): void {
+    for (const action of actions) {
+      const viewer = this.viewers.get(action.viewerId);
+      if (!viewer) continue;
+      if (action.type === 'close') {
+        this.enqueue(viewer, async () => viewer.panel.dispose());
+        continue;
+      }
+      this.enqueue(viewer, async () => {
+        if (viewer.binding.key !== action.oldKey) return;
+        await this.switchDocument(viewer, vscode.Uri.parse(action.newKey));
+      });
+    }
   }
 
   /**

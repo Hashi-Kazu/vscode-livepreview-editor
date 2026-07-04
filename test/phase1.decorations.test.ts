@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { EditorState } from '@codemirror/state';
 import { computeDecorations, DecoSpec } from '../src/core/model';
+import { buildDecorations } from '../src/webview/decorations';
 
 /** Helper: find specs by tag. */
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
@@ -98,5 +100,25 @@ describe('Phase 1: cursor-line range correctness across multiple lines', () => {
     expect(byTag(specs, 'strong-mark')).toHaveLength(4);
     // All three are still styled strong.
     expect(byTag(specs, 'strong')).toHaveLength(3);
+  });
+
+  it('buildDecorations with lineRange decorates only lines in window', () => {
+    const state = EditorState.create({ doc: ['plain', '**outside above**', '**inside**', '**outside below**'].join('\n') });
+    const inside = state.doc.line(3);
+    const limited = buildDecorations(state, { lineRange: { startLine: 2, endLine: 2 } });
+    const limitedRanges: Array<{ from: number; to: number }> = [];
+    limited.between(0, state.doc.length, (from, to) => {
+      limitedRanges.push({ from, to });
+    });
+
+    expect(limitedRanges.length).toBeGreaterThan(0);
+    expect(limitedRanges.every(({ from, to }) => from >= inside.from && to <= inside.to)).toBe(true);
+
+    const full = buildDecorations(state);
+    const fullRanges: Array<{ from: number; to: number }> = [];
+    full.between(0, state.doc.length, (from, to) => {
+      fullRanges.push({ from, to });
+    });
+    expect(fullRanges.some(({ from }) => from < inside.from || from > inside.to)).toBe(true);
   });
 });

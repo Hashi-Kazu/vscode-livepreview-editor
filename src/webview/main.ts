@@ -3,7 +3,7 @@
  * decoration plugin, and bridges document changes to/from the extension host
  * over `postMessage`.
  */
-import { EditorState, Transaction, StateField } from '@codemirror/state';
+import { EditorState, Transaction, StateEffect, StateField } from '@codemirror/state';
 import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -11,7 +11,7 @@ import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import { shouldApplyRemoteUpdate, shouldEmitEdit, shouldFlushComposition } from '../core/sync';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
-import { zoomFontSize } from '../core/viewport';
+import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -41,21 +41,97 @@ function onRenderError(message: string) {
   }
 }
 
-function computeField(state: EditorState): DecorationSet {
-  return buildDecorations(state, {}, onRenderError);
+const setViewport = StateEffect.define<LineWindow>();
+
+interface LivePreviewFieldValue {
+  decorations: DecorationSet;
+  lineRange: LineWindow | undefined;
+}
+
+function includeSelectionLines(state: EditorState, lineRange: LineWindow | undefined): LineWindow | undefined {
+  if (!lineRange) return undefined;
+
+  let startLine = lineRange.startLine;
+  let endLine = lineRange.endLine;
+  for (const range of state.selection.ranges) {
+    startLine = Math.min(startLine, state.doc.lineAt(range.from).number - 1);
+    endLine = Math.max(endLine, state.doc.lineAt(range.to).number - 1);
+  }
+  return {
+    startLine: Math.max(0, Math.min(startLine, state.doc.lines - 1)),
+    endLine: Math.max(0, Math.min(endLine, state.doc.lines - 1)),
+  };
+}
+
+function computeField(state: EditorState, lineRange: LineWindow | undefined): LivePreviewFieldValue {
+  const rangeWithSelection = includeSelectionLines(state, lineRange);
+  return {
+    decorations: buildDecorations(state, { lineRange: rangeWithSelection }, onRenderError),
+    lineRange,
+  };
 }
 
 function livePreviewField() {
-  return StateField.define<DecorationSet>({
-    create: (state) => computeField(state),
+  return StateField.define<LivePreviewFieldValue>({
+    create: (state) => computeField(state, undefined),
     update(value, tr) {
+      let lineRange = value.lineRange;
+      let viewportChanged = false;
+      for (const effect of tr.effects) {
+        if (effect.is(setViewport)) {
+          lineRange = effect.value;
+          viewportChanged = true;
+        }
+      }
       // Recompute on edits and cursor/selection moves (cursor line shows raw).
-      if (tr.docChanged || tr.selection) return computeField(tr.state);
+      if (tr.docChanged || tr.selection || viewportChanged) return computeField(tr.state, lineRange);
       return value;
     },
-    provide: (f) => EditorView.decorations.from(f),
+    provide: (f) => EditorView.decorations.from(f, (value) => value.decorations),
   });
 }
+
+function sameWindow(a: LineWindow | undefined, b: LineWindow): boolean {
+  return !!a && a.startLine === b.startLine && a.endLine === b.endLine;
+}
+
+class ViewportDecorationSync {
+  private lineRange: LineWindow | undefined;
+  private scheduled = false;
+  private destroyed = false;
+
+  constructor(private readonly view: EditorView) {
+    this.schedule();
+  }
+
+  private schedule() {
+    if (this.scheduled || this.destroyed) return;
+    this.scheduled = true;
+    queueMicrotask(() => {
+      this.scheduled = false;
+      if (this.destroyed) return;
+
+      const doc = this.view.state.doc;
+      const firstLine = doc.lineAt(this.view.viewport.from).number - 1;
+      const lastLine = doc.lineAt(this.view.viewport.to).number - 1;
+      const next = viewportWindow(doc.lines, firstLine, lastLine, 50);
+      if (sameWindow(this.lineRange, next)) return;
+
+      this.lineRange = next;
+      this.view.dispatch({ effects: setViewport.of(next) });
+    });
+  }
+
+  update(update: ViewUpdate) {
+    if (update.viewportChanged || update.docChanged) this.schedule();
+  }
+
+  destroy() {
+    this.destroyed = true;
+  }
+}
+
+const viewportDecorationPlugin = ViewPlugin.fromClass(ViewportDecorationSync);
 
 const selectionLayerMeasureKey = {};
 
@@ -291,6 +367,7 @@ function makeState(text: string): EditorState {
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
       livePreviewField(),
+      viewportDecorationPlugin,
       syncPlugin,
       EditorView.lineWrapping,
       // Draw CodeMirror's own cursor/selection elements so we can style the

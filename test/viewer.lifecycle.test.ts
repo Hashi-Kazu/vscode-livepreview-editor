@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { decideFollow, findViewerForUri, isCurrentBinding } from '../src/core/viewer';
+import {
+  decideFileEventAction,
+  decideFollow,
+  findViewerForUri,
+  isCurrentBinding,
+} from '../src/core/viewer';
 
 const viewers = [
   { id: 'one', uri: 'file:///workspace/one.md' },
@@ -38,5 +43,54 @@ describe('R-03: deferred document switching', () => {
     expect(isCurrentBinding(4, 4)).toBe(true);
     expect(isCurrentBinding(3, 4)).toBe(false);
     expect(isCurrentBinding(Number.NaN, 4)).toBe(false);
+  });
+});
+
+describe('R-03-10: file lifecycle events', () => {
+  it('decideFileEventAction rebinds on rename and closes on delete', () => {
+    expect(
+      decideFileEventAction(viewers, {
+        type: 'rename',
+        files: [
+          {
+            oldUri: 'file:///workspace/one.md',
+            newUri: 'file:///workspace/renamed.md',
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        type: 'rebind',
+        viewerId: 'one',
+        oldKey: 'file:///workspace/one.md',
+        newKey: 'file:///workspace/renamed.md',
+      },
+    ]);
+
+    expect(
+      decideFileEventAction(viewers, {
+        type: 'rename',
+        files: [
+          {
+            oldUri: 'file:///workspace/one.md',
+            newUri: 'file:///workspace/two.md',
+          },
+        ],
+      }),
+    ).toEqual([{ type: 'close', viewerId: 'one' }]);
+
+    expect(
+      decideFileEventAction(viewers, {
+        type: 'delete',
+        uris: ['file:///workspace/two.md'],
+      }),
+    ).toEqual([{ type: 'close', viewerId: 'two' }]);
+
+    expect(
+      decideFileEventAction(viewers, {
+        type: 'delete',
+        uris: ['file:///workspace/other.md'],
+      }),
+    ).toEqual([]);
   });
 });

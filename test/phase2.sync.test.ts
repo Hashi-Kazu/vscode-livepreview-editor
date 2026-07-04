@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { shouldResync, diffRange, cursorLinesFromSelections, offsetToPos } from '../src/core/sync';
+import {
+  shouldResync,
+  diffRange,
+  cursorLinesFromSelections,
+  offsetToPos,
+  fromLF,
+  fromLFPreserving,
+} from '../src/core/sync';
 
 describe('Phase 2: external change detection (shouldResync)', () => {
   it('resyncs when an external edit diverges from the webview text', () => {
@@ -66,5 +73,21 @@ describe('Phase 2: cursorLinesFromSelections', () => {
     const text = 'aa\nbb\ncc\ndd';
     const set = cursorLinesFromSelections(text, [{ from: 1, to: 7 }]); // lines 0..2
     expect([...set].sort()).toEqual([0, 1, 2]);
+  });
+});
+
+describe('Phase 2: per-line EOL preservation', () => {
+  it('fromLFPreserving keeps per-line EOL for mixed CRLF/LF', () => {
+    expect(fromLFPreserving('a\nB\nc\n', 'a\r\nb\nc\r\n', '\r\n')).toBe('a\r\nB\nc\r\n');
+  });
+
+  it('matches fromLF for documents using a single EOL', () => {
+    const newLF = 'a\nB\nc\n';
+    expect(fromLFPreserving(newLF, 'a\r\nb\r\nc\r\n', '\r\n')).toBe(fromLF(newLF, '\r\n'));
+    expect(fromLFPreserving(newLF, 'a\nb\nc\n', '\n')).toBe(fromLF(newLF, '\n'));
+  });
+
+  it('does not add a trailing EOL when the old document has none', () => {
+    expect(fromLFPreserving('a\nB\n', 'a\r\nb', '\r\n')).toBe('a\r\nB');
   });
 });

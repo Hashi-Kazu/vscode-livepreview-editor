@@ -146,6 +146,34 @@ export function fromLF(text: string, eol: '\n' | '\r\n'): string {
   return eol === '\r\n' ? text.replace(/\n/g, '\r\n') : text;
 }
 
+/**
+ * Convert LF text back to document text while preserving each existing line's
+ * original EOL. New lines that have no counterpart use the document EOL.
+ */
+export function fromLFPreserving(
+  newLF: string,
+  oldText: string,
+  fallbackEol: '\n' | '\r\n',
+): string {
+  const oldEols: ('\n' | '\r\n')[] = [];
+  for (const match of oldText.matchAll(/\r\n|\n/g)) {
+    oldEols.push(match[0] as '\n' | '\r\n');
+  }
+  const oldHasTrailingEol = /(?:\r\n|\n)$/.test(oldText);
+
+  const newLines = newLF.split('\n');
+  let result = '';
+  for (let line = 0; line < newLines.length; line++) {
+    result += newLines[line];
+    if (line < newLines.length - 1) {
+      const isTrailingEol = line === newLines.length - 2 && newLines[line + 1] === '';
+      if (isTrailingEol && !oldHasTrailingEol) continue;
+      result += oldEols[line] ?? fallbackEol;
+    }
+  }
+  return result;
+}
+
 /** Result of {@link toggleTaskAt}. */
 export interface ToggleResult {
   /** The full document text after toggling (unchanged if the line is not a task). */
