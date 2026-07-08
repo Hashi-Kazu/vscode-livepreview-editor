@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.23.0
+**バージョン**: 1.23.1
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-03
+**最終更新**: 2026-07-09
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-03 時点 / v1.23.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.23.0 では、CRLF/LF 混在文書を Webview から編集した際も行単位の EOL を保持する（R-05-06）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-07-09 時点 / v1.23.1）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.23.1 では、IME 合成中に保留した remote update を適用時点の版数で再検証し、古い場合は破棄する（R-05-08）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -161,7 +161,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-05-05 Webview の可視ビューポートに前後 50 行のパディングとカーソル・選択行を加えた範囲へ装飾計算を限定し（`viewportWindow` を `StateEffect` で装飾用 `StateField` に結線）、数千行でもキー入力・カーソル移動時の全行再計算を行わず処理時間が上限内に収まること。
 - ■■■ R-05-06 CRLF 行末の文書でも記法検知・タスクトグルが正しく動作し、Webview 編集の反映時にファイルの EOL を保持して最小差分のみ適用すること。CRLF/LF 混在文書では未編集行を含む各行の EOL を行単位で維持すること（`toLF`/`fromLF`/`fromLFPreserving`、`splitLines` の CR 除外、`toggleTaskAt` の CR 許容）。
 - ■■■ R-05-07 `buildDecorations` の `RangeSetBuilder.add()` 呼び出しは CodeMirror が要求する `(from, startSide)` 昇順を遵守すること。`MarkDecoration` の `startSide`（500000000）は `Decoration.replace` の `startSide`（499999999）より大きいため、同一 `from` では `hide`/`replaceWidget` を `mark` より前に追加すること（`sideOf` の順序を修正）。また `builder.add()` が例外をスローした場合は `onError` で報告し `Decoration.none` を返してエディタが空白になることを防ぐこと。
-- ■■■ R-05-08 IME 合成中に受信した remote update は最新1件を保留し、合成終了時に適用すること。IME の確定変更は remote 適用中でない場合に現在の全文を `edit` として確実にフラッシュすること（`shouldFlushComposition`）。
+- ■■■ R-05-08 IME 合成中に受信した remote update は最新1件を保留し、合成終了後に適用時点の `editVersion` で再検証して古ければ破棄すること。IME の確定変更は保留 remote の適用より先に現在の全文を `edit` として確実にフラッシュし、その後の版数で保留 remote を判定すること（`shouldFlushComposition` / `shouldApplyRemoteUpdate`）。
 
 ### R-06 設定 #settings
 

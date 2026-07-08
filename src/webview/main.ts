@@ -28,7 +28,7 @@ let binding = 0;
 let applyingRemote = false;
 let editVersion = 0;
 let pendingCompositionChange = false;
-let pendingRemoteText: string | undefined;
+let pendingRemote: { text: string; baseVersion: number | undefined } | undefined;
 
 // Decorations are provided via a StateField (not a ViewPlugin): CodeMirror
 // forbids block decorations — used by the HTML table widget — from plugins.
@@ -191,12 +191,7 @@ function postEdit(text: string) {
 const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
   if (update.docChanged && update.view.composing) pendingCompositionChange = true;
 
-  if (!update.view.composing && pendingRemoteText !== undefined) {
-    const text = pendingRemoteText;
-    pendingRemoteText = undefined;
-    if (text !== update.view.state.doc.toString()) setText(text);
-  }
-
+  let flushedComposition = false;
   if (
     shouldFlushComposition({
       composing: update.view.composing,
@@ -206,8 +201,25 @@ const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
   ) {
     pendingCompositionChange = false;
     postEdit(view.state.doc.toString());
-    return;
+    flushedComposition = true;
   }
+
+  if (!update.view.composing && pendingRemote !== undefined) {
+    const remote = pendingRemote;
+    pendingRemote = undefined;
+    if (
+      shouldApplyRemoteUpdate({
+        baseVersion: remote.baseVersion,
+        localVersion: editVersion,
+        composing: false,
+      }) &&
+      remote.text !== update.view.state.doc.toString()
+    ) {
+      setText(remote.text);
+    }
+  }
+
+  if (flushedComposition) return;
 
   // Defer during IME composition / remote application to avoid flicker & loops.
   if (!shouldEmitEdit({ docChanged: update.docChanged, composing: update.view.composing, applyingRemote })) {
@@ -567,7 +579,7 @@ window.addEventListener('message', (event) => {
       if (typeof msg.binding === 'number') binding = msg.binding;
       editVersion = 0;
       pendingCompositionChange = false;
-      pendingRemoteText = undefined;
+      pendingRemote = undefined;
       renderErrorReported = false;
       applyFontSize(msg.fontSize ?? 14);
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
@@ -594,7 +606,9 @@ window.addEventListener('message', (event) => {
             localVersion: editVersion,
             composing: false,
           });
-        if (blockedOnlyByComposition && typeof msg.text === 'string') pendingRemoteText = msg.text;
+        if (blockedOnlyByComposition && typeof msg.text === 'string') {
+          pendingRemote = { text: msg.text, baseVersion: msg.baseVersion };
+        }
         break;
       }
       if (msg.text !== view.state.doc.toString()) setText(msg.text);

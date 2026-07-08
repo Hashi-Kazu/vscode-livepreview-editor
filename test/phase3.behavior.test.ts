@@ -74,6 +74,12 @@ describe('stale update / IME flush', () => {
     expect(shouldApplyRemoteUpdate({ baseVersion: undefined, localVersion: 5, composing: false })).toBe(true);
   });
 
+  it('R-05-08: 合成中に保留した remote update は適用時点の版数で再検証し、確定フラッシュ後は破棄する', () => {
+    expect(shouldApplyRemoteUpdate({ baseVersion: 3, localVersion: 3, composing: true })).toBe(false);
+    expect(shouldApplyRemoteUpdate({ baseVersion: 3, localVersion: 4, composing: false })).toBe(false);
+    expect(shouldApplyRemoteUpdate({ baseVersion: 3, localVersion: 3, composing: false })).toBe(true);
+  });
+
   it('shouldFlushComposition: 合成終了時に保留変更をフラッシュする', () => {
     expect(
       shouldFlushComposition({ composing: false, pendingCompositionChange: true, applyingRemote: false }),
