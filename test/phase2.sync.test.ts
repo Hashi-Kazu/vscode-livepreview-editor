@@ -27,6 +27,28 @@ describe('Phase 2: external change detection (shouldResync)', () => {
     ).toBe(false);
   });
 
+  it('does NOT resync when the change was caused by our own document.save() (e.g. trim trailing whitespace)', () => {
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        isDuringOwnSave: true,
+        webviewText: 'abc ',
+        documentText: 'abc',
+      }),
+    ).toBe(false);
+  });
+
+  it('still resyncs on a genuine external change while not in our own save', () => {
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        isDuringOwnSave: false,
+        webviewText: 'old',
+        documentText: 'new (git pull)',
+      }),
+    ).toBe(true);
+  });
+
   it('drives a mocked webview.postMessage exactly once on external change', () => {
     const post = vi.fn();
     const webviewText = 'a';

@@ -14,17 +14,28 @@ export interface ResyncParams {
   webviewText: string;
   /** New text of the underlying document. */
   documentText: string;
+  /**
+   * True when this change was produced by the extension host's own
+   * `document.save()` call (e.g. trailing-whitespace trim, final-newline
+   * insertion, format-on-save). Such self-inflicted rewrites must not be
+   * echoed back to the Webview as an external change — otherwise the
+   * cursor jumps back while the user is still typing.
+   */
+  isDuringOwnSave?: boolean;
 }
 
 /**
  * Decide whether the Webview must reload its contents from the document.
  *
- * An external change (Git pull, another editor, format-on-save) should trigger
- * a resync, but an echo of the Webview's own edit must not — otherwise the
- * cursor jumps and edits fight each other.
+ * An external change (Git pull, another editor, format-on-save triggered by
+ * something other than our own save) should trigger a resync, but an echo of
+ * the Webview's own edit — including save-participant rewrites caused by our
+ * own `document.save()` — must not, otherwise the cursor jumps and edits
+ * fight each other.
  */
-export function shouldResync({ isFromWebview, webviewText, documentText }: ResyncParams): boolean {
+export function shouldResync({ isFromWebview, webviewText, documentText, isDuringOwnSave }: ResyncParams): boolean {
   if (isFromWebview) return false;
+  if (isDuringOwnSave) return false;
   return webviewText !== documentText;
 }
 

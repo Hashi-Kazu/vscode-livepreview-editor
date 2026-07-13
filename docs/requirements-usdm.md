@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.23.1
+**バージョン**: 1.23.2
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-09
+**最終更新**: 2026-07-13
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-09 時点 / v1.23.1）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.23.1 では、IME 合成中に保留した remote update を適用時点の版数で再検証し、古い場合は破棄する（R-05-08）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-07-13 時点 / v1.23.2）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.23.2 では、拡張ホスト自身の `document.save()` 実行中に保存参加者が生じさせた自己起因の変更を外部変更と誤判定しないようにし、連続入力時のキャレット巻き戻りを解消した（R-04-02）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -138,7 +138,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜双方向同期＞
 
 - ■■■ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。
-- ■■■ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。
+- ■■□ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。自身の `document.save()` 実行中に保存参加者（trailing-whitespace 除去・最終改行挿入・format on save 等）が生じさせた自己起因の変更は外部変更として扱わず、Webview へエコーバックしない（`isDuringOwnSave`）。
 - ■■■ R-04-03 Webview のローカル編集版数より古い `baseVersion` を持つ remote update は破棄し、入力直後のキャレットを古い全文で巻き戻さないこと（`shouldApplyRemoteUpdate`）。`baseVersion` がない旧メッセージは版数比較をスキップすること。
 
 ---

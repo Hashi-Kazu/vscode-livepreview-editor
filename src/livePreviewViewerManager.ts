@@ -18,6 +18,13 @@ interface ViewerBinding {
   webviewText: string;
   lastEditVersion: number;
   changeSubscription: vscode.Disposable;
+  /**
+   * True while this binding's own `document.save()` call is in flight. Save
+   * participants (trim trailing whitespace, insert final newline, format on
+   * save, etc.) can rewrite the document during this window; such changes
+   * must not be echoed back to the Webview as an external change.
+   */
+  isDuringOwnSave: boolean;
 }
 
 interface Viewer {
@@ -246,9 +253,14 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     }
     const savedDocument = await vscode.workspace.openTextDocument(binding.uri);
     if (viewer.binding !== binding) return;
-    const saved = await savedDocument.save();
-    if (!saved) {
-      vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
+    binding.isDuringOwnSave = true;
+    try {
+      const saved = await savedDocument.save();
+      if (!saved) {
+        vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
+      }
+    } finally {
+      binding.isDuringOwnSave = false;
     }
   }
 
@@ -327,6 +339,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           isFromWebview: fromWebview,
           webviewText: binding.webviewText,
           documentText,
+          isDuringOwnSave: binding.isDuringOwnSave,
         })
       ) {
         binding.webviewText = documentText;
@@ -347,6 +360,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       webviewText: toLF(document.getText()),
       lastEditVersion: 0,
       changeSubscription,
+      isDuringOwnSave: false,
     };
     return binding;
   }
