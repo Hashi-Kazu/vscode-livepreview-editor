@@ -313,11 +313,16 @@ export function setResourceBase(base: string) {
   resourceBase = base.replace(/\/+$/, '');
 }
 
-/** Resolve an image src: absolute/data URLs as-is, relative paths via the base. */
+/** Resolve an image src: absolute/data URLs as-is, relative paths via the base.
+ *  `src` may still carry the CommonMark angle-bracket destination wrapper
+ *  (`<path with spaces>`) — the model keeps it verbatim by design (see
+ *  `livePreviewViewerManager.openLink`, which strips it the same way for link
+ *  hrefs) — so unwrap the outer pair here before resolving. */
 function resolveSrc(src: string): string {
-  if (/^(https?:|data:|vscode-webview-resource:|vscode-resource:)/i.test(src)) return src;
-  if (!resourceBase) return src;
-  const clean = src.replace(/^\.\//, '').replace(/^\//, '');
+  const unwrapped = src.replace(/^<([\s\S]*)>$/, '$1');
+  if (/^(https?:|data:|vscode-webview-resource:|vscode-resource:)/i.test(unwrapped)) return unwrapped;
+  if (!resourceBase) return unwrapped;
+  const clean = unwrapped.replace(/^\.\//, '').replace(/^\//, '');
   return `${resourceBase}/${clean.split('/').map(encodeURIComponent).join('/')}`;
 }
 

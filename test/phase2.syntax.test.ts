@@ -69,6 +69,15 @@ describe('Phase 2: images ![alt](url)', () => {
     expect(byTag(specs, 'image')).toHaveLength(0);
     expect(byTag(specs, 'image-src')).toHaveLength(1);
   });
+
+  it('keeps the angle-bracket destination in src (model spec; Webview resolveSrc unwraps it)', () => {
+    const doc = '![alt text](<新規 ビットマップ イメージ.bmp>)';
+    const specs = computeDecorations(doc, new Set());
+    const img = byTag(specs, 'image');
+    expect(img).toHaveLength(1);
+    expect(img[0].attrs?.src).toBe('<新規 ビットマップ イメージ.bmp>');
+    expect(img[0].attrs?.alt).toBe('alt text');
+  });
 });
 
 describe('Phase 2: blockquote (>)', () => {
