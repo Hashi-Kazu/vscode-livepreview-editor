@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { SelfSaveGuard } from '../src/core/selfSaveGuard';
+import { shouldResync } from '../src/core/sync';
 
 /**
  * A controllable "macrotask" scheduler: callbacks are queued and only run when
@@ -73,5 +74,54 @@ describe('Phase 2: SelfSaveGuard (R-04-02 self-save echo suppression)', () => {
     await Promise.resolve();
     fake.flush();
     expect(guard.isActive).toBe(false);
+  });
+
+  it('suppresses save-participant echo across a save window driven by will/did-save, including saves initiated by another editor of the same document', async () => {
+    const fake = makeFakeScheduler();
+    const guard = new SelfSaveGuard(fake.schedule);
+
+    // Simulate onWillSaveTextDocument firing for a save initiated by another
+    // editor of the same document (e.g. autosave / manual save / format on
+    // save from a separate text editor tab).
+    const token = guard.begin();
+    expect(guard.isActive).toBe(true);
+
+    // Simulate onDidSaveTextDocument firing once VS Code reports the save
+    // complete. Suppression must still hold for the microtask+macrotask tail
+    // so save-participant rewrites (trim trailing whitespace, insert final
+    // newline, etc.) that arrive slightly after did-save are not echoed.
+    guard.end(token);
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        isDuringOwnSave: guard.isActive,
+        webviewText: 'abc ',
+        documentText: 'abc',
+      }),
+    ).toBe(false);
+
+    await Promise.resolve();
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        isDuringOwnSave: guard.isActive,
+        webviewText: 'abc ',
+        documentText: 'abc',
+      }),
+    ).toBe(false);
+
+    fake.flush();
+    expect(guard.isActive).toBe(false);
+
+    // Once the save window has fully elapsed, a genuine external edit must
+    // still trigger a resync (external change detection is preserved).
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        isDuringOwnSave: guard.isActive,
+        webviewText: 'old',
+        documentText: 'new',
+      }),
+    ).toBe(true);
   });
 });

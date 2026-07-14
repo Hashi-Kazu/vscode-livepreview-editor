@@ -1,15 +1,20 @@
 /**
- * Tracks whether the extension host is currently suppressing echoes of its own
- * `document.save()` call.
+ * Tracks whether the extension host is currently suppressing echoes of a
+ * save of the bound document — including saves initiated by another editor
+ * of the same document (autosave, manual save, format on save), not just the
+ * extension host's own `document.save()` call.
  *
- * `document.save()` resolving does not mean save participants (trim trailing
+ * A save resolving does not mean save participants (trim trailing
  * whitespace, insert final newline, format on save, etc.) have finished
  * rewriting the document — their resulting `onDidChangeTextDocument` events
  * can arrive on a later microtask/task. To avoid mistaking those events for an
  * external change (which would echo an `update` to the Webview and roll the
  * caret back), suppression must remain active until at least one microtask
  * and one macrotask after `end()` has elapsed, unless a newer `begin()`
- * supersedes it first.
+ * supersedes it first. Callers drive `begin()`/`end()` from the document's
+ * `onWillSaveTextDocument`/`onDidSaveTextDocument` lifecycle so that any save
+ * of the bound document — regardless of which editor or process initiated
+ * it — is covered deterministically.
  *
  * Kept free of any VS Code import so it can be unit-tested directly with fake
  * timers / injected schedulers.
