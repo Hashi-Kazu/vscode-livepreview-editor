@@ -478,6 +478,90 @@ view.dom.addEventListener(
   true, // capture phase
 );
 
+// --- Paste / drop of images and files ---------------------------------------
+//
+// Collect binary files (clipboard image paste, OS file drop) and dropped
+// workspace URIs, then hand them to the host to save/relativize. Only prevent
+// the default action when there is media to handle; plain text paste/drop is
+// left entirely to CodeMirror (R-29).
+async function collectAndSendMedia(dataTransfer: DataTransfer | null): Promise<boolean> {
+  if (!dataTransfer) return false;
+
+  const files: File[] = [];
+  if (dataTransfer.files && dataTransfer.files.length > 0) {
+    for (let i = 0; i < dataTransfer.files.length; i++) files.push(dataTransfer.files[i]);
+  } else if (dataTransfer.items) {
+    for (let i = 0; i < dataTransfer.items.length; i++) {
+      const item = dataTransfer.items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+  }
+
+  const uriList = dataTransfer.getData('text/uri-list');
+  const uris = uriList
+    ? uriList
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#'))
+    : [];
+
+  if (files.length === 0 && uris.length === 0) return false;
+
+  const payloadFiles = await Promise.all(
+    files.map(async (file) => ({
+      name: file.name,
+      data: new Uint8Array(await file.arrayBuffer()),
+    })),
+  );
+
+  vscode.postMessage({
+    type: 'pasteMedia',
+    binding,
+    files: payloadFiles,
+    uris,
+  });
+  return true;
+}
+
+view.dom.addEventListener('paste', (event) => {
+  const dt = (event as ClipboardEvent).clipboardData;
+  const hasFile = !!dt && ((dt.files && dt.files.length > 0) ||
+    (dt.items && Array.from(dt.items).some((i) => i.kind === 'file')));
+  if (!hasFile) return; // plain text paste → CodeMirror default
+  event.preventDefault();
+  void collectAndSendMedia(dt);
+});
+
+view.dom.addEventListener('drop', (event) => {
+  const dt = (event as DragEvent).dataTransfer;
+  const hasFile = !!dt && ((dt.files && dt.files.length > 0) ||
+    (dt.items && Array.from(dt.items).some((i) => i.kind === 'file')) ||
+    !!dt.getData('text/uri-list'));
+  if (!hasFile) return; // plain text drop → CodeMirror default
+  event.preventDefault();
+  // Move the caret to the drop position before inserting.
+  try {
+    const pos = view.posAtCoords({ x: (event as DragEvent).clientX, y: (event as DragEvent).clientY });
+    if (pos != null) view.dispatch({ selection: { anchor: pos } });
+  } catch {
+    /* ignore unmapped coords */
+  }
+  void collectAndSendMedia(dt);
+});
+
+/** Insert a host-provided media snippet at the current selection (R-29). */
+function insertMedia(text: string, placeholderFrom: number, placeholderTo: number) {
+  const { from, to } = view.state.selection.main;
+  view.dispatch({
+    changes: { from, to, insert: text },
+    selection: { anchor: from + placeholderFrom, head: from + placeholderTo },
+  });
+  view.focus();
+}
+
 interface FontSizeScrollAnchor {
   pos: number;
   pointerY: number;
@@ -618,6 +702,16 @@ window.addEventListener('message', (event) => {
       break;
     case 'format':
       if (typeof msg.kind === 'string') runFormat(msg.kind);
+      break;
+    case 'insertMedia':
+      if (msg.binding !== binding) break;
+      if (
+        typeof msg.text === 'string' &&
+        typeof msg.placeholderFrom === 'number' &&
+        typeof msg.placeholderTo === 'number'
+      ) {
+        insertMedia(msg.text, msg.placeholderFrom, msg.placeholderTo);
+      }
       break;
   }
 });

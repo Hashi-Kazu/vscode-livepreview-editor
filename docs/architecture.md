@@ -13,7 +13,7 @@
 │ - TextDocument 再取得・最小差分 WorkspaceEdit・即時保存 │
 │ - active text editor follow・文書再バインド           │
 └───────────────────────┬─────────────────────────────┘
-                        │ init/update/edit/openLink/…
+                        │ init/update/edit/openLink/pasteMedia/insertMedia/…
 ┌───────────────────────▼─────────────────────────────┐
 │ Webview (browser/IIFE) src/webview/main.ts          │
 │ - CodeMirror 6 EditorView                           │

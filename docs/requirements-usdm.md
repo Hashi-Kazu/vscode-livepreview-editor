@@ -1,7 +1,7 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.23.3
+**バージョン**: 1.24.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-15
 **ステータス**: 承認済み  
@@ -51,7 +51,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 | タスク項目 | `- [ ]` / `- [x]` で始まる GFM チェックリスト項目 |
 | ビューア専用 | カーソル位置に依らず常にウィジェット描画し、生記法を表示する編集モードを持たないブロック |
 
-> **スコープ注記（v1.5.0）**: 本拡張は素の Markdown（CommonMark + GFM）の編集・プレビューに専念する。Obsidian 独自機能（Wikilink・埋め込み・コールアウト・タグ・脚注・カスタムタスク状態・バックリンク・ノート補完・画像ペースト保存）は品質リスク低減のため v1.5.0 で削除した（削除した要件番号: R-07, R-10〜R-15, R-17, R-18）。
+> **スコープ注記（v1.5.0）**: 本拡張は素の Markdown（CommonMark + GFM）の編集・プレビューに専念する。Obsidian 独自機能（Wikilink・埋め込み・コールアウト・タグ・脚注・カスタムタスク状態・バックリンク・ノート補完・画像ペースト保存）は品質リスク低減のため v1.5.0 で削除した（削除した要件番号: R-07, R-10〜R-15, R-17, R-18）。なお「画像ペースト保存」は v1.24.0 で標準 Markdown エディタ相当の挙動として再導入した（R-29）。
 
 ## 動作環境
 
@@ -366,3 +366,17 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-28-14 見出し行（`.cm-line.cm-lp-h1`〜`h6`）と HR 行（`.cm-lp-hr-line`）の上下余白が `margin` ではなく `padding` で表現されており、CodeMirror の height oracle が正確な行高さを計測できること。`getBoundingClientRect().height` は CSS `margin` を含まないため、見出し・HR 行の `margin-top`/`margin-bottom` が height oracle に計上されず、スクロール量に比例してクリック位置ずれが累積していた（R-28-10 でテーブルに対して同原則の修正を行ったが、見出し・HR に同問題が残存していた）。対策として `media/editor.css` の見出し `margin-top: 0.8em` → `padding-top: 0.8em`・`margin-bottom: 0.3em` → `padding-bottom: 0.3em`（h1/h2 は border-bottom 上の空きを統合し `padding-bottom: 0.55em`）、HR の `margin: 1em 0` → `padding: 0.15em 0`（余白縮小も兼ねる）へ変換すること。あわせて HR の `border-top` を 2px → 3px（`rgba(127,127,127,0.5)`）に変更し視認性を高めること。`applyFontSize` の末尾で `requestAnimationFrame(() => view.requestMeasure())` を呼び、フォントサイズ変更後に全行の実寸を再測定させること（`src/webview/main.ts`）。
 - ■■■ R-28-15 ドラッグ選択範囲が左右余白にはみ出さず、かつ長文の上部・中盤・末尾やスクロール後でも確実に視認できること。`.cm-selectionLayer` は `contain:size` かつ子要素が absolute 配置のため、CSS 高さ未指定では used height が 0 となり選択矩形がすべてクリップされ、`height:100%` では viewport 高に固定され文書途中以降がクリップされる。対策として `src/webview/main.ts` の専用 `ViewPlugin` が CodeMirror の `requestMeasure` read/write フェーズを使い、read で `view.contentHeight` と対象レイヤーを取得し、write で inline `height: ${view.contentHeight}px` を同期すること。同一キーで重複 measure を集約し、初期生成、`docViewUpdate`（文書・装飾・viewport 由来の DOM 更新）、`geometryChanged` / `docChanged`、フォントサイズ変更、表・`<details>` の再測定後をカバーし、destroy 時は付与した inline height を除去すること。CSS は `width:100%` と `clip-path: inset(0 40px 0 48px)` を維持して左右余白を除外し、固定 height は指定しないこと。
 - ■■□ R-28-16 Live エディター上で Ctrl（Windows/Linux）または Cmd（macOS）を押しながらマウスホイールを操作すると、ホイール上方向で 1px 拡大、下方向で 1px 縮小すること。ホイールの `deltaY` の大きさにかかわらず 1 回の gesture につき 1px のみ変更し、有効範囲は `livePreview.fontSize` と同じ 8〜40px にクランプする。計算は CodeMirror/DOM 非依存の純粋関数 `zoomFontSize`（`src/core/viewport.ts`）で行う。変更は現在の Webview タブ内の `fontSize` 状態だけに適用し、VS Code 設定、他タブ、再度開いたタブには保存・伝播しない。通常の修飾キーなしホイールは従来どおりスクロールし、キーボードショートカットによるズームは追加しない。ズーム時はポインタ直下の文書位置と行内 Y オフセットを変更前に記録し、既存 `applyFontSize` の再計測後に `.cm-scroller.scrollTop` を補正して表示アンカーを維持すること。
+
+### R-29 画像・ファイルのペースト/ドロップ挿入 #paste-media
+
+> **理由：** 標準 Markdown エディタと同様に、画像バイナリのペーストやファイルのドロップだけでワークスペースへ画像を保存し、Markdown リンクを自動挿入できることは編集体験の要であるため。v1.5.0 で削除した「画像ペースト保存」を、Obsidian 独自挙動ではなく標準 Markdown エディタ相当の挙動として v1.24.0 で再導入する。
+
+> **説明：** 画像判定・山括弧エスケープ・スニペット生成・ファイル名衝突回避は VS Code 非依存の純粋関数（`src/core/pasteLink.ts`: `isImageFile`／`formatMarkdownLinkTarget`／`buildMediaSnippet`／`uniqueMediaName`）が担う。Webview（`src/webview/main.ts`）は `paste`/`drop` でファイル・`text/uri-list` を収集し、ファイルまたは URI があるときのみ `preventDefault` して `{ type: 'pasteMedia', binding, files: [{ name, data: Uint8Array }], uris? }` をホストへ送る（ファイルも URI も無い通常テキストは CodeMirror 既定に委ねる）。ホスト（`src/livePreviewViewerManager.ts` `handlePasteMedia`）はバイナリを document フォルダ相対の保存先（既定 `assets/`）へ `workspace.fs.writeFile` で保存し、同名衝突は `-N` 連番で回避、URI は document フォルダ／ワークスペース内なら相対パス化する。`isCurrentBinding` 確認後、単一スニペットを `{ type: 'insertMedia', binding, text, placeholderFrom, placeholderTo }` として返信し、Webview が現在の選択範囲へ挿入してプレースホルダ（`alt text`／`text`）を選択状態にする。挿入後は既存 edit フローで保存まで確定する。往復は `enqueue` で直列化し、`resolveSrc`（R-26-01）で `assets/` 配下の画像が追加設定なしに描画される。
+
+###### ＜ペースト/ドロップ＞
+
+- ■■□ R-29-01 `formatMarkdownLinkTarget` は、パスにスペース・`(`・`)` を含む場合のみ `<...>` で囲むこと（例: `assets/新規 ビットマップ イメージ.bmp` → `<assets/新規 ビットマップ イメージ.bmp>`、`a(b).png` → `<a(b).png>`）。含まない場合は変化させず（例: `マークダウン.md` → `マークダウン.md`）、非 ASCII はエスケープしないこと。囲む場合に本文へ `<`/`>` が含まれれば `%3C`/`%3E` へエンコードすること。
+- ■■□ R-29-02 `buildMediaSnippet` は、画像は `![alt text](<target>)`（プレースホルダ `alt text`）、非画像は `[text](target)`（プレースホルダ `text`）を生成し、プレースホルダ範囲（`placeholderFrom`/`placeholderTo`）が該当文字列を指すこと。`target` は `formatMarkdownLinkTarget` 適用済みを受け取る。
+- ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
+- ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
+- ■■□ R-29-05 クリップボード画像ペーストで画像が document フォルダ相対の `assets/` に保存され `![alt text](<...>)`（スペースを含むパスは山括弧付き）が挿入・描画されること。`.md` 等の非画像ファイルのドロップで `[text](...)` が挿入されること。ファイル・URI を含まない通常テキストのペースト/ドロップは CodeMirror 既定挙動を変えないこと。（host↔webview 往復・実ファイル保存・D&D 実挙動は自動化困難のため手動確認）
