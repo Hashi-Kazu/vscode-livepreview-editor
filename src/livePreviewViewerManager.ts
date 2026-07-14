@@ -11,6 +11,12 @@ import {
   ViewerState,
 } from './core/viewer';
 import { resolveSettings } from './core/viewport';
+import {
+  buildMediaSnippet,
+  formatMarkdownLinkTarget,
+  isImageFile,
+  uniqueMediaName,
+} from './core/pasteLink';
 
 interface ViewerBinding {
   uri: vscode.Uri;
@@ -189,6 +195,12 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           });
         });
         break;
+      case 'pasteMedia':
+        this.enqueue(viewer, async () => {
+          if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
+          await this.handlePasteMedia(viewer, message);
+        });
+        break;
       case 'openLink':
         if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
         void this.openLink(viewer.binding.uri, message.href);
@@ -263,6 +275,127 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     } finally {
       binding.saveGuard.end(token);
     }
+  }
+
+  /**
+   * Save pasted/dropped binaries into the workspace and resolve dropped URIs to
+   * relative paths, then reply with a single `insertMedia` snippet for the
+   * Webview to insert at the current selection (R-29).
+   */
+  private async handlePasteMedia(
+    viewer: Viewer,
+    message: {
+      binding: number;
+      files?: { name: string; data: Uint8Array }[];
+      uris?: string[];
+    },
+  ): Promise<void> {
+    const binding = viewer.binding;
+    const documentFolder = vscode.Uri.joinPath(binding.uri, '..');
+    const destFolder = this.mediaDestinationFolder();
+    const targetDir = vscode.Uri.joinPath(documentFolder, destFolder);
+
+    const relTargets: string[] = [];
+
+    const files = Array.isArray(message.files) ? message.files : [];
+    if (files.length > 0) {
+      const taken = await this.directoryNames(targetDir);
+      if (files.length > 0) {
+        await this.ensureDirectory(targetDir);
+      }
+      for (const file of files) {
+        if (!file || typeof file.name !== 'string' || !file.data) continue;
+        const name = uniqueMediaName(sanitizeFileName(file.name), (n) => taken.has(n));
+        taken.add(name);
+        const fileUri = vscode.Uri.joinPath(targetDir, name);
+        await vscode.workspace.fs.writeFile(fileUri, new Uint8Array(file.data));
+        relTargets.push(joinRelative(destFolder, name));
+      }
+    }
+
+    const uris = Array.isArray(message.uris) ? message.uris : [];
+    for (const raw of uris) {
+      const rel = this.relativizeUri(raw, documentFolder);
+      if (rel) relTargets.push(rel);
+    }
+
+    if (relTargets.length === 0) return;
+    if (viewer.disposed || viewer.binding !== binding) return;
+
+    const snippets = relTargets.map((rel) => {
+      const base = rel.split('/').pop() ?? rel;
+      return buildMediaSnippet({
+        isImage: isImageFile(base),
+        target: formatMarkdownLinkTarget(rel),
+      });
+    });
+
+    const first = snippets[0];
+    const text = snippets.map((s) => s.text).join(' ');
+    await viewer.panel.webview.postMessage({
+      type: 'insertMedia',
+      binding: binding.generation,
+      text,
+      placeholderFrom: first.placeholderFrom,
+      placeholderTo: first.placeholderTo,
+    });
+  }
+
+  /**
+   * Resolve the destination folder (relative to the document) for saved media.
+   * Honors a plain relative folder from `markdown.copyFiles.destination`; glob
+   * variables and absolute paths are ignored in favor of the default `assets`.
+   */
+  private mediaDestinationFolder(): string {
+    const configured = vscode.workspace
+      .getConfiguration('markdown')
+      .get<Record<string, string>>('copyFiles.destination');
+    if (configured && typeof configured === 'object') {
+      for (const value of Object.values(configured)) {
+        if (typeof value !== 'string' || !value) continue;
+        if (value.includes('${') || value.includes('*')) continue;
+        if (value.startsWith('/') || /^[a-zA-Z]:/.test(value)) continue;
+        return value.replace(/\/+$/, '').replace(/\/[^/]*\.[^/]*$/, '') || 'assets';
+      }
+    }
+    return 'assets';
+  }
+
+  private async ensureDirectory(uri: vscode.Uri): Promise<void> {
+    try {
+      await vscode.workspace.fs.createDirectory(uri);
+    } catch {
+      // Directory may already exist; writeFile will surface real errors.
+    }
+  }
+
+  private async directoryNames(uri: vscode.Uri): Promise<Set<string>> {
+    try {
+      const entries = await vscode.workspace.fs.readDirectory(uri);
+      return new Set(entries.map(([name]) => name));
+    } catch {
+      return new Set();
+    }
+  }
+
+  /** Return a forward-slash path relative to the document folder, or undefined. */
+  private relativizeUri(raw: unknown, documentFolder: vscode.Uri): string | undefined {
+    if (typeof raw !== 'string' || !raw) return undefined;
+    let uri: vscode.Uri;
+    try {
+      uri = vscode.Uri.parse(raw.trim());
+    } catch {
+      return undefined;
+    }
+    if (uri.scheme !== 'file') return undefined;
+    const bases = [documentFolder, ...(vscode.workspace.workspaceFolders?.map((f) => f.uri) ?? [])];
+    for (const base of bases) {
+      const rel = path.relative(base.fsPath, uri.fsPath);
+      if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+        return rel.split(path.sep).join('/');
+      }
+    }
+    return undefined;
   }
 
   private async followActiveEditor(uri: vscode.Uri): Promise<void> {
@@ -515,6 +648,18 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 </body>
 </html>`;
   }
+}
+
+/** Join a relative folder and filename with forward slashes. */
+function joinRelative(folder: string, name: string): string {
+  const clean = folder.replace(/^\/+/, '').replace(/\/+$/, '');
+  return clean ? `${clean}/${name}` : name;
+}
+
+/** Strip path separators from a dropped filename so it stays a single segment. */
+function sanitizeFileName(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? name;
+  return base || 'file';
 }
 
 function getNonce(): string {
