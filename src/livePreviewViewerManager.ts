@@ -26,12 +26,18 @@ interface ViewerBinding {
   lastEditVersion: number;
   changeSubscription: vscode.Disposable;
   /**
-   * Suppresses echoes of this binding's own `document.save()` call. Save
-   * participants (trim trailing whitespace, insert final newline, format on
-   * save, etc.) can rewrite the document after `save()` resolves; such
-   * changes must not be echoed back to the Webview as an external change.
+   * Suppresses echoes of any save of this binding's document — including
+   * saves initiated by another editor of the same document (autosave, manual
+   * save, format on save). Save participants (trim trailing whitespace,
+   * insert final newline, format on save, etc.) can rewrite the document
+   * after the save resolves; such changes must not be echoed back to the
+   * Webview as an external change.
    */
   saveGuard: SelfSaveGuard;
+  /** Token from the current save window's `saveGuard.begin()`, if any. */
+  saveToken: number;
+  /** Subscriptions to the document's will-save/did-save lifecycle. */
+  saveLifecycleSubscriptions: vscode.Disposable[];
 }
 
 interface Viewer {
@@ -266,14 +272,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     }
     const savedDocument = await vscode.workspace.openTextDocument(binding.uri);
     if (viewer.binding !== binding) return;
-    const token = binding.saveGuard.begin();
-    try {
-      const saved = await savedDocument.save();
-      if (!saved) {
-        vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
-      }
-    } finally {
-      binding.saveGuard.end(token);
+    const saved = await savedDocument.save();
+    if (!saved) {
+      vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
     }
   }
 
@@ -449,6 +450,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const previous = viewer.binding;
     this.viewersByUri.delete(previous.key);
     previous.changeSubscription.dispose();
+    for (const subscription of previous.saveLifecycleSubscriptions) subscription.dispose();
 
     const generation = previous.generation + 1;
     viewer.binding = this.createBinding(viewer.panel, document, generation);
@@ -487,6 +489,14 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         binding.webviewText = documentText;
       }
     });
+    const willSaveSubscription = vscode.workspace.onWillSaveTextDocument((event) => {
+      if (event.document.uri.toString() !== binding.key) return;
+      binding.saveToken = binding.saveGuard.begin();
+    });
+    const didSaveSubscription = vscode.workspace.onDidSaveTextDocument((document) => {
+      if (document.uri.toString() !== binding.key) return;
+      binding.saveGuard.end(binding.saveToken);
+    });
     binding = {
       uri: document.uri,
       key: document.uri.toString(),
@@ -495,6 +505,8 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       lastEditVersion: 0,
       changeSubscription,
       saveGuard: new SelfSaveGuard(),
+      saveToken: 0,
+      saveLifecycleSubscriptions: [willSaveSubscription, didSaveSubscription],
     };
     return binding;
   }
@@ -543,6 +555,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   private disposeViewer(viewer: Viewer): void {
     viewer.disposed = true;
     viewer.binding.changeSubscription.dispose();
+    for (const subscription of viewer.binding.saveLifecycleSubscriptions) subscription.dispose();
     viewer.messageSubscription?.dispose();
     viewer.viewStateSubscription?.dispose();
     viewer.configSubscription?.dispose();

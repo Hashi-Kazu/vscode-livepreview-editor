@@ -1,7 +1,7 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.24.0
+**バージョン**: 1.24.1
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-15
 **ステータス**: 承認済み  
@@ -138,7 +138,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜双方向同期＞
 
 - ■■■ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。
-- ■■□ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。自身の `document.save()` 実行中に保存参加者（trailing-whitespace 除去・最終改行挿入・format on save 等）が生じさせた自己起因の変更は外部変更として扱わず、Webview へエコーバックしない（`isDuringOwnSave`）。抑制フラグは `document.save()` の同期区間だけでなく、`SelfSaveGuard`（`src/core/selfSaveGuard.ts`）によりマイクロタスク＋1マクロタスク分の後続ターンまで維持する。保存参加者イベントが save() 解決後のターンで届いても外部変更と誤判定されず、直前入力後の矢印キー移動だけではキャレットが編集地点へ巻き戻らない。より新しい `begin()` が割り込んだ場合、古い `end()` によるクリアは破棄される（トークン管理）。
+- ■■□ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。バインド対象ドキュメントの**すべての保存**（拡張ホスト自身の `document.save()` に加え、同一ドキュメントを別ビュー/別グループで開いている通常テキストエディタ側の autosave・手動保存・format on save を含む）に伴い保存参加者（trailing-whitespace 除去・最終改行挿入・format on save 等）が生じさせた変更は外部変更として扱わず、Webview へエコーバックしない（`isDuringOwnSave`）。抑制窓は `document.save()` の同期区間ではなく、`onWillSaveTextDocument`→`onDidSaveTextDocument` の保存ライフサイクルで決定的に区切り、`SelfSaveGuard`（`src/core/selfSaveGuard.ts`）によりマイクロタスク＋1マクロタスク分の後続ターンまで維持する。保存参加者イベントが did-save 解決後のターンで届いても外部変更と誤判定されず、同一ドキュメントを別ビューで同時に開いていても、もう一方のエディタ由来の保存を起点としたキャレットの巻き戻りは発生しない。より新しい `begin()` が割り込んだ場合、古い `end()` によるクリアは破棄される（トークン管理）。保存以外で発生した `onDidChangeTextDocument`（実際の外部編集）は従来どおり検知・再同期する。
 - ■■■ R-04-03 Webview のローカル編集版数より古い `baseVersion` を持つ remote update は破棄し、入力直後のキャレットを古い全文で巻き戻さないこと（`shouldApplyRemoteUpdate`）。`baseVersion` がない旧メッセージは版数比較をスキップすること。
 
 ---
