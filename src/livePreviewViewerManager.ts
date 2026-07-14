@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { SelfSaveGuard } from './core/selfSaveGuard';
 import { diffRange, fromLFPreserving, shouldResync, toggleTaskAt, toLF } from './core/sync';
 import {
   decideFileEventAction,
@@ -19,12 +20,12 @@ interface ViewerBinding {
   lastEditVersion: number;
   changeSubscription: vscode.Disposable;
   /**
-   * True while this binding's own `document.save()` call is in flight. Save
+   * Suppresses echoes of this binding's own `document.save()` call. Save
    * participants (trim trailing whitespace, insert final newline, format on
-   * save, etc.) can rewrite the document during this window; such changes
-   * must not be echoed back to the Webview as an external change.
+   * save, etc.) can rewrite the document after `save()` resolves; such
+   * changes must not be echoed back to the Webview as an external change.
    */
-  isDuringOwnSave: boolean;
+  saveGuard: SelfSaveGuard;
 }
 
 interface Viewer {
@@ -253,14 +254,14 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     }
     const savedDocument = await vscode.workspace.openTextDocument(binding.uri);
     if (viewer.binding !== binding) return;
-    binding.isDuringOwnSave = true;
+    const token = binding.saveGuard.begin();
     try {
       const saved = await savedDocument.save();
       if (!saved) {
         vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
       }
     } finally {
-      binding.isDuringOwnSave = false;
+      binding.saveGuard.end(token);
     }
   }
 
@@ -339,7 +340,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           isFromWebview: fromWebview,
           webviewText: binding.webviewText,
           documentText,
-          isDuringOwnSave: binding.isDuringOwnSave,
+          isDuringOwnSave: binding.saveGuard.isActive,
         })
       ) {
         binding.webviewText = documentText;
@@ -360,7 +361,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       webviewText: toLF(document.getText()),
       lastEditVersion: 0,
       changeSubscription,
-      isDuringOwnSave: false,
+      saveGuard: new SelfSaveGuard(),
     };
     return binding;
   }
