@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { SelfSaveGuard } from '../src/core/selfSaveGuard';
+import { SaveDebouncer } from '../src/core/saveDebouncer';
 import { shouldResync } from '../src/core/sync';
 
 /**
@@ -19,6 +20,80 @@ function makeFakeScheduler() {
     },
   };
 }
+
+/**
+ * A single-slot debounce scheduler under test control: the most recent pending
+ * callback is remembered, `fire()` runs it (simulating the idle timer elapsing),
+ * and scheduling a new callback cancels the previous one.
+ */
+function makeFakeDebounceScheduler() {
+  let pending: (() => void) | null = null;
+  return {
+    schedule: (cb: () => void) => {
+      pending = cb;
+      return () => {
+        if (pending === cb) pending = null;
+      };
+    },
+    fire: () => {
+      const cb = pending;
+      pending = null;
+      cb?.();
+    },
+    hasPending: () => pending !== null,
+  };
+}
+
+describe('Phase 2: SaveDebouncer (R-03-08 deferred/coalesced save)', () => {
+  it('coalesces a burst of edits into a single save when the idle timer fires', () => {
+    const fake = makeFakeDebounceScheduler();
+    const save = vi.fn();
+    const debouncer = new SaveDebouncer(save, fake.schedule);
+
+    // Five keystroke edits in quick succession: each reschedules the idle timer.
+    for (let i = 0; i < 5; i++) debouncer.request();
+    expect(save).not.toHaveBeenCalled(); // nothing saved mid-burst
+    expect(fake.hasPending()).toBe(true);
+
+    fake.fire(); // idle window elapses once
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(fake.hasPending()).toBe(false);
+  });
+
+  it('flushes a pending save immediately (deactivation / disposal / bind switch)', () => {
+    const fake = makeFakeDebounceScheduler();
+    const save = vi.fn();
+    const debouncer = new SaveDebouncer(save, fake.schedule);
+
+    debouncer.request();
+    debouncer.request();
+    debouncer.request();
+    expect(save).not.toHaveBeenCalled();
+
+    debouncer.flush();
+    expect(save).toHaveBeenCalledTimes(1);
+    // The timer was cancelled by flush, so a later fire is a no-op.
+    fake.fire();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not save when there is nothing pending', () => {
+    const fake = makeFakeDebounceScheduler();
+    const save = vi.fn();
+    const debouncer = new SaveDebouncer(save, fake.schedule);
+
+    debouncer.flush(); // no prior request
+    expect(save).not.toHaveBeenCalled();
+
+    debouncer.request();
+    fake.fire();
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // After the save has run, an extra flush must not save the same edits twice.
+    debouncer.flush();
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('Phase 2: SelfSaveGuard (R-04-02 self-save echo suppression)', () => {
   it('keeps suppression active across the microtask+macrotask following save', async () => {

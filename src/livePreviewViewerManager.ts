@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { SaveDebouncer } from './core/saveDebouncer';
 import { SelfSaveGuard } from './core/selfSaveGuard';
 import {
   diffRange,
@@ -45,6 +46,13 @@ interface ViewerBinding {
   saveToken: number;
   /** Subscriptions to the document's will-save/did-save lifecycle. */
   saveLifecycleSubscriptions: vscode.Disposable[];
+  /**
+   * Coalesces `document.save()` so a burst of keystroke edits persists once,
+   * instead of running save participants / format-on-save per keystroke whose
+   * echoes roll the caret back (R-03-08). Flushed on deactivation, disposal,
+   * and binding switch.
+   */
+  saveDebouncer: SaveDebouncer;
 }
 
 interface Viewer {
@@ -161,6 +169,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     });
     viewer.viewStateSubscription = panel.onDidChangeViewState((event) => {
       if (event.webviewPanel.active) this.markInteracted(viewer);
+      // Flush pending edits whenever the panel loses active focus so nothing
+      // stays unsaved while the user works elsewhere (durability, R-03-08).
+      else viewer.binding.saveDebouncer.flush();
     });
     viewer.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('livePreview.fontSize')) return;
@@ -277,11 +288,30 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       }
       return;
     }
-    const savedDocument = await vscode.workspace.openTextDocument(binding.uri);
-    if (viewer.binding !== binding) return;
-    const saved = await savedDocument.save();
-    if (!saved) {
-      vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
+    // Persist is deferred and coalesced: the WorkspaceEdit above already
+    // applied immediately (R-04-01), but saving on every keystroke would run
+    // save participants / format-on-save per key, whose async echoes get
+    // misdetected as external changes and roll the caret back (R-03-08). The
+    // debouncer collapses a burst into a single save and is flushed on
+    // deactivation / disposal / binding switch.
+    binding.saveDebouncer.request();
+  }
+
+  /**
+   * Persist the bound document if it has unsaved changes. Invoked (coalesced)
+   * by {@link ViewerBinding.saveDebouncer}. Re-opens the TextDocument by URI so
+   * it works after the source tab is closed; a `false`/failed save warns.
+   */
+  private async performSave(binding: ViewerBinding): Promise<void> {
+    try {
+      const document = await vscode.workspace.openTextDocument(binding.uri);
+      if (!document.isDirty) return;
+      const saved = await document.save();
+      if (!saved) {
+        vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
+      }
+    } catch (error) {
+      console.error('Live Preview deferred save failed', error);
     }
   }
 
@@ -455,6 +485,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     if (document.languageId !== 'markdown') return;
 
     const previous = viewer.binding;
+    // Persist any pending edits for the outgoing binding before its listeners
+    // and URI ownership are replaced (durability, R-03-08).
+    previous.saveDebouncer.flush();
     this.viewersByUri.delete(previous.key);
     previous.changeSubscription.dispose();
     for (const subscription of previous.saveLifecycleSubscriptions) subscription.dispose();
@@ -516,6 +549,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       saveGuard: new SelfSaveGuard(),
       saveToken: 0,
       saveLifecycleSubscriptions: [willSaveSubscription, didSaveSubscription],
+      saveDebouncer: new SaveDebouncer(() => {
+        void this.performSave(binding);
+      }),
     };
     return binding;
   }
@@ -563,6 +599,8 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private disposeViewer(viewer: Viewer): void {
     viewer.disposed = true;
+    // Flush any unsaved edits before tearing the binding down (durability).
+    viewer.binding.saveDebouncer.flush();
     viewer.binding.changeSubscription.dispose();
     for (const subscription of viewer.binding.saveLifecycleSubscriptions) subscription.dispose();
     viewer.messageSubscription?.dispose();

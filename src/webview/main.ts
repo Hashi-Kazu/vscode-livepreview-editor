@@ -8,7 +8,7 @@ import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelectio
 import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
-import { shouldApplyRemoteUpdate, shouldEmitEdit, shouldFlushComposition } from '../core/sync';
+import { computeRemotePatch, shouldApplyRemoteUpdate, shouldEmitEdit, shouldFlushComposition } from '../core/sync';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
 import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
@@ -629,25 +629,20 @@ function setText(text: string) {
   const doc = view.state.doc.toString();
   if (doc === text) return;
 
-  // Find the minimal changed range by trimming the common prefix and suffix.
-  // Dispatching only the changed slice keeps the selection stable (CodeMirror
-  // auto-maps it through the change) so the cursor does not jump and
-  // scrollIntoView is not triggered — eliminating the scroll-to-top on
-  // checkbox toggle (R-08-07).
-  let from = 0;
-  const minLen = Math.min(doc.length, text.length);
-  while (from < minLen && doc[from] === text[from]) from++;
-  let toOld = doc.length;
-  let toNew = text.length;
-  while (toOld > from && toNew > from && doc[toOld - 1] === text[toNew - 1]) {
-    toOld--;
-    toNew--;
-  }
+  // Apply only the minimal changed range (common prefix/suffix trimmed) so the
+  // dispatch does not touch — and thus does not scroll to — unrelated lines
+  // (R-08-07). The primary selection is remapped through the patch so that a
+  // resync whose replaced range covers the typing line keeps the caret at its
+  // equivalent logical position instead of collapsing it to the range start
+  // (which would roll the caret back before the typing position).
+  const sel = view.state.selection.main;
+  const patch = computeRemotePatch(doc, text, { anchor: sel.anchor, head: sel.head });
 
   applyingRemote = true;
   try {
     view.dispatch({
-      changes: { from, to: toOld, insert: text.slice(from, toNew) },
+      changes: { from: patch.from, to: patch.to, insert: patch.insert },
+      selection: { anchor: patch.anchor, head: patch.head },
       annotations: Transaction.addToHistory.of(false),
     });
   } finally {
