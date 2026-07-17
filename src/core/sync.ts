@@ -63,7 +63,9 @@ export function shouldResync({
  * whether the text ends with a trailing newline.
  */
 function normalizeForSaveParticipants(text: string): string {
-  const withoutTrailingEol = text.replace(/(?:\r\n|\n)$/, '');
+  // Ignore any run of trailing newlines so both `files.insertFinalNewline`
+  // (adds one) and `files.trimFinalNewlines` (removes extras) are covered.
+  const withoutTrailingEol = text.replace(/(?:\r\n|\n)+$/, '');
   return withoutTrailingEol
     .split(/\r\n|\n/)
     .map((line) => line.replace(/[ \t]+$/, ''))
@@ -138,6 +140,70 @@ export function offsetToPos(text: string, offset: number): Pos {
     }
   }
   return { line, character: offset - lineStart };
+}
+
+/** A minimal remote patch plus the selection remapped through it. */
+export interface RemotePatch {
+  /** Start offset of the replaced range (common-prefix length). */
+  from: number;
+  /** End offset of the replaced range in the old text. */
+  to: number;
+  /** Replacement text for `[from, to)`. */
+  insert: string;
+  /** Primary selection anchor remapped into the new text. */
+  anchor: number;
+  /** Primary selection head remapped into the new text. */
+  head: number;
+}
+
+/**
+ * Compute the minimal single-range patch that turns `oldText` into `newText`,
+ * together with the primary selection remapped so that applying a host resync
+ * never rolls the caret back *before* the typing position.
+ *
+ * CodeMirror's default change mapping collapses a selection that sits inside a
+ * replaced range to that range's start, which — when a save/format echo
+ * replaces the line the user is typing on — snaps the caret backwards. To
+ * avoid that, a caret inside the replaced region is anchored to the region's
+ * trailing edge (its distance from the region end is preserved), and a caret
+ * in the unchanged suffix is shifted by the length delta. A caret in the
+ * unchanged prefix is left untouched. The result therefore keeps the caret at
+ * its equivalent logical position instead of moving it earlier in the text.
+ */
+export function computeRemotePatch(
+  oldText: string,
+  newText: string,
+  sel: { anchor: number; head: number },
+): RemotePatch {
+  // Common prefix length.
+  let from = 0;
+  const minLen = Math.min(oldText.length, newText.length);
+  while (from < minLen && oldText[from] === newText[from]) from++;
+
+  // Common suffix length (not overlapping the prefix).
+  let toOld = oldText.length;
+  let toNew = newText.length;
+  while (toOld > from && toNew > from && oldText[toOld - 1] === newText[toNew - 1]) {
+    toOld--;
+    toNew--;
+  }
+
+  const map = (pos: number): number => {
+    if (pos <= from) return pos; // unchanged prefix
+    if (pos >= toOld) return pos + (toNew - toOld); // unchanged suffix, shift by delta
+    // Inside the replaced region: keep the caret pinned to the region's
+    // trailing edge so a resync never moves it before the typing position.
+    const fromRegionEnd = toOld - pos;
+    return Math.max(from, toNew - fromRegionEnd);
+  };
+
+  return {
+    from,
+    to: toOld,
+    insert: newText.slice(from, toNew),
+    anchor: map(sel.anchor),
+    head: map(sel.head),
+  };
 }
 
 /**

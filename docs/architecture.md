@@ -10,7 +10,7 @@
 │ src/extension.ts                                    │
 │ src/livePreviewViewerManager.ts                     │
 │ - editable WebviewPanel の生成・URI 重複防止          │
-│ - TextDocument 再取得・最小差分 WorkspaceEdit・即時保存 │
+│ - TextDocument 再取得・最小差分 WorkspaceEdit・遅延合体保存 │
 │ - active text editor follow・文書再バインド           │
 └───────────────────────┬─────────────────────────────┘
                         │ init/update/edit/openLink/pasteMedia/insertMedia/…
@@ -54,7 +54,7 @@
 
 Webview 編集のたびに `workspace.openTextDocument(uri)` で対象を取得する。この API は文書をロードするがエディタを reveal しないため、標準ソースタブを閉じた後も Live Preview から編集できる。
 
-編集は `diffRange` で最小差分を計算し、文書 EOL に `fromLF` で戻して `WorkspaceEdit.replace` を 1 回適用する。これにより Undo 粒度、CRLF、IME 抑制、外部変更との echo 判定を従来どおり維持する。`WorkspaceEdit` は即時適用し、適用成功後のみ `workspace.openTextDocument(binding.uri)` で現在の TextDocument を再取得して即時に保存する。差分なし、`workspace.applyEdit` の false/失敗時、または URI/generation が変わった旧バインドは保存しない。
+編集は `diffRange` で最小差分を計算し、文書 EOL に `fromLF` で戻して `WorkspaceEdit.replace` を 1 回適用する。これにより Undo 粒度、CRLF、IME 抑制、外部変更との echo 判定を従来どおり維持する。`WorkspaceEdit` は**即時適用**する。保存は毎打鍵の即時保存をやめ、`SaveDebouncer`（`src/core/saveDebouncer.ts`）でアイドル窓ぶん遅延・合体して 1 回にまとめる。これは、毎打鍵の `document.save()` が保存参加者/format on save を都度走らせ、その非同期エコーが外部変更と誤判定されてキャレットを巻き戻す/ビューア undo を打ち消す不具合を避けるためである。保存実行時は `workspace.openTextDocument(binding.uri)` で現在の TextDocument を再取得し、dirty のときだけ保存する。未保存分はビューアの非アクティブ化・破棄（`disposeViewer`）・バインド切替（`switchDocument`）で `flush()` して永続化する。差分なし、`workspace.applyEdit` の false/失敗時、または URI/generation が変わった旧バインドは保存（デバウンス要求）しない。resync を Webview へ返す `setText` は `computeRemotePatch` でキャレットを再マップし、置換範囲が打鍵行に掛かってもキャレットを手前へ戻さない。
 
 ## Webview 描画
 
