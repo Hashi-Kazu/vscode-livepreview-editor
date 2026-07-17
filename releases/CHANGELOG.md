@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.26.0 — アイドル自動保存を廃止し明示保存＋ライフサイクル flush へ変更
+
+### 変更
+
+- 毎打鍵 400ms アイドル自動保存（`SaveDebouncer`）を廃止し、標準 VS Code エディタと同じ明示保存（Webview の Ctrl+S／Cmd+S を捕捉し host で `performSave`）と、失焦・破棄・バインド切替時の flush 保存モデルへ変更（R-03-08、ADR-0018）。編集は従来どおり最小 `WorkspaceEdit` で即時反映し、Undo 粒度・画面即時反映・データ喪失防止は維持する。
+- 保存参加者・format-on-save エコーに対する Undo 安全機構（`SelfSaveGuard` own-save 窓、`isSaveParticipantNormalization`、`preserveHistory` レコンサイル）は据え置き、真の外部変更のみ履歴をリセットする挙動を維持。
+
+### 既知の制約
+
+- WebviewPanel は `CustomTextEditor` ではないため、パネル自体に dirty バッジは表示されない。ソースタブが開いていれば VS Code 標準の dirty ドットで未保存状態が分かる。
+
 ## v1.25.5 — ワークスペース内画像のペースト/ドロップを原本への相対リンクへ変更
 
 ### 変更

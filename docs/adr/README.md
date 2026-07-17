@@ -26,6 +26,7 @@
 | [0014](0014-ci-marketplace-publish.md) | GitHub Actions による Marketplace 自動公開 | main push をトリガーに自動ビルド・公開。mindmap-editor 方式を踏襲 | 高 |
 | [0015](0015-editable-webview-panel-viewers.md) | editable WebviewPanel ビューア | ソース横表示、URI 単一所有、active editor follow、queued rebinding | 高 |
 | [0017](0017-codemirror-history-and-ack-sync.md) | CodeMirror history and acknowledgement sync | CodeMirror 単独 Undo、host ack、WorkspaceEdit self-echo ledger、外部更新時の履歴リセット | 採用 |
+| [0018](0018-explicit-save-over-idle-autosave.md) | 明示保存＋ライフサイクル flush（アイドル自動保存廃止） | `SaveDebouncer` を廃止し、Webview Ctrl+S→host `performSave` と失焦・破棄・バインド切替の flush 保存へ変更。Undo 安全機構は据え置き | 採用 |
 
 ---
 

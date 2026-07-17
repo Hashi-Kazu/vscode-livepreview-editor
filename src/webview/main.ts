@@ -831,6 +831,17 @@ window.addEventListener('message', (event) => {
   }
 });
 
+// Explicit save (Ctrl+S / Cmd+S). A WebviewPanel is not a CustomTextEditor, so
+// VS Code's own Ctrl+S never reaches the bound TextDocument. Capture the
+// keystroke, suppress the browser "save page" default, and ask the host to
+// persist the document (R-03-08).
+window.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === 's' || event.key === 'S')) {
+    event.preventDefault();
+    vscode.postMessage({ type: 'save', binding });
+  }
+});
+
 // Tell the host we are ready to receive the initial document.
 vscode.postMessage({ type: 'ready' });
 

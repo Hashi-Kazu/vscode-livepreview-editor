@@ -57,8 +57,9 @@ describe('Phase 2: history-preserving vs authoritative resync (classifyDocumentC
   });
 
   it('resyncs a save-participant rewrite during our own save WITHOUT discarding history', () => {
-    // A debounced save trimmed a trailing space; the user is still typing. The
-    // reconcile must happen (resync) but keep the undo stack (preserveHistory).
+    // An explicit / on-blur save trimmed a trailing space; the user is still
+    // typing. The reconcile must happen (resync) but keep the undo stack
+    // (preserveHistory).
     expect(
       classifyDocumentChange({
         isFromWebview: false,

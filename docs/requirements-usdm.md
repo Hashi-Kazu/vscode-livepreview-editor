@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.25.5
+**バージョン**: 1.26.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-17
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-18 時点 / v1.25.5）**: Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
+> ▶️ **開発継続中（2026-07-17 時点 / v1.26.0）**: 毎打鍵アイドル自動保存（`SaveDebouncer`）を廃止し、標準エディタと同じ明示保存（Webview の Ctrl+S→host `performSave`）＋失焦・破棄・バインド切替時の flush 保存へ変更した。編集は従来どおり最小 `WorkspaceEdit` で即時反映する。Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
 ---
 
@@ -127,7 +127,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
 - ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は `SaveDebouncer` で遅延・合体し、失焦・破棄・バインド切替の flush は先行して受信済みの edit 適用後に同一 queue で完走する。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は明示保存（Webview の Ctrl+S／Cmd+S を捕捉し `preventDefault` して host へ `save` メッセージを送り `performSave` を実行する）と、失焦・破棄・バインド切替時の flush 保存（`performSave` 直接呼び出し）で行い、いずれも先行して受信済みの edit 適用後に同一 queue で完走する。毎打鍵アイドル自動保存は行わない。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。なお WebviewPanel は CustomTextEditor ではないため、パネル自体の dirty バッジは表示されない（ソースタブが開いていれば VS Code 標準の dirty ドットで未保存を示す）。これは既知の制約とする。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
 - ■■□ R-03-10 Live Preview の対象ファイルが VS Code 内でリネームされた場合は、受信済みの保留編集を適用した後にビューアを新 URI へ再バインドし、世代番号、パネルタイトル、resource base、`localResourceRoots`、TextDocument 変更リスナーを更新して編集を継続すること。新 URI を別ビューアが所有している場合は重複を避けるため旧 URI 側を閉じること。対象ファイルが削除された場合はビューアを閉じること。
 

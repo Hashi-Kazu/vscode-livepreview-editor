@@ -27,8 +27,8 @@ on obsolete text, which can resurrect prior content during Undo.
   detected either by the `SelfSaveGuard` own-save window or by
   `isSaveParticipantNormalization` — is a *history-preserving* resync: the
   Webview applies the `computeRemotePatch` minimal diff under `applyingRemote`
-  with `addToHistory.of(false)`, so a debounced save while the user is still
-  typing keeps the undo stack intact.
+  with `addToHistory.of(false)`, so an explicit save (Ctrl+S) or an on-blur
+  flush save while the user is still typing keeps the undo stack intact.
 - Only a genuine external change (Git pull, another editor's real content edit)
   or an `applyEdit` failure rollback is authoritative: the Webview recreates its
   EditorState after mapping selection with `computeRemotePatch`, clearing its
@@ -41,5 +41,6 @@ Undo is external to Live Preview and therefore resets, rather than reuses, the
 Webview history.
 
 Because save participants and own-save format-on-save rewrites now reconcile
-without discarding history, a brief typing pause that triggers a debounced save
-no longer clears the user's undo stack; only true external edits reset it.
+without discarding history, an explicit or lifecycle-flush save that runs while
+the user is still typing no longer clears the user's undo stack; only true
+external edits reset it.

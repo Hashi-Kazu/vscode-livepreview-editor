@@ -1,6 +1,5 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { SaveDebouncer } from './core/saveDebouncer';
 import { SelfSaveGuard } from './core/selfSaveGuard';
 import {
   acceptsWebviewEditVersion,
@@ -57,13 +56,6 @@ interface ViewerBinding {
   saveToken: number;
   /** Subscriptions to the document's will-save/did-save lifecycle. */
   saveLifecycleSubscriptions: vscode.Disposable[];
-  /**
-   * Coalesces `document.save()` so a burst of keystroke edits persists once,
-   * instead of running save participants / format-on-save per keystroke whose
-   * echoes roll the caret back (R-03-08). Flushed on deactivation, disposal,
-   * and binding switch.
-   */
-  saveDebouncer: SaveDebouncer;
 }
 
 interface Viewer {
@@ -181,9 +173,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     });
     viewer.viewStateSubscription = panel.onDidChangeViewState((event) => {
       if (event.webviewPanel.active) this.markInteracted(viewer);
-      // Flush pending edits whenever the panel loses active focus so nothing
-      // stays unsaved while the user works elsewhere (durability, R-03-08).
-      else this.enqueue(viewer, async () => viewer.binding.saveDebouncer.flush());
+      // Persist any unsaved edits whenever the panel loses active focus so
+      // nothing stays unsaved while the user works elsewhere (durability,
+      // R-03-08).
+      else this.enqueue(viewer, async () => this.performSave(viewer.binding));
     });
     viewer.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('livePreview.fontSize')) return;
@@ -214,6 +207,16 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
           if (typeof message.text !== 'string') return;
           await this.applyEdit(viewer, message.text, message.version);
+        });
+        break;
+      case 'save':
+        // Explicit save (Ctrl+S / Cmd+S) forwarded from the Webview: a
+        // WebviewPanel is not a CustomTextEditor, so VS Code's own Ctrl+S does
+        // not reach the bound TextDocument (R-03-08). Enqueue behind pending
+        // edits so the just-typed text is persisted.
+        this.enqueue(viewer, async () => {
+          if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
+          await this.performSave(viewer.binding);
         });
         break;
       case 'pasteMedia':
@@ -319,13 +322,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       completed: true,
     });
     await this.postAck(viewer, binding, version);
-    // Persist is deferred and coalesced: the WorkspaceEdit above already
-    // applied immediately (R-04-01), but saving on every keystroke would run
-    // save participants / format-on-save per key, whose async echoes get
-    // misdetected as external changes and roll the caret back (R-03-08). The
-    // debouncer collapses a burst into a single save and is flushed on
-    // deactivation / disposal / binding switch.
-    binding.saveDebouncer.request();
+    // The WorkspaceEdit above applied immediately (R-04-01), but persistence is
+    // no longer triggered per keystroke. Saving happens only on explicit save
+    // (Webview Ctrl+S -> `save` message) and on the lifecycle flush points
+    // (blur / disposal / binding switch), matching a standard editor (R-03-08).
   }
 
   /** Send an acknowledgement only after success or an identical-text no-op. */
@@ -339,9 +339,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   }
 
   /**
-   * Persist the bound document if it has unsaved changes. Invoked (coalesced)
-   * by {@link ViewerBinding.saveDebouncer}. Re-opens the TextDocument by URI so
-   * it works after the source tab is closed; a `false`/failed save warns.
+   * Persist the bound document if it has unsaved changes. Invoked on explicit
+   * save (Webview Ctrl+S) and on lifecycle flush points (blur / disposal /
+   * binding switch). Re-opens the TextDocument by URI so it works after the
+   * source tab is closed; a `false`/failed save warns.
    */
   private async performSave(binding: ViewerBinding): Promise<void> {
     try {
@@ -579,7 +580,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const previous = viewer.binding;
     // Persist any pending edits for the outgoing binding before its listeners
     // and URI ownership are replaced (durability, R-03-08).
-    previous.saveDebouncer.flush();
+    await this.performSave(previous);
     this.viewersByUri.delete(previous.key);
     previous.changeSubscription.dispose();
     for (const subscription of previous.saveLifecycleSubscriptions) subscription.dispose();
@@ -665,9 +666,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       saveGuard: new SelfSaveGuard(),
       saveToken: 0,
       saveLifecycleSubscriptions: [willSaveSubscription, didSaveSubscription],
-      saveDebouncer: new SaveDebouncer(() => {
-        void this.performSave(binding);
-      }),
     };
     return binding;
   }
@@ -715,10 +713,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private disposeViewer(viewer: Viewer): void {
     viewer.disposed = true;
-    // Queue flush behind edits already received from the Webview.  The panel is
+    // Queue save behind edits already received from the Webview.  The panel is
     // gone, but those edits are still allowed to reach the TextDocument/save.
     this.enqueue(viewer, async () => {
-      viewer.binding.saveDebouncer.flush();
+      await this.performSave(viewer.binding);
     });
     viewer.binding.changeSubscription.dispose();
     for (const subscription of viewer.binding.saveLifecycleSubscriptions) subscription.dispose();

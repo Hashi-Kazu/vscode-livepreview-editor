@@ -10,7 +10,7 @@
 │ src/extension.ts                                    │
 │ src/livePreviewViewerManager.ts                     │
 │ - editable WebviewPanel の生成・URI 重複防止          │
-│ - TextDocument 再取得・最小差分 WorkspaceEdit・遅延合体保存 │
+│ - TextDocument 再取得・最小差分 WorkspaceEdit・明示/flush 保存 │
 │ - active text editor follow・文書再バインド           │
 └───────────────────────┬─────────────────────────────┘
                         │ init/update/edit/openLink/pasteMedia/insertMedia/…
@@ -40,7 +40,14 @@
 
 ## 安全な文書切り替え
 
-各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` と保存の完了後に実行される。失焦・dispose の flush も同じキューへ追加するため、dispose 前に受信した edit はパネル破棄後でも TextDocument への適用と保存を完走する（Webview 返信だけを抑止する）。
+各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` と保存の完了後に実行される。失焦・dispose の flush 保存も同じキューへ追加するため、dispose 前に受信した edit はパネル破棄後でも TextDocument への適用と保存を完走する（Webview 返信だけを抑止する）。
+
+保存モデルは標準エディタと同じ明示保存＋ライフサイクル flush である（ADR-0018）。毎打鍵アイドル自動保存（`SaveDebouncer`）は廃止した。編集は最小 `WorkspaceEdit` で即時反映するが保存は発火せず、保存は次の 2 経路でのみ `performSave`（dirty のときだけ `document.save()`）を実行する。
+
+- 明示保存: WebviewPanel は `CustomTextEditor` ではないため VS Code の Ctrl+S は下層 TextDocument に届かない。Webview 側で `Ctrl+S`/`Cmd+S` を捕捉し `preventDefault` して host へ `save` メッセージを送り、host が `operationQueue` 上で `performSave` を実行する。
+- flush 保存: 失焦（パネル非 active 化）・dispose・バインド切替の各時点で `performSave` を直接呼び、受信済み edit の後ろに直列化してデータ喪失を防ぐ。
+
+保存参加者・format-on-save のエコーは明示保存・失焦保存でも発生するため、`SelfSaveGuard` の own-save 窓、`isSaveParticipantNormalization`、`preserveHistory` レコンサイルは Undo 安全機構として据え置く。
 
 各文書バインドには単調増加する `generation` を付ける。Webview は `edit`、`pasteMedia`、`openLink`、`renderError` に現在の generation を付与し、ホストは現在値と異なる遅延メッセージを拒否する。切り替え時は次を一括して更新する。
 

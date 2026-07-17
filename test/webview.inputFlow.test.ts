@@ -52,8 +52,8 @@ describe('Webview input flow (R-03-08/R-04-01/R-04-02/R-04-03)', () => {
     }).state;
     expect(state.doc.toString()).toBe('hello \n');
 
-    // A debounced self-save trims the trailing whitespace. The host echoes it
-    // back as a history-preserving update, mirroring setText(preserveHistory):
+    // An explicit / on-blur save trims the trailing whitespace. The host echoes
+    // it back as a history-preserving update, mirroring setText(preserveHistory):
     // apply the minimal patch out of history under the applyingRemote guard.
     const doc = state.doc.toString();
     const normalized = 'hello\n';
