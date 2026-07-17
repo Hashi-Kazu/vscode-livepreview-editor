@@ -3,8 +3,10 @@ import {
   isImageFile,
   formatMarkdownLinkTarget,
   buildMediaSnippet,
-  dedupeUrisAgainstFiles,
+  dedupeFilesAgainstUris,
   hasMediaPayload,
+  parseDataTransferUris,
+  parsePlainFileUriList,
   parseUriList,
   uniqueMediaName,
 } from '../src/core/pasteLink';
@@ -35,8 +37,8 @@ describe('R-29-02 buildMediaSnippet', () => {
 
   it('非画像は [text](target) を生成しプレースホルダが text を指す', () => {
     const r = buildMediaSnippet({ isImage: false, target: 'マークダウン.md' });
-    expect(r.text).toBe('[text](マークダウン.md)');
-    expect(r.text.slice(r.placeholderFrom, r.placeholderTo)).toBe('text');
+    expect(r.text).toBe('[マークダウン](マークダウン.md)');
+    expect(r.text.slice(r.placeholderFrom, r.placeholderTo)).toBe('マークダウン');
   });
 });
 
@@ -69,14 +71,34 @@ describe('R-29-05 URI clipboard media', () => {
     const uris = parseUriList('# copied by Explorer\r\nfile:///workspace/docs/ガントチャート.md\r\n\r\nfile:///workspace/docs/ガントチャート.md');
     expect(uris).toEqual(['file:///workspace/docs/ガントチャート.md']);
     expect(hasMediaPayload({ fileCount: 0, uris })).toBe(true);
-    expect(buildMediaSnippet({ isImage: false, target: 'ガントチャート.md' }).text).toBe('[text](ガントチャート.md)');
+    expect(buildMediaSnippet({ isImage: false, target: 'ガントチャート.md' }).text).toBe('[ガントチャート](ガントチャート.md)');
     expect(buildMediaSnippet({ isImage: true, target: '<assets/新規 ビットマップ イメージ.bmp>' }).text)
       .toBe('![alt text](<assets/新規 ビットマップ イメージ.bmp>)');
   });
 
-  it('does not intercept ordinary text and deduplicates an accompanying file URI', () => {
+  it('does not intercept ordinary text and keeps URI canonical over an accompanying File', () => {
     // Plain clipboard text has no text/uri-list data and remains CodeMirror-owned.
     expect(hasMediaPayload({ fileCount: 0, uris: [] })).toBe(false);
-    expect(dedupeUrisAgainstFiles(['file:///workspace/docs/image.png'], ['image.png'])).toEqual([]);
+    expect(dedupeFilesAgainstUris([{ name: 'image.png' }], ['file:///workspace/docs/image.png'])).toEqual([]);
+  });
+
+  it('parses Explorer URI MIME types and only permits all-file URI text/plain fallback', () => {
+    expect(parseDataTransferUris({
+      uriList: 'file:///workspace/docs/a.md',
+      codeUriList: 'file:///workspace/docs/a.md\r\nfile:///workspace/docs/b.png',
+      plainText: 'ordinary prose',
+    })).toEqual(['file:///workspace/docs/a.md', 'file:///workspace/docs/b.png']);
+    expect(parsePlainFileUriList('file:///workspace/docs/a.md\nhttps://example.com')).toEqual([]);
+    expect(parsePlainFileUriList('file:///workspace/docs/a.md\r\nfile:///workspace/docs/b.png')).toEqual([
+      'file:///workspace/docs/a.md',
+      'file:///workspace/docs/b.png',
+    ]);
+  });
+
+  it('uses selected text for non-image link labels and target basename otherwise', () => {
+    expect(buildMediaSnippet({ isImage: false, target: 'ガントチャート.md', selectedText: 'test' }).text)
+      .toBe('[test](ガントチャート.md)');
+    expect(buildMediaSnippet({ isImage: false, target: 'ガントチャート.md' }).text)
+      .toBe('[ガントチャート](ガントチャート.md)');
   });
 });

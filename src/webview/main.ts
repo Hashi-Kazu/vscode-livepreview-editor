@@ -3,13 +3,19 @@
  * decoration plugin, and bridges document changes to/from the extension host
  * over `postMessage`.
  */
-import { EditorState, Transaction, StateEffect, StateField } from '@codemirror/state';
+import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
 import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
-import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
+import { history, historyKeymap, defaultKeymap, isolateHistory } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
-import { computeRemotePatch, shouldApplyRemoteUpdate, shouldEmitEdit, shouldFlushComposition } from '../core/sync';
-import { dedupeUrisAgainstFiles, hasMediaPayload, parseUriList } from '../core/pasteLink';
+import {
+  computeRemotePatch,
+  shouldApplyRemoteUpdate,
+  shouldEmitEdit,
+  shouldFlushComposition,
+  toggleTaskAt,
+} from '../core/sync';
+import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
 import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
@@ -28,8 +34,22 @@ let binding = 0;
  *  do not echo it straight back and create a feedback loop. */
 let applyingRemote = false;
 let editVersion = 0;
+let ackVersion = 0;
 let pendingCompositionChange = false;
-let pendingRemote: { text: string; baseVersion: number | undefined } | undefined;
+let pendingRemote: { text: string; baseVersion: number | undefined; rollback?: boolean } | undefined;
+let nextMediaRequestId = 1;
+
+interface PendingMediaRequest {
+  binding: number;
+  from: number;
+  to: number;
+  selectedText: string;
+}
+
+// Positions are mapped through every transaction while the host persists the
+// dropped data. This prevents a late response from being inserted at whatever
+// cursor position the user reached in the meantime.
+const pendingMediaRequests = new Map<number, PendingMediaRequest>();
 
 // Decorations are provided via a StateField (not a ViewPlugin): CodeMirror
 // forbids block decorations — used by the HTML table widget — from plugins.
@@ -190,6 +210,12 @@ function postEdit(text: string) {
 }
 
 const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
+  if (update.docChanged) {
+    for (const request of pendingMediaRequests.values()) {
+      request.from = update.changes.mapPos(request.from, -1);
+      request.to = update.changes.mapPos(request.to, 1);
+    }
+  }
   if (update.docChanged && update.view.composing) pendingCompositionChange = true;
 
   const flushedComposition = flushPendingComposition();
@@ -346,14 +372,50 @@ const editingKeymap = keymap.of([
   ...[1, 2, 3, 4, 5, 6].map((n) => ({ key: `Mod-Alt-${n}`, run: headingCommand(n) })),
 ]);
 
-function makeState(text: string): EditorState {
+// Defined before the state is created so Prec.highest places these handlers in
+// front of CodeMirror's own paste/drop implementation. The helper functions
+// are declarations and are hoisted below with the rest of the media bridge.
+const mediaDomHandlers = Prec.highest(
+  EditorView.domEventHandlers({
+    paste(event) {
+      const dataTransfer = (event as ClipboardEvent).clipboardData;
+      if (!dataTransferHasMedia(dataTransfer)) return false;
+      event.preventDefault();
+      beginMediaRequest(dataTransfer!);
+      return true;
+    },
+    drop(event, target) {
+      const dataTransfer = (event as DragEvent).dataTransfer;
+      if (!dataTransferHasMedia(dataTransfer)) return false;
+      event.preventDefault();
+      try {
+        const pos = target.posAtCoords({ x: (event as DragEvent).clientX, y: (event as DragEvent).clientY });
+        if (pos != null) target.dispatch({ selection: { anchor: pos } });
+      } catch {
+        // A transient widget coordinate must not reject an otherwise valid drop.
+      }
+      beginMediaRequest(dataTransfer!);
+      return true;
+    },
+    dragover(event) {
+      const dataTransfer = (event as DragEvent).dataTransfer;
+      if (!dataTransferHasMedia(dataTransfer)) return false;
+      event.preventDefault();
+      return true;
+    },
+  }),
+);
+
+function makeState(text: string, selection?: { anchor: number; head: number }): EditorState {
   return EditorState.create({
     doc: text,
+    selection,
     extensions: [
       history(),
       formatKeymap,
       arrowKeymap,
       editingKeymap,
+      mediaDomHandlers,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
       livePreviewField(),
@@ -381,6 +443,9 @@ function flushPendingComposition(): boolean {
   }
   pendingCompositionChange = false;
   postEdit(view.state.doc.toString());
+  // A completed composition is one deliberate editing operation. Isolate it
+  // from the next composition so repeated IME lines undo monotonically.
+  view.dispatch({ annotations: isolateHistory.of('after') });
   return true;
 }
 
@@ -389,15 +454,16 @@ function applyPendingRemote(): void {
   if (view.composing || applyingRemote || pendingRemote === undefined) return;
   const remote = pendingRemote;
   pendingRemote = undefined;
-  if (
-    shouldApplyRemoteUpdate({
-      baseVersion: remote.baseVersion,
-      localVersion: editVersion,
-      composing: false,
-    }) &&
-    remote.text !== view.state.doc.toString()
-  ) {
-    setText(remote.text);
+  if (shouldApplyRemoteUpdate({
+    baseVersion: remote.baseVersion,
+    editVersion,
+    ackVersion,
+    composing: false,
+    pendingLocalChange: pendingCompositionChange,
+    rollback: remote.rollback,
+  })) {
+    if (remote.text !== view.state.doc.toString()) setText(remote.text, remote.rollback);
+    else if (remote.rollback) ackVersion = editVersion;
   }
 }
 
@@ -425,7 +491,9 @@ view.dom.addEventListener(
   'mousedown',
   (event) => {
     const el = event.target as HTMLElement;
-    // Task checkbox → toggle the source line via the host. Handle this BEFORE
+    // Task checkbox -- change CodeMirror first, then synchronize through the
+    // ordinary local-edit path. This keeps CodeMirror as the only Live Preview
+    // undo owner.
     // any other widget branch (details/table) so a checkbox nested inside other
     // rendered content still toggles rather than moving the caret.
     const box = el.closest('.cm-lp-task-checkbox');
@@ -439,7 +507,18 @@ view.dom.addEventListener(
       try {
         const pos = view.posAtDOM(box as HTMLElement);
         const line = view.state.doc.lineAt(pos).number - 1; // 0-based
-        vscode.postMessage({ type: 'toggleTask', line, binding });
+        const current = view.state.doc.toString();
+        const result = toggleTaskAt(current, line);
+        if (!result.changed) return;
+        const selection = view.state.selection.main;
+        const patch = computeRemotePatch(current, result.text, {
+          anchor: selection.anchor,
+          head: selection.head,
+        });
+        view.dispatch({
+          changes: { from: patch.from, to: patch.to, insert: patch.insert },
+          annotations: isolateHistory.of('full'),
+        });
       } catch {
         /* widget not currently mapped (mid-render); ignore this click */
       }
@@ -498,78 +577,75 @@ view.dom.addEventListener(
 // workspace URIs, then hand them to the host to save/relativize. Only prevent
 // the default action when there is media to handle; plain text paste/drop is
 // left entirely to CodeMirror (R-29).
-async function collectAndSendMedia(dataTransfer: DataTransfer | null): Promise<boolean> {
-  if (!dataTransfer) return false;
-
+function filesFromDataTransfer(dataTransfer: DataTransfer): File[] {
   const files: File[] = [];
-  if (dataTransfer.files && dataTransfer.files.length > 0) {
-    for (let i = 0; i < dataTransfer.files.length; i++) files.push(dataTransfer.files[i]);
-  } else if (dataTransfer.items) {
-    for (let i = 0; i < dataTransfer.items.length; i++) {
-      const item = dataTransfer.items[i];
-      if (item.kind === 'file') {
-        const file = item.getAsFile();
-        if (file) files.push(file);
-      }
-    }
+  for (let index = 0; index < dataTransfer.files.length; index++) files.push(dataTransfer.files[index]);
+  if (files.length > 0) return files;
+  for (let index = 0; index < dataTransfer.items.length; index++) {
+    const item = dataTransfer.items[index];
+    if (item.kind !== 'file') continue;
+    const file = item.getAsFile();
+    if (file) files.push(file);
   }
+  return files;
+}
 
-  const uris = dedupeUrisAgainstFiles(
-    parseUriList(dataTransfer.getData('text/uri-list')),
-    files.map((file) => file.name),
-  );
+function uriCandidatesFromDataTransfer(dataTransfer: DataTransfer): string[] {
+  return parseDataTransferUris({
+    uriList: dataTransfer.getData('text/uri-list'),
+    codeUriList: dataTransfer.getData('application/vnd.code.uri-list'),
+    plainText: dataTransfer.getData('text/plain'),
+  });
+}
 
-  if (files.length === 0 && uris.length === 0) return false;
+function dataTransferHasMedia(dataTransfer: DataTransfer | null): boolean {
+  if (!dataTransfer) return false;
+  return hasMediaPayload({
+    fileCount: filesFromDataTransfer(dataTransfer).length,
+    uris: uriCandidatesFromDataTransfer(dataTransfer),
+  });
+}
 
+async function collectAndSendMedia(dataTransfer: DataTransfer, requestId: number): Promise<void> {
+  const request = pendingMediaRequests.get(requestId);
+  if (!request || request.binding !== binding) return;
+  const files = filesFromDataTransfer(dataTransfer);
+  const uris = uriCandidatesFromDataTransfer(dataTransfer);
   const payloadFiles = await Promise.all(
-    files.map(async (file) => ({
-      name: file.name,
-      data: new Uint8Array(await file.arrayBuffer()),
-    })),
+    files.map(async (file) => ({ name: file.name, data: new Uint8Array(await file.arrayBuffer()) })),
   );
-
+  // An authoritative reset/binding switch can occur while File.arrayBuffer()
+  // resolves. In that case this request no longer has a valid insertion point.
+  if (!pendingMediaRequests.has(requestId) || request.binding !== binding) return;
   vscode.postMessage({
     type: 'pasteMedia',
     binding,
+    requestId,
+    selectedText: request.selectedText,
     files: payloadFiles,
     uris,
   });
-  return true;
 }
 
-view.dom.addEventListener('paste', (event) => {
-  const dt = (event as ClipboardEvent).clipboardData;
-  const fileCount = !dt ? 0 : (dt.files?.length ?? 0) ||
-    (dt.items ? Array.from(dt.items).filter((i) => i.kind === 'file').length : 0);
-  const hasMedia = !!dt && hasMediaPayload({ fileCount, uris: parseUriList(dt.getData('text/uri-list')) });
-  if (!hasMedia) return; // plain text paste → CodeMirror default
-  event.preventDefault();
-  void collectAndSendMedia(dt);
-});
+function beginMediaRequest(dataTransfer: DataTransfer): void {
+  const selection = view.state.selection.main;
+  const requestId = nextMediaRequestId++;
+  pendingMediaRequests.set(requestId, {
+    binding,
+    from: selection.from,
+    to: selection.to,
+    selectedText: selection.from === selection.to ? '' : view.state.sliceDoc(selection.from, selection.to),
+  });
+  void collectAndSendMedia(dataTransfer, requestId);
+}
 
-view.dom.addEventListener('drop', (event) => {
-  const dt = (event as DragEvent).dataTransfer;
-  const fileCount = !dt ? 0 : (dt.files?.length ?? 0) ||
-    (dt.items ? Array.from(dt.items).filter((i) => i.kind === 'file').length : 0);
-  const hasMedia = !!dt && hasMediaPayload({ fileCount, uris: parseUriList(dt.getData('text/uri-list')) });
-  if (!hasMedia) return; // plain text drop → CodeMirror default
-  event.preventDefault();
-  // Move the caret to the drop position before inserting.
-  try {
-    const pos = view.posAtCoords({ x: (event as DragEvent).clientX, y: (event as DragEvent).clientY });
-    if (pos != null) view.dispatch({ selection: { anchor: pos } });
-  } catch {
-    /* ignore unmapped coords */
-  }
-  void collectAndSendMedia(dt);
-});
-
-/** Insert a host-provided media snippet at the current selection (R-29). */
-function insertMedia(text: string, placeholderFrom: number, placeholderTo: number) {
-  const { from, to } = view.state.selection.main;
+/** Insert a host-provided media snippet at the request's mapped selection. */
+function insertMedia(text: string, placeholderFrom: number, placeholderTo: number, request: PendingMediaRequest) {
+  const { from, to } = request;
   view.dispatch({
     changes: { from, to, insert: text },
     selection: { anchor: from + placeholderFrom, head: from + placeholderTo },
+    annotations: isolateHistory.of('full'),
   });
   view.focus();
 }
@@ -637,7 +713,7 @@ view.dom.addEventListener(
   { passive: false },
 );
 
-function setText(text: string) {
+function setText(text: string, rollback = false) {
   const doc = view.state.doc.toString();
   if (doc === text) return;
 
@@ -650,13 +726,15 @@ function setText(text: string) {
   const sel = view.state.selection.main;
   const patch = computeRemotePatch(doc, text, { anchor: sel.anchor, head: sel.head });
 
+  // An authoritative document state invalidates every inverse transaction
+  // based on the previous text. Replacing EditorState (rather than merely
+  // annotating a transaction out of history) makes CodeMirror history the sole
+  // owner and prevents old text from reappearing through Undo.
   applyingRemote = true;
   try {
-    view.dispatch({
-      changes: { from: patch.from, to: patch.to, insert: patch.insert },
-      selection: { anchor: patch.anchor, head: patch.head },
-      annotations: Transaction.addToHistory.of(false),
-    });
+    pendingMediaRequests.clear();
+    view.setState(makeState(text, { anchor: patch.anchor, head: patch.head }));
+    if (rollback) ackVersion = editVersion;
   } finally {
     applyingRemote = false;
   }
@@ -669,8 +747,10 @@ window.addEventListener('message', (event) => {
     case 'init':
       if (typeof msg.binding === 'number') binding = msg.binding;
       editVersion = 0;
+      ackVersion = 0;
       pendingCompositionChange = false;
       pendingRemote = undefined;
+      pendingMediaRequests.clear();
       renderErrorReported = false;
       applyFontSize(msg.fontSize ?? 14);
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
@@ -681,28 +761,35 @@ window.addEventListener('message', (event) => {
         requestSelectionLayerHeightSync();
       });
       break;
+    case 'ack':
+      if (msg.binding !== binding || typeof msg.version !== 'number') break;
+      if (Number.isSafeInteger(msg.version) && msg.version > ackVersion && msg.version <= editVersion) {
+        ackVersion = msg.version;
+      }
+      applyPendingRemote();
+      break;
     case 'update': // external / host-side document change
       if (msg.binding !== binding) break;
-      if (
-        !shouldApplyRemoteUpdate({
+      if (typeof msg.text !== 'string') break;
+      if (!shouldApplyRemoteUpdate({
+        baseVersion: msg.baseVersion,
+        editVersion,
+        ackVersion,
+        composing: view.composing,
+        pendingLocalChange: pendingCompositionChange,
+        rollback: msg.rollback === true,
+      })) {
+        // Keep exactly the latest authoritative update. Once the relevant ack
+        // arrives, its base version is checked again before it can affect CM.
+        pendingRemote = {
+          text: msg.text,
           baseVersion: msg.baseVersion,
-          localVersion: editVersion,
-          composing: view.composing,
-        })
-      ) {
-        const blockedOnlyByComposition =
-          view.composing &&
-          shouldApplyRemoteUpdate({
-            baseVersion: msg.baseVersion,
-            localVersion: editVersion,
-            composing: false,
-          });
-        if (blockedOnlyByComposition && typeof msg.text === 'string') {
-          pendingRemote = { text: msg.text, baseVersion: msg.baseVersion };
-        }
+          rollback: msg.rollback === true,
+        };
         break;
       }
-      if (msg.text !== view.state.doc.toString()) setText(msg.text);
+      if (msg.text !== view.state.doc.toString()) setText(msg.text, msg.rollback === true);
+      else if (msg.rollback === true) ackVersion = editVersion;
       break;
     case 'settings':
       if (typeof msg.fontSize === 'number') applyFontSize(msg.fontSize);
@@ -713,11 +800,15 @@ window.addEventListener('message', (event) => {
     case 'insertMedia':
       if (msg.binding !== binding) break;
       if (
+        typeof msg.requestId === 'number' &&
         typeof msg.text === 'string' &&
         typeof msg.placeholderFrom === 'number' &&
         typeof msg.placeholderTo === 'number'
       ) {
-        insertMedia(msg.text, msg.placeholderFrom, msg.placeholderTo);
+        const request = pendingMediaRequests.get(msg.requestId);
+        if (!request || request.binding !== binding) break;
+        pendingMediaRequests.delete(msg.requestId);
+        insertMedia(msg.text, msg.placeholderFrom, msg.placeholderTo, request);
       }
       break;
   }

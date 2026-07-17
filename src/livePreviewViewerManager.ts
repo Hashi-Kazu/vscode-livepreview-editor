@@ -3,13 +3,14 @@ import * as vscode from 'vscode';
 import { SaveDebouncer } from './core/saveDebouncer';
 import { SelfSaveGuard } from './core/selfSaveGuard';
 import {
-  diffRange,
-  fromLFPreserving,
-  isSaveParticipantNormalization,
+  acceptsWebviewEditVersion,
   appliedEditVersion,
+  consumeExpectedWorkspaceEditChange,
+  diffRange,
+  ExpectedWorkspaceEditChange,
   failedEditBaseVersion,
+  fromLFPreserving,
   shouldResync,
-  toggleTaskAt,
   toLF,
 } from './core/sync';
 import {
@@ -23,7 +24,7 @@ import {
 import { resolveSettings } from './core/viewport';
 import {
   buildMediaSnippet,
-  dedupeUrisAgainstFiles,
+  dedupeFilesAgainstUris,
   formatMarkdownLinkTarget,
   isImageFile,
   parseUriList,
@@ -35,8 +36,12 @@ interface ViewerBinding {
   key: string;
   generation: number;
   webviewText: string;
-  /** Last Webview edit version confirmed in the TextDocument. */
-  lastEditVersion: number;
+  /** Last fresh edit received from the Webview. */
+  lastReceivedVersion: number;
+  /** Last Webview edit successfully represented by the TextDocument. */
+  lastAckVersion: number;
+  /** Expected self echoes, keyed by source Webview version. */
+  expectedWorkspaceChanges: Map<number, ExpectedWorkspaceEditChange>;
   changeSubscription: vscode.Disposable;
   /**
    * Suppresses echoes of any save of this binding's document — including
@@ -161,8 +166,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private createViewer(panel: vscode.WebviewPanel, document: vscode.TextDocument): Viewer {
     const id = `viewer-${this.nextViewerId++}`;
-    const binding = this.createBinding(panel, document, 1);
-    const viewer: Viewer = {
+    let viewer: Viewer;
+    const binding = this.createBinding(panel, document, 1, () => viewer);
+    viewer = {
       id,
       panel,
       binding,
@@ -209,21 +215,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           await this.applyEdit(viewer, message.text, message.version);
         });
         break;
-      case 'toggleTask':
-        this.enqueue(viewer, async () => {
-          if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
-          const result = toggleTaskAt(viewer.binding.webviewText, message.line);
-          if (!result.changed) return;
-          await this.applyEdit(viewer, result.text);
-          if (viewer.disposed || viewer.binding.webviewText !== result.text) return;
-          await viewer.panel.webview.postMessage({
-            type: 'update',
-            text: result.text,
-            binding: viewer.binding.generation,
-            baseVersion: viewer.binding.lastEditVersion,
-          });
-        });
-        break;
       case 'pasteMedia':
         this.enqueue(viewer, async () => {
           if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
@@ -256,6 +247,14 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private async applyEdit(viewer: Viewer, newLF: string, receivedVersion?: unknown): Promise<void> {
     const binding = viewer.binding;
+    if (!acceptsWebviewEditVersion({
+      lastReceivedVersion: binding.lastReceivedVersion,
+      receivedVersion,
+    })) {
+      return;
+    }
+    const version = receivedVersion as number;
+    binding.lastReceivedVersion = version;
     const document = await vscode.workspace.openTextDocument(binding.uri);
     if (viewer.binding !== binding) return;
 
@@ -265,11 +264,12 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     binding.webviewText = newLF;
     const diff = diffRange(current, target);
     if (!diff) {
-      binding.lastEditVersion = appliedEditVersion({
-        previousVersion: binding.lastEditVersion,
-        receivedVersion,
+      binding.lastAckVersion = appliedEditVersion({
+        previousVersion: binding.lastAckVersion,
+        receivedVersion: version,
         completed: true,
       });
+      await this.postAck(viewer, binding, version);
       return;
     }
 
@@ -284,9 +284,18 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       ),
       diff.newText,
     );
+    // Register the expected event before applyEdit. `onDidChangeTextDocument`
+    // can fire before the promise resolves, and only this exact text/version
+    // pair is a self echo. A version-keyed ledger also survives queued edits.
+    binding.expectedWorkspaceChanges.set(version, {
+      editVersion: version,
+      documentVersion: document.version + 1,
+      text: toLF(target),
+    });
     const applied = await vscode.workspace.applyEdit(edit);
     if (viewer.binding !== binding) return;
     if (!applied) {
+      binding.expectedWorkspaceChanges.delete(version);
       binding.webviewText = toLF(document.getText());
       vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ適用できませんでした。');
       if (!viewer.disposed) {
@@ -295,18 +304,20 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           text: binding.webviewText,
           binding: binding.generation,
           baseVersion: failedEditBaseVersion({
-            appliedVersion: binding.lastEditVersion,
-            failedVersion: receivedVersion,
+            appliedVersion: binding.lastAckVersion,
+            failedVersion: version,
           }),
+          rollback: true,
         });
       }
       return;
     }
-    binding.lastEditVersion = appliedEditVersion({
-      previousVersion: binding.lastEditVersion,
-      receivedVersion,
+    binding.lastAckVersion = appliedEditVersion({
+      previousVersion: binding.lastAckVersion,
+      receivedVersion: version,
       completed: true,
     });
+    await this.postAck(viewer, binding, version);
     // Persist is deferred and coalesced: the WorkspaceEdit above already
     // applied immediately (R-04-01), but saving on every keystroke would run
     // save participants / format-on-save per key, whose async echoes get
@@ -314,6 +325,16 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     // debouncer collapses a burst into a single save and is flushed on
     // deactivation / disposal / binding switch.
     binding.saveDebouncer.request();
+  }
+
+  /** Send an acknowledgement only after success or an identical-text no-op. */
+  private async postAck(viewer: Viewer, binding: ViewerBinding, version: number): Promise<void> {
+    if (viewer.disposed || viewer.binding !== binding) return;
+    await viewer.panel.webview.postMessage({
+      type: 'ack',
+      binding: binding.generation,
+      version,
+    });
   }
 
   /**
@@ -343,61 +364,88 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     viewer: Viewer,
     message: {
       binding: number;
+      requestId?: unknown;
+      selectedText?: unknown;
       files?: { name: string; data: Uint8Array }[];
       uris?: string[];
     },
   ): Promise<void> {
+    if (typeof message.requestId !== 'number' || !Number.isSafeInteger(message.requestId)) return;
     const binding = viewer.binding;
     const documentFolder = vscode.Uri.joinPath(binding.uri, '..');
     const destFolder = this.mediaDestinationFolder();
     const targetDir = vscode.Uri.joinPath(documentFolder, destFolder);
 
-    const relTargets: string[] = [];
+    const targets: { relative: string; isImage: boolean }[] = [];
     const files = Array.isArray(message.files) ? message.files : [];
-    const validFiles = files.filter((file): file is { name: string; data: Uint8Array } =>
+    const suppliedFiles = files.filter((file): file is { name: string; data: Uint8Array } =>
       !!file && typeof file.name === 'string' && !!file.data,
     );
-    const uriTargets = dedupeUrisAgainstFiles(
-      parseUriList(Array.isArray(message.uris) ? message.uris.join('\n') : ''),
-      validFiles.map((file) => file.name),
-    );
-    const imageUris: vscode.Uri[] = [];
+    const uriTargets = parseUriList(Array.isArray(message.uris) ? message.uris.join('\n') : '');
+    // URI payloads from VS Code Explorer are canonical over duplicate Files.
+    const validFiles = dedupeFilesAgainstUris(suppliedFiles, uriTargets);
+    let assetNames: Set<string> | undefined;
+    let documentNames: Set<string> | undefined;
+
+    const saveToAssets = async (name: string, data: Uint8Array): Promise<string> => {
+      if (!assetNames) {
+        assetNames = await this.directoryNames(targetDir);
+        await this.ensureDirectory(targetDir);
+      }
+      const unique = uniqueMediaName(sanitizeFileName(name), (candidate) => assetNames!.has(candidate));
+      assetNames.add(unique);
+      await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(targetDir, unique), data);
+      return joinRelative(destFolder, unique);
+    };
+    const saveMarkdownBesideDocument = async (name: string, data: Uint8Array): Promise<string> => {
+      if (!documentNames) documentNames = await this.directoryNames(documentFolder);
+      const unique = uniqueMediaName(sanitizeFileName(name), (candidate) => documentNames!.has(candidate));
+      documentNames.add(unique);
+      await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(documentFolder, unique), data);
+      return unique;
+    };
     for (const raw of uriTargets) {
-      const resolved = this.relativizeUri(raw, documentFolder);
+      const resolved = await this.relativizeUri(raw, documentFolder);
       if (!resolved) continue;
-      if (isImageFile(path.basename(resolved.uri.fsPath))) imageUris.push(resolved.uri);
-      else relTargets.push(resolved.relative);
+      const name = path.basename(resolved.uri.fsPath || resolved.uri.path);
+      if (!isImageFile(name)) {
+        targets.push({ relative: resolved.relative, isImage: false });
+        continue;
+      }
+      try {
+        targets.push({
+          relative: await saveToAssets(name, await vscode.workspace.fs.readFile(resolved.uri)),
+          isImage: true,
+        });
+      } catch {
+        vscode.window.showWarningMessage(`Live Preview: image file could not be read: ${resolved.uri.fsPath}`);
+      }
     }
 
-    if (validFiles.length > 0 || imageUris.length > 0) {
-      const taken = await this.directoryNames(targetDir);
-      await this.ensureDirectory(targetDir);
+    if (validFiles.length > 0) {
       for (const file of validFiles) {
-        const name = uniqueMediaName(sanitizeFileName(file.name), (n) => taken.has(n));
-        taken.add(name);
-        await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(targetDir, name), new Uint8Array(file.data));
-        relTargets.push(joinRelative(destFolder, name));
-      }
-      for (const source of imageUris) {
         try {
-          const name = uniqueMediaName(sanitizeFileName(path.basename(source.fsPath)), (n) => taken.has(n));
-          taken.add(name);
-          await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(targetDir, name), await vscode.workspace.fs.readFile(source));
-          relTargets.push(joinRelative(destFolder, name));
+          const isImage = isImageFile(file.name);
+          const isMarkdown = /\.md$/i.test(file.name);
+          const relative = isMarkdown
+            ? await saveMarkdownBesideDocument(file.name, new Uint8Array(file.data))
+            : await saveToAssets(file.name, new Uint8Array(file.data));
+          targets.push({ relative, isImage });
         } catch {
-          vscode.window.showWarningMessage(`Live Preview: 画像ファイルを読み込めませんでした: ${source.fsPath}`);
+          vscode.window.showWarningMessage(`Live Preview: file could not be saved: ${file.name}`);
         }
       }
     }
 
-    if (relTargets.length === 0) return;
+    if (targets.length === 0) return;
     if (viewer.disposed || viewer.binding !== binding) return;
 
-    const snippets = relTargets.map((rel) => {
-      const base = rel.split('/').pop() ?? rel;
+    const selectedText = typeof message.selectedText === 'string' ? message.selectedText : undefined;
+    const snippets = targets.map((target) => {
       return buildMediaSnippet({
-        isImage: isImageFile(base),
-        target: formatMarkdownLinkTarget(rel),
+        isImage: target.isImage,
+        target: formatMarkdownLinkTarget(target.relative),
+        selectedText,
       });
     });
 
@@ -406,6 +454,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     await viewer.panel.webview.postMessage({
       type: 'insertMedia',
       binding: binding.generation,
+      requestId: message.requestId,
       text,
       placeholderFrom: first.placeholderFrom,
       placeholderTo: first.placeholderTo,
@@ -450,21 +499,38 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   }
 
   /** Resolve a workspace file URI to a document-relative forward-slash target. */
-  private relativizeUri(raw: unknown, documentFolder: vscode.Uri): { uri: vscode.Uri; relative: string } | undefined {
-    if (typeof raw !== 'string' || !raw) return undefined;
+  private async relativizeUri(
+    raw: unknown,
+    documentFolder: vscode.Uri,
+  ): Promise<{ uri: vscode.Uri; relative: string } | undefined> {
+    if (typeof raw !== 'string' || !raw) {
+      vscode.window.showWarningMessage('Live Preview: invalid dropped URI.');
+      return undefined;
+    }
     let uri: vscode.Uri;
     try {
       uri = vscode.Uri.parse(raw.trim());
     } catch {
+      vscode.window.showWarningMessage(`Live Preview: invalid dropped URI: ${raw}`);
       return undefined;
     }
-    if (uri.scheme !== 'file') return undefined;
+    if (uri.scheme !== 'file') {
+      vscode.window.showWarningMessage(`Live Preview: unsupported dropped URI: ${raw}`);
+      return undefined;
+    }
     const inWorkspace = (vscode.workspace.workspaceFolders ?? []).some((folder) => {
       const rel = path.relative(folder.uri.fsPath, uri.fsPath);
       return rel !== '' && !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel);
     });
     if (!inWorkspace) {
       vscode.window.showWarningMessage('Live Preview: ワークスペース外のファイルはリンクに挿入できません。');
+      return undefined;
+    }
+    try {
+      const stat = await vscode.workspace.fs.stat(uri);
+      if ((stat.type & vscode.FileType.File) === 0) throw new Error('not a file');
+    } catch {
+      vscode.window.showWarningMessage(`Live Preview: dropped URI could not be read: ${raw}`);
       return undefined;
     }
     const relative = path.relative(documentFolder.fsPath, uri.fsPath);
@@ -529,7 +595,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     for (const subscription of previous.saveLifecycleSubscriptions) subscription.dispose();
 
     const generation = previous.generation + 1;
-    viewer.binding = this.createBinding(viewer.panel, document, generation);
+    viewer.binding = this.createBinding(viewer.panel, document, generation, () => viewer);
     this.viewersByUri.set(targetKey, viewer);
     viewer.panel.title = this.titleFor(uri);
     this.configureWebview(viewer.panel.webview, uri);
@@ -540,32 +606,46 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     panel: vscode.WebviewPanel,
     document: vscode.TextDocument,
     generation: number,
+    getViewer: () => Viewer,
   ): ViewerBinding {
     let binding: ViewerBinding;
     const changeSubscription = vscode.workspace.onDidChangeTextDocument((event) => {
       if (event.document.uri.toString() !== binding.key) return;
+      const eventDocumentVersion = event.document.version;
       const documentText = toLF(event.document.getText());
-      const fromWebview = documentText === binding.webviewText;
-      const isSaveNormalization = isSaveParticipantNormalization(binding.webviewText, documentText);
-      if (
-        shouldResync({
-          isFromWebview: fromWebview,
+      const selfVersion = consumeExpectedWorkspaceEditChange({
+        ledger: binding.expectedWorkspaceChanges,
+        documentVersion: eventDocumentVersion,
+        documentText,
+      });
+      if (selfVersion !== undefined) {
+        binding.expectedWorkspaceChanges.delete(selfVersion);
+        binding.webviewText = documentText;
+        return;
+      }
+
+      // A listener is deliberately queued behind the edit that created it.
+      // This serializes external document snapshots with host acknowledgements
+      // and makes every non-ledger change authoritative, including save
+      // participants that alter only EOL or trailing whitespace.
+      const viewer = getViewer();
+      if (!viewer || viewer.disposed) return;
+      this.enqueue(viewer, async () => {
+        if (viewer.binding !== binding) return;
+        if (!shouldResync({
+          isFromWebview: false,
           webviewText: binding.webviewText,
           documentText,
-          isDuringOwnSave: binding.saveGuard.isActive,
-          isSaveNormalization,
-        })
-      ) {
+        })) return;
         binding.webviewText = documentText;
-        void panel.webview.postMessage({
+        if (viewer.disposed) return;
+        await panel.webview.postMessage({
           type: 'update',
           text: documentText,
           binding: binding.generation,
-          baseVersion: binding.lastEditVersion,
+          baseVersion: binding.lastAckVersion,
         });
-      } else {
-        binding.webviewText = documentText;
-      }
+      });
     });
     const willSaveSubscription = vscode.workspace.onWillSaveTextDocument((event) => {
       if (event.document.uri.toString() !== binding.key) return;
@@ -580,7 +660,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       key: document.uri.toString(),
       generation,
       webviewText: toLF(document.getText()),
-      lastEditVersion: 0,
+      lastReceivedVersion: 0,
+      lastAckVersion: 0,
+      expectedWorkspaceChanges: new Map(),
       changeSubscription,
       saveGuard: new SelfSaveGuard(),
       saveToken: 0,

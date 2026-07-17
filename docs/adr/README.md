@@ -25,6 +25,7 @@
 | [0013](0013-lf-normalization.md) | Webview/CodeMirror 側での LF 正規化 | Webview は常に LF で処理。CRLF ファイルは拡張ホスト側で変換 | 高 |
 | [0014](0014-ci-marketplace-publish.md) | GitHub Actions による Marketplace 自動公開 | main push をトリガーに自動ビルド・公開。mindmap-editor 方式を踏襲 | 高 |
 | [0015](0015-editable-webview-panel-viewers.md) | editable WebviewPanel ビューア | ソース横表示、URI 単一所有、active editor follow、queued rebinding | 高 |
+| [0017](0017-codemirror-history-and-ack-sync.md) | CodeMirror history and acknowledgement sync | CodeMirror 単独 Undo、host ack、WorkspaceEdit self-echo ledger、外部更新時の履歴リセット | 採用 |
 
 ---
 

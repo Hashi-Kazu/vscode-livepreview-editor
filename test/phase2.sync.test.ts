@@ -9,6 +9,8 @@ import {
   fromLFPreserving,
   isSaveParticipantNormalization,
   appliedEditVersion,
+  acceptsWebviewEditVersion,
+  consumeExpectedWorkspaceEditChange,
   failedEditBaseVersion,
 } from '../src/core/sync';
 
@@ -31,7 +33,7 @@ describe('Phase 2: external change detection (shouldResync)', () => {
     ).toBe(false);
   });
 
-  it('does NOT resync when the change was caused by our own document.save() (e.g. trim trailing whitespace)', () => {
+  it('resyncs every non-ledger document change, including a save participant rewrite', () => {
     expect(
       shouldResync({
         isFromWebview: false,
@@ -39,7 +41,7 @@ describe('Phase 2: external change detection (shouldResync)', () => {
         webviewText: 'abc ',
         documentText: 'abc',
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('still resyncs on a genuine external change while not in our own save', () => {
@@ -74,39 +76,39 @@ describe('Phase 2: edit acknowledgement versions (R-04-02/R-04-03)', () => {
     expect(appliedEditVersion({ previousVersion: applied, receivedVersion: 4, completed: true })).toBe(4);
   });
 
+  it('rejects old edit snapshots and consumes only the version-keyed WorkspaceEdit echo', () => {
+    expect(acceptsWebviewEditVersion({ lastReceivedVersion: 4, receivedVersion: 4 })).toBe(false);
+    expect(acceptsWebviewEditVersion({ lastReceivedVersion: 4, receivedVersion: 3 })).toBe(false);
+    expect(acceptsWebviewEditVersion({ lastReceivedVersion: 4, receivedVersion: 5 })).toBe(true);
+
+    const ledger = new Map([
+      [5, { editVersion: 5, documentVersion: 12, text: 'same\n' }],
+    ]);
+    // Equal text at a different TextDocument version is an external change,
+    // never an accidental self echo.
+    expect(consumeExpectedWorkspaceEditChange({ ledger, documentVersion: 13, documentText: 'same\n' })).toBeUndefined();
+    expect(consumeExpectedWorkspaceEditChange({ ledger, documentVersion: 12, documentText: 'same\n' })).toBe(5);
+  });
+
   it('uses the failed edit version for an authoritative rollback without advancing the acknowledgement', () => {
     expect(failedEditBaseVersion({ appliedVersion: 3, failedVersion: 4 })).toBe(4);
     expect(appliedEditVersion({ previousVersion: 3, receivedVersion: 4, completed: false })).toBe(3);
   });
 });
 
-describe('save-participant normalization is not treated as external (R-04-02)', () => {
+describe('save-participant changes remain authoritative (R-04-02)', () => {
   it('detects trailing-whitespace-only changes as save-participant normalization', () => {
     const webviewText = 'line one \nline two\t\nline three';
     const documentText = 'line one\nline two\nline three';
     expect(isSaveParticipantNormalization(webviewText, documentText)).toBe(true);
-    expect(
-      shouldResync({
-        isFromWebview: false,
-        webviewText,
-        documentText,
-        isSaveNormalization: true,
-      }),
-    ).toBe(false);
+    expect(shouldResync({ isFromWebview: false, webviewText, documentText, isSaveNormalization: true })).toBe(true);
   });
 
   it('detects a trailing-final-newline-only difference as save-participant normalization', () => {
     const webviewText = 'abc\ndef';
     const documentText = 'abc\ndef\n';
     expect(isSaveParticipantNormalization(webviewText, documentText)).toBe(true);
-    expect(
-      shouldResync({
-        isFromWebview: false,
-        webviewText,
-        documentText,
-        isSaveNormalization: true,
-      }),
-    ).toBe(false);
+    expect(shouldResync({ isFromWebview: false, webviewText, documentText, isSaveNormalization: true })).toBe(true);
   });
 
   it('does NOT flag a genuine content change as save-participant normalization', () => {
@@ -238,7 +240,7 @@ describe('Phase 2: per-line EOL preservation', () => {
     expect(fromLFPreserving(newLF, 'a\nb\nc\n', '\n')).toBe(fromLF(newLF, '\n'));
   });
 
-  it('does not add a trailing EOL when the old document has none', () => {
-    expect(fromLFPreserving('a\nB\n', 'a\r\nb', '\r\n')).toBe('a\r\nB');
+  it('old document without final EOL preserves requested final LF', () => {
+    expect(fromLFPreserving('a\nB\n', 'a\r\nb', '\r\n')).toBe('a\r\nB\r\n');
   });
 });

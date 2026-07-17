@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.25.2 — Live Preview の Undo・同期・ファイル貼り付け修正
+
+### 修正
+
+- Live Preview の Undo/Redo を CodeMirror 履歴だけに限定し、外部更新・失敗 rollback 時は履歴をリセットするよう修正。
+- Webview/host 間を ack 付き単調版数同期に変更し、`WorkspaceEdit` の自己エコーを TextDocument 版数付き ledger で判別。
+- IME 確定、末尾 LF、Windows/VS Code Explorer の URI・File ペースト/ドロップを安定化。Markdown は相対リンク、画像は `assets/` へ保存する。
+
 本拡張のリリース履歴。各バージョンの VSIX は `releases/v{version}/` 配下に格納する。
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。

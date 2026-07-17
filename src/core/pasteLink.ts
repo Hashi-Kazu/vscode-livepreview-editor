@@ -38,6 +38,47 @@ export function parseUriList(value: unknown): string[] {
   return result;
 }
 
+/**
+ * Parse URI candidates supplied by Chromium/VS Code drag data.  Explorer
+ * commonly supplies both MIME types, so preserve first-seen ordering while
+ * removing duplicate URI strings.
+ */
+export function parseDataTransferUris(params: {
+  uriList?: unknown;
+  codeUriList?: unknown;
+  plainText?: unknown;
+}): string[] {
+  const direct = [...parseUriList(params.uriList), ...parseUriList(params.codeUriList)];
+  const plain = parsePlainFileUriList(params.plainText);
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [...direct, ...plain]) {
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    result.push(raw);
+  }
+  return result;
+}
+
+/**
+ * `text/plain` is a fallback only when every meaningful line is a file URI.
+ * This deliberately leaves normal prose and HTTP(S) URLs to CodeMirror.
+ */
+export function parsePlainFileUriList(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  const candidates = parseUriList(value);
+  if (candidates.length === 0) return [];
+  return candidates.every((candidate) => {
+    try {
+      return new URL(candidate).protocol === 'file:';
+    } catch {
+      return false;
+    }
+  })
+    ? candidates
+    : [];
+}
+
 /** Whether a paste/drop needs the extension's media handling rather than CodeMirror's default text paste. */
 export function hasMediaPayload(params: { fileCount: number; uris: readonly string[] }): boolean {
   return params.fileCount > 0 || params.uris.length > 0;
@@ -59,6 +100,29 @@ export function dedupeUrisAgainstFiles(uris: readonly string[], fileNames: reado
       return true;
     }
   });
+}
+
+/**
+ * URI payloads are authoritative over simultaneously supplied browser Files.
+ * Return only Files that do not name a URI target so the host never copies the
+ * same Explorer item twice. This relies only on portable File.name data.
+ */
+export function dedupeFilesAgainstUris<T extends { name: string }>(
+  files: readonly T[],
+  uris: readonly string[],
+): T[] {
+  const uriNames = new Set<string>();
+  for (const raw of uris) {
+    try {
+      const pathname = decodeURIComponent(new URL(raw).pathname);
+      const name = pathname.split('/').at(-1);
+      if (name) uriNames.add(name.toLowerCase());
+    } catch {
+      // The host will report the malformed URI. It cannot identify a File
+      // reliably, so retain that File rather than dropping user data here.
+    }
+  }
+  return files.filter((file) => !uriNames.has(file.name.toLowerCase()));
 }
 
 /**
@@ -85,13 +149,27 @@ export interface MediaSnippet {
  * with `text` as the placeholder. `target` must already be passed through
  * {@link formatMarkdownLinkTarget}.
  */
-export function buildMediaSnippet(opts: { isImage: boolean; target: string }): MediaSnippet {
-  const placeholder = opts.isImage ? 'alt text' : 'text';
+export function buildMediaSnippet(opts: {
+  isImage: boolean;
+  target: string;
+  /** Selected text wins for non-image links; empty selections use the basename. */
+  selectedText?: string;
+}): MediaSnippet {
+  const placeholder = opts.isImage ? 'alt text' : mediaLinkText(opts.target, opts.selectedText);
   const prefix = opts.isImage ? '![' : '[';
   const from = prefix.length;
   const to = from + placeholder.length;
   const text = `${prefix}${placeholder}](${opts.target})`;
   return { text, placeholderFrom: from, placeholderTo: to };
+}
+
+/** Derive the visible label for a non-image Markdown link. */
+export function mediaLinkText(target: string, selectedText?: string): string {
+  if (typeof selectedText === 'string' && selectedText.length > 0) return selectedText;
+  const bare = target.replace(/^<|>$/g, '').replace(/%3C/g, '<').replace(/%3E/g, '>');
+  const base = bare.split('/').at(-1) || 'text';
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(0, dot) : base;
 }
 
 /**

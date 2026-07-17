@@ -85,6 +85,20 @@ describe('compositionend final-text delivery (R-03-08/R-05-08)', () => {
 });
 
 describe('stale update / IME flush', () => {
+  it('compositionend flush waits for ack-aware remote resolution', () => {
+    // The composition sends version 4 exactly once. A remote snapshot based on
+    // version 3 remains pending until its base can be rechecked, and is then
+    // discarded because it is stale.
+    expect(shouldFlushComposition({ composing: false, pendingCompositionChange: true, applyingRemote: false })).toBe(true);
+    expect(shouldApplyRemoteUpdate({ baseVersion: 3, editVersion: 4, ackVersion: 3, composing: false })).toBe(false);
+    expect(shouldApplyRemoteUpdate({ baseVersion: 3, editVersion: 4, ackVersion: 4, composing: false })).toBe(false);
+    expect(shouldApplyRemoteUpdate({ baseVersion: 4, editVersion: 4, ackVersion: 4, composing: false })).toBe(true);
+  });
+
+  it('does not apply legacy remote updates while a local edit is unacknowledged', () => {
+    expect(shouldApplyRemoteUpdate({ baseVersion: undefined, editVersion: 5, ackVersion: 4, composing: false })).toBe(false);
+    expect(shouldApplyRemoteUpdate({ baseVersion: undefined, editVersion: 5, ackVersion: 5, composing: false })).toBe(true);
+  });
   it('shouldApplyRemoteUpdate: baseVersion がローカル版数未満の update は適用しない', () => {
     expect(shouldApplyRemoteUpdate({ baseVersion: 1, localVersion: 2, composing: false })).toBe(false);
   });

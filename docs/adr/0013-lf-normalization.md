@@ -38,3 +38,8 @@ const restored = fromLFPreserving(newLF, oldText, fallbackEol);
 
 - **CRLF のまま渡す**: CodeMirror の行インデックス計算がずれる
 - **常に LF で保存**: CRLF ファイルを編集したユーザーのファイルが LF に変わってしまう（意図しない変更）
+## v1.25.2 final-EOL follow-up
+
+`fromLFPreserving` retains existing per-line CRLF/LF choices. A requested
+final LF is retained with the existing line EOL or `fallbackEol` when the old
+document had no terminal newline.

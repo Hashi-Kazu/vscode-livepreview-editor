@@ -48,12 +48,8 @@ export function shouldResync({
   isFromWebview,
   webviewText,
   documentText,
-  isDuringOwnSave,
-  isSaveNormalization,
 }: ResyncParams): boolean {
   if (isFromWebview) return false;
-  if (isDuringOwnSave) return false;
-  if (isSaveNormalization) return false;
   return webviewText !== documentText;
 }
 
@@ -243,12 +239,34 @@ export function shouldEmitEdit(params: { docChanged: boolean; composing: boolean
 /** Decide whether an update received from the host is safe to apply. */
 export function shouldApplyRemoteUpdate(params: {
   baseVersion: number | undefined;
-  localVersion: number;
+  /** Current locally emitted Webview version. `localVersion` is kept for tests from older releases. */
+  editVersion?: number;
+  localVersion?: number;
+  /** Last host acknowledgement received by the Webview. */
+  ackVersion?: number;
   composing: boolean;
+  /** A document change exists locally but has not yet been emitted (IME). */
+  pendingLocalChange?: boolean;
+  /** A failed WorkspaceEdit rollback is authoritative for its failed version. */
+  rollback?: boolean;
 }): boolean {
   if (params.composing) return false;
-  if (typeof params.baseVersion === 'number' && params.baseVersion < params.localVersion) return false;
-  return true;
+  if (params.pendingLocalChange) return false;
+
+  const editVersion = params.editVersion ?? params.localVersion ?? 0;
+  // Before the ack protocol existed, callers only tracked one local version.
+  // Retain that behaviour for the pure helper's old call signature, while all
+  // Webview production calls provide the independently tracked acknowledgement.
+  const ackVersion = params.ackVersion ?? editVersion;
+  if (typeof params.baseVersion !== 'number') {
+    // Legacy unversioned updates are safe only while there is no local work
+    // awaiting acknowledgement.
+    return editVersion === ackVersion;
+  }
+  if (params.rollback) {
+    return params.baseVersion === editVersion && ackVersion <= editVersion;
+  }
+  return params.baseVersion === editVersion && params.baseVersion === ackVersion;
 }
 
 /** Decide whether an IME composition change deferred by the Webview should be sent. */
@@ -273,6 +291,44 @@ export function appliedEditVersion(params: {
 }): number {
   if (!params.completed || typeof params.receivedVersion !== 'number') return params.previousVersion;
   return Math.max(params.previousVersion, params.receivedVersion);
+}
+
+/** True only for a fresh, monotonically increasing Webview edit version. */
+export function acceptsWebviewEditVersion(params: {
+  lastReceivedVersion: number;
+  receivedVersion: unknown;
+}): params is { lastReceivedVersion: number; receivedVersion: number } {
+  return (
+    typeof params.receivedVersion === 'number' &&
+    Number.isSafeInteger(params.receivedVersion) &&
+    params.receivedVersion > params.lastReceivedVersion
+  );
+}
+
+/**
+ * The identity of a single expected `WorkspaceEdit` document-change event.
+ * Text and TextDocument version are intentionally both required: matching
+ * text alone can accidentally swallow a real external change whose contents
+ * happen to equal a previous local snapshot.
+ */
+export interface ExpectedWorkspaceEditChange {
+  editVersion: number;
+  documentVersion: number;
+  text: string;
+}
+
+/** Consume exactly the expected self echo from a version-keyed ledger. */
+export function consumeExpectedWorkspaceEditChange(params: {
+  ledger: ReadonlyMap<number, ExpectedWorkspaceEditChange>;
+  documentVersion: number;
+  documentText: string;
+}): number | undefined {
+  for (const [version, expected] of params.ledger) {
+    if (expected.documentVersion === params.documentVersion && expected.text === params.documentText) {
+      return version;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -309,15 +365,11 @@ export function fromLFPreserving(
   for (const match of oldText.matchAll(/\r\n|\n/g)) {
     oldEols.push(match[0] as '\n' | '\r\n');
   }
-  const oldHasTrailingEol = /(?:\r\n|\n)$/.test(oldText);
-
   const newLines = newLF.split('\n');
   let result = '';
   for (let line = 0; line < newLines.length; line++) {
     result += newLines[line];
     if (line < newLines.length - 1) {
-      const isTrailingEol = line === newLines.length - 2 && newLines[line + 1] === '';
-      if (isTrailingEol && !oldHasTrailingEol) continue;
       result += oldEols[line] ?? fallbackEol;
     }
   }

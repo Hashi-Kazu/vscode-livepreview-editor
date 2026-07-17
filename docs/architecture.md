@@ -42,7 +42,7 @@
 
 各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` と保存の完了後に実行される。失焦・dispose の flush も同じキューへ追加するため、dispose 前に受信した edit はパネル破棄後でも TextDocument への適用と保存を完走する（Webview 返信だけを抑止する）。
 
-各文書バインドには単調増加する `generation` を付ける。Webview は `edit`、`toggleTask`、`openLink`、`renderError` に現在の generation を付与し、ホストは現在値と異なる遅延メッセージを拒否する。切り替え時は次を一括して更新する。
+各文書バインドには単調増加する `generation` を付ける。Webview は `edit`、`pasteMedia`、`openLink`、`renderError` に現在の generation を付与し、ホストは現在値と異なる遅延メッセージを拒否する。切り替え時は次を一括して更新する。
 
 - URI 所有者マップ
 - パネルタイトル
@@ -54,7 +54,7 @@
 
 Webview 編集のたびに `workspace.openTextDocument(uri)` で対象を取得する。この API は文書をロードするがエディタを reveal しないため、標準ソースタブを閉じた後も Live Preview から編集できる。
 
-編集は `diffRange` で最小差分を計算し、文書 EOL に `fromLF` で戻して `WorkspaceEdit.replace` を 1 回適用する。Webview edit の ack 版数は受信時ではなく、`WorkspaceEdit` 成功または差分なし確認まで完了した時点で進めるため、適用待ちの document event は新しいローカル edit を名乗れない。false 時は失敗 edit 版数を基準に権威ある文書内容を返し、より新しい local edit は stale update として拒否する。`WorkspaceEdit` は**即時適用**する。保存は `SaveDebouncer`（`src/core/saveDebouncer.ts`）でアイドル合体し、未保存分は非アクティブ化・破棄・バインド切替で edit キューの後に `flush()` する。Webview は IME 合成中の edit を抑制し、`compositionend` 後のマイクロタスクで確定全文を一度だけ送信してから保留 remote を新しい版数で再検証する。URI-only paste は `text/uri-list` を解析し、workspace 内の非画像を文書相対リンク、画像を `assets/` へのコピーとして `insertMedia` 経路へ渡す。resync を Webview へ返す `setText` は `computeRemotePatch` でキャレットを再マップし、置換範囲が打鍵行に掛かってもキャレットを手前へ戻さない。
+Webview の Live Preview Undo/Redo は CodeMirror `history()` だけが所有する。編集は `diffRange` と `fromLFPreserving` で既存 EOL を維持した最小 `WorkspaceEdit.replace` として即時適用する。host は最後に受理した version、成功 ack version、期待 LF 本文＋TextDocument version の version-keyed self-echo ledger を別々に管理し、ledger に一致しない変更を authoritative external update として operationQueue で直列配信する。Webview は `baseVersion === editVersion === ackVersion` の update だけを適用し、IME または未 ack edit 中は最新1件を保留する。外部更新・apply false rollback は `computeRemotePatch` で選択を再マップした新しい EditorState に置換し、古い CodeMirror history を破棄する。`paste`/`drop`/`dragover` は `Prec.highest(EditorView.domEventHandlers)` で DataTransfer の File、URI MIME、file URI-only plain text を処理する。URI は File より優先し、host response の request ID と追従選択範囲を使って snippet を挿入する。
 
 ## Webview 描画
 

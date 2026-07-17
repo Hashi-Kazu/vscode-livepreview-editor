@@ -34,3 +34,8 @@ edit.replace(document.uri, diff.range, diff.newText);
 
 - **全体 replace**: undo 粒度が失われる。ユーザー体験が著しく劣化
 - **Character-by-character diff**: 実装複雑度に対してメリットが薄い。行レベルの前後トリムで十分
+## v1.25.2 clarification
+
+`diffRange` and the minimal `WorkspaceEdit` remain necessary to preserve the
+source editor's undo granularity. They do not own Live Preview undo: that
+history belongs exclusively to CodeMirror in the Webview.

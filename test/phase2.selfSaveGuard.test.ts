@@ -166,7 +166,7 @@ describe('Phase 2: SelfSaveGuard (R-04-02 self-save echo suppression)', () => {
     expect(guard.isActive).toBe(false);
   });
 
-  it('suppresses save-participant echo across a save window driven by will/did-save, including saves initiated by another editor of the same document', async () => {
+  it('keeps the save window lifecycle but treats participant rewrites as authoritative updates', async () => {
     const fake = makeFakeScheduler();
     const guard = new SelfSaveGuard(fake.schedule);
 
@@ -177,9 +177,8 @@ describe('Phase 2: SelfSaveGuard (R-04-02 self-save echo suppression)', () => {
     expect(guard.isActive).toBe(true);
 
     // Simulate onDidSaveTextDocument firing once VS Code reports the save
-    // complete. Suppression must still hold for the microtask+macrotask tail
-    // so save-participant rewrites (trim trailing whitespace, insert final
-    // newline, etc.) that arrive slightly after did-save are not echoed.
+    // complete. The guard still tracks the lifecycle for save scheduling, but
+    // save-participant rewrites are authoritative document changes in v1.25.2.
     guard.end(token);
     expect(
       shouldResync({
@@ -188,7 +187,7 @@ describe('Phase 2: SelfSaveGuard (R-04-02 self-save echo suppression)', () => {
         webviewText: 'abc ',
         documentText: 'abc',
       }),
-    ).toBe(false);
+    ).toBe(true);
 
     await Promise.resolve();
     expect(
@@ -198,7 +197,7 @@ describe('Phase 2: SelfSaveGuard (R-04-02 self-save echo suppression)', () => {
         webviewText: 'abc ',
         documentText: 'abc',
       }),
-    ).toBe(false);
+    ).toBe(true);
 
     fake.flush();
     expect(guard.isActive).toBe(false);

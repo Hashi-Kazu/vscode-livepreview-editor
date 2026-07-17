@@ -41,3 +41,9 @@ export function shouldEmitEdit({ docChanged, composing, applyingRemote }): boole
 
 - **常に emit する**: IME ユーザーの入力が壊れる（バグ）
 - **ViewUpdate だけで確定を判定する**: IME 確定だけでは次の `ViewUpdate` が発生しない実装があり、次キー・失焦まで TextDocument へ反映されない
+## v1.25.2 ack follow-up
+
+After `compositionend`, the Webview flushes the settled document exactly once
+in a microtask. Remote state remains pending until the flushed composition
+receives its host acknowledgement; then the base version is compared again
+before application and stale state is discarded.

@@ -1,27 +1,43 @@
-import { history, undo } from '@codemirror/commands';
-import { EditorState, Transaction } from '@codemirror/state';
+import { history, isolateHistory, undo } from '@codemirror/commands';
+import { EditorState } from '@codemirror/state';
 import { describe, expect, it } from 'vitest';
+import { fromLFPreserving, shouldApplyRemoteUpdate } from '../src/core/sync';
 
-describe('Webview input flow (R-03-04/R-04-01/R-04-02/R-04-03)', () => {
-  it('rapid ASCII input remains ordered and one undo restores the grouped input', () => {
+describe('Webview input flow (R-03-08/R-04-01/R-04-02/R-04-03)', () => {
+  it('3-line IME input is undone by CodeMirror alone and matches the host at every step', () => {
     let state = EditorState.create({ doc: '', extensions: [history()] });
-    for (const char of 'abcdefg') {
-      state = state.update({ changes: { from: state.doc.length, insert: char } }).state;
+    let hostText = '';
+    let editVersion = 0;
+    let ackVersion = 0;
+
+    const syncToHost = () => {
+      const webviewText = state.doc.toString();
+      editVersion++;
+      // Minimal WorkspaceEdit application is represented by the EOL-preserving
+      // pure conversion used by the host. An ack follows only once it matches.
+      hostText = fromLFPreserving(webviewText, hostText, '\n');
+      ackVersion = editVersion;
+      expect(hostText).toBe(webviewText);
+    };
+    const composeLine = () => {
+      state = state.update({
+        changes: { from: state.doc.length, insert: 'あいうえお\n' },
+        annotations: isolateHistory.of('full'),
+      }).state;
+      syncToHost();
+    };
+
+    composeLine();
+    composeLine();
+    composeLine();
+    expect(state.doc.toString()).toBe('あいうえお\nあいうえお\nあいうえお\n');
+    expect(shouldApplyRemoteUpdate({ baseVersion: 2, editVersion, ackVersion, composing: false })).toBe(false);
+
+    for (const expected of ['あいうえお\nあいうえお\n', 'あいうえお\n', '']) {
+      expect(undo({ state, dispatch: (transaction) => { state = transaction.state; } })).toBe(true);
+      syncToHost();
+      expect(state.doc.toString()).toBe(expected);
+      expect(hostText).toBe(expected);
     }
-    expect(state.doc.toString()).toBe('abcdefg');
-
-    const undone = undo({ state, dispatch: (transaction) => { state = transaction.state; } });
-    expect(undone).toBe(true);
-    expect(state.doc.toString()).toBe('');
-  });
-
-  it('remote patches stay out of CodeMirror history and do not reverse local input', () => {
-    let state = EditorState.create({ doc: 'abc', extensions: [history()] });
-    state = state.update({
-      changes: { from: 3, insert: 'd' },
-      annotations: Transaction.addToHistory.of(false),
-    }).state;
-    state = state.update({ changes: { from: state.doc.length, insert: 'efg' } }).state;
-    expect(state.doc.toString()).toBe('abcdefg');
   });
 });
