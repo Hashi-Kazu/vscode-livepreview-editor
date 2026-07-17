@@ -409,18 +409,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       const resolved = await this.relativizeUri(raw, documentFolder);
       if (!resolved) continue;
       const name = path.basename(resolved.uri.fsPath || resolved.uri.path);
-      if (!isImageFile(name)) {
-        targets.push({ relative: resolved.relative, isImage: false });
-        continue;
-      }
-      try {
-        targets.push({
-          relative: await saveToAssets(name, await vscode.workspace.fs.readFile(resolved.uri)),
-          isImage: true,
-        });
-      } catch {
-        vscode.window.showWarningMessage(`Live Preview: image file could not be read: ${resolved.uri.fsPath}`);
-      }
+      targets.push({ relative: resolved.relative, isImage: isImageFile(name) });
     }
 
     if (validFiles.length > 0) {

@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.25.4
+**バージョン**: 1.25.5
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-17
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-18 時点 / v1.25.4）**: Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
+> ▶️ **開発継続中（2026-07-18 時点 / v1.25.5）**: Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
 ---
 
@@ -371,7 +371,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** 標準 Markdown エディタと同様に、画像バイナリのペーストやファイルのドロップだけでワークスペースへ画像を保存し、Markdown リンクを自動挿入できることは編集体験の要であるため。v1.5.0 で削除した「画像ペースト保存」を、Obsidian 独自挙動ではなく標準 Markdown エディタ相当の挙動として v1.24.0 で再導入する。
 
-> **説明：** 画像判定・山括弧エスケープ・スニペット生成・ファイル名衝突回避は VS Code 非依存の純粋関数（`src/core/pasteLink.ts`: `isImageFile`／`formatMarkdownLinkTarget`／`buildMediaSnippet`／`uniqueMediaName`）が担う。Webview（`src/webview/main.ts`）は `paste`/`drop` でファイル・`text/uri-list` を収集し、ファイルまたは URI があるときのみ `preventDefault` して `{ type: 'pasteMedia', binding, files: [{ name, data: Uint8Array }], uris? }` をホストへ送る（ファイルも URI も無い通常テキストは CodeMirror 既定に委ねる）。ホスト（`src/livePreviewViewerManager.ts` `handlePasteMedia`）はバイナリを document フォルダ相対の保存先（既定 `assets/`）へ `workspace.fs.writeFile` で保存し、同名衝突は `-N` 連番で回避、URI は document フォルダ／ワークスペース内なら相対パス化する。`isCurrentBinding` 確認後、単一スニペットを `{ type: 'insertMedia', binding, text, placeholderFrom, placeholderTo }` として返信し、Webview が現在の選択範囲へ挿入してプレースホルダ（`alt text`／`text`）を選択状態にする。挿入後は既存 edit フローで保存まで確定する。往復は `enqueue` で直列化し、`resolveSrc`（R-26-01）で `assets/` 配下の画像が追加設定なしに描画される。
+> **説明：** 画像判定・山括弧エスケープ・スニペット生成・ファイル名衝突回避は VS Code 非依存の純粋関数（`src/core/pasteLink.ts`: `isImageFile`／`formatMarkdownLinkTarget`／`buildMediaSnippet`／`uniqueMediaName`）が担う。Webview（`src/webview/main.ts`）は `paste`/`drop` でファイル・`text/uri-list` を収集し、ファイルまたは URI があるときのみ `preventDefault` して `{ type: 'pasteMedia', binding, files: [{ name, data: Uint8Array }], uris? }` をホストへ送る（ファイルも URI も無い通常テキストは CodeMirror 既定に委ねる）。ホスト（`src/livePreviewViewerManager.ts` `handlePasteMedia`）はバイナリを document フォルダ相対の保存先（既定 `assets/`）へ `workspace.fs.writeFile` で保存し、同名衝突は `-N` 連番で回避する。ワークスペース内 URI（画像・非画像とも）は複製せず document フォルダ基準の相対パスへ変換し、元ファイルへ直接リンクする。`isCurrentBinding` 確認後、単一スニペットを `{ type: 'insertMedia', binding, text, placeholderFrom, placeholderTo }` として返信し、Webview が現在の選択範囲へ挿入してプレースホルダ（`alt text`／`text`）を選択状態にする。挿入後は既存 edit フローで保存まで確定する。往復は `enqueue` で直列化し、`resolveSrc`（R-26-01）で `assets/` 配下の画像が追加設定なしに描画される。
 
 ###### ＜ペースト/ドロップ＞
 
@@ -379,4 +379,4 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-29-02 `buildMediaSnippet` は、画像は `![alt text](<target>)`（プレースホルダ `alt text`）、非画像は `[text](target)` を生成し、プレースホルダ範囲（`placeholderFrom`/`placeholderTo`）が該当文字列を指すこと。非画像の表示名は貼り付け開始時の非空選択を優先し、なければ target basename の最終拡張子を除いた名前とする。`target` は `formatMarkdownLinkTarget` 適用済みを受け取る。
 - ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
-- ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内非画像 URI は document フォルダ基準の相対リンク、画像 URI は `assets/` へコピーする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+- ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
