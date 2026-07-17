@@ -5,12 +5,13 @@ import { SelfSaveGuard } from './core/selfSaveGuard';
 import {
   acceptsWebviewEditVersion,
   appliedEditVersion,
+  classifyDocumentChange,
   consumeExpectedWorkspaceEditChange,
   diffRange,
   ExpectedWorkspaceEditChange,
   failedEditBaseVersion,
   fromLFPreserving,
-  shouldResync,
+  isSaveParticipantNormalization,
   toLF,
 } from './core/sync';
 import {
@@ -625,18 +626,25 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       }
 
       // A listener is deliberately queued behind the edit that created it.
-      // This serializes external document snapshots with host acknowledgements
-      // and makes every non-ledger change authoritative, including save
-      // participants that alter only EOL or trailing whitespace.
+      // This serializes external document snapshots with host acknowledgements.
+      // Whether we resync at all is unchanged, but a self-save echo (our own
+      // save window's save participants / format-on-save) is reconciled while
+      // preserving CodeMirror history; only a genuine external change resets it.
+      // The save-guard window is sampled synchronously here — before the queue
+      // drains — so it still reflects the save in flight.
+      const isDuringOwnSave = binding.saveGuard.isActive;
       const viewer = getViewer();
       if (!viewer || viewer.disposed) return;
       this.enqueue(viewer, async () => {
         if (viewer.binding !== binding) return;
-        if (!shouldResync({
+        const { resync, preserveHistory } = classifyDocumentChange({
           isFromWebview: false,
           webviewText: binding.webviewText,
           documentText,
-        })) return;
+          isDuringOwnSave,
+          isSaveNormalization: isSaveParticipantNormalization(binding.webviewText, documentText),
+        });
+        if (!resync) return;
         binding.webviewText = documentText;
         if (viewer.disposed) return;
         await panel.webview.postMessage({
@@ -644,6 +652,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           text: documentText,
           binding: binding.generation,
           baseVersion: binding.lastAckVersion,
+          ...(preserveHistory ? { preserveHistory: true } : {}),
         });
       });
     });

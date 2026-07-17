@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.25.3 — 保存参加者エコーで Undo 履歴が消える回帰の修正
+
+### 修正
+
+- デバウンス保存・format-on-save 由来の書き換えを履歴保持レコンサイル（`preserveHistory`）に変更し、少し入力を止めて保存が走っても直前の打鍵を Undo/Redo できるよう修正。
+- 真の外部変更（git pull・他エディタの実内容編集）だけ従来どおり履歴をリセットするよう `classifyDocumentChange` で分類。
+
 ## v1.25.2 — Live Preview の Undo・同期・ファイル貼り付け修正
 
 ### 修正

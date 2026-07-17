@@ -38,11 +38,12 @@ export interface ResyncParams {
 /**
  * Decide whether the Webview must reload its contents from the document.
  *
- * An external change (Git pull, another editor, format-on-save triggered by
- * something other than our own save) should trigger a resync, but an echo of
- * the Webview's own edit — including save-participant rewrites caused by our
- * own `document.save()` — must not, otherwise the cursor jumps and edits
- * fight each other.
+ * A change is a resync candidate whenever it did not originate from the Webview
+ * and the document text differs from what the Webview believes it holds. This
+ * covers both genuine external edits (Git pull, another editor) and
+ * self-inflicted rewrites (save participants, format-on-save) — the two are
+ * distinguished by {@link classifyDocumentChange}, which decides whether the
+ * resync may discard CodeMirror history.
  */
 export function shouldResync({
   isFromWebview,
@@ -51,6 +52,47 @@ export function shouldResync({
 }: ResyncParams): boolean {
   if (isFromWebview) return false;
   return webviewText !== documentText;
+}
+
+/** Outcome of classifying a non-ledger document change. */
+export interface DocumentChangeClassification {
+  /** Whether the Webview must reload its contents from the document. */
+  resync: boolean;
+  /**
+   * Whether the resync must keep CodeMirror's undo/redo history intact.
+   *
+   * `true` for self-save reconciliations (save participants / format-on-save
+   * inside our own save window), whose rewrites should be folded into the
+   * document without destroying the undo stack the user is still relying on.
+   * `false` for genuine external changes (Git pull, another editor's real
+   * content edit), which are authoritative and reset the history.
+   */
+  preserveHistory: boolean;
+}
+
+/**
+ * Split a non-ledger document change into two independent decisions: whether to
+ * resync at all, and — if so — whether the resync may discard CodeMirror
+ * history.
+ *
+ * Any change that differs from the Webview text still resyncs. What changes is
+ * how: self-save echoes ({@link ResyncParams.isDuringOwnSave} or
+ * {@link ResyncParams.isSaveNormalization}) reconcile while preserving history,
+ * so a little typing pause that triggers a debounced save no longer throws away
+ * the user's undo stack. Only true external changes reset the history.
+ */
+export function classifyDocumentChange({
+  isFromWebview,
+  webviewText,
+  documentText,
+  isDuringOwnSave,
+  isSaveNormalization,
+}: ResyncParams): DocumentChangeClassification {
+  if (!shouldResync({ isFromWebview, webviewText, documentText })) {
+    return { resync: false, preserveHistory: false };
+  }
+  const preserveHistory = Boolean(isDuringOwnSave) || Boolean(isSaveNormalization);
+  return { resync: true, preserveHistory };
 }
 
 /**

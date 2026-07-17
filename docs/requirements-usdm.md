@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.25.2
+**バージョン**: 1.25.3
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-17
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-18 時点 / v1.25.2）**: Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は authoritative update として履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
+> ▶️ **開発継続中（2026-07-18 時点 / v1.25.3）**: Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
 ---
 
@@ -137,8 +137,8 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜双方向同期＞
 
-- ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。Live Preview の Undo/Redo は CodeMirror `history()` だけが所有し、ローカル transaction を履歴へ入れる。外部変更または apply 失敗 rollback は `computeRemotePatch` で選択を再マップした新しい EditorState に置換して履歴を破棄する。
-- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`WorkspaceEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed ledger へ記録し、その組だけを自己エコーとして消費する。ledger に一致しない変更は EOL・末尾改行・行末空白だけの差分を含め authoritative external update として Webview へ配信し、ack は apply 成功または差分なし確認後だけ送る。
+- ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。Live Preview の Undo/Redo は CodeMirror `history()` だけが所有し、ローカル transaction を履歴へ入れる。自己保存由来（保存参加者・own-save 窓中の format-on-save）の書き換えは `computeRemotePatch` の最小差分を `addToHistory.of(false)` で適用し、履歴を保持したままレコンサイルする（`preserveHistory`）。真の外部変更または apply 失敗 rollback だけが、選択を再マップした新しい EditorState に置換して履歴を破棄する。
+- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`WorkspaceEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed ledger へ記録し、その組だけを自己エコーとして消費する。ledger に一致しない変更は `classifyDocumentChange` で分類し、自己保存由来（`SelfSaveGuard.isActive` の own-save 窓、または `isSaveParticipantNormalization` が説明できる EOL・末尾改行・行末空白だけの差分）は `preserveHistory` 付きで履歴を保持して再同期し、真の外部変更のみ authoritative update として履歴を破棄する。ack は apply 成功または差分なし確認後だけ送る。
 - ■■□ R-04-03 Webview は edit version と ack version を別管理し、external update を `baseVersion === editVersion === ackVersion` のときだけ適用する。未 ack local edit、IME、または保留 local change 中は最新1件を保留して ack 後に再判定し、古い base は破棄する。旧形式（baseVersion なし）は未 ack local edit がない場合だけ適用する。`workspace.applyEdit` false の rollback は失敗 edit version を基準にして、より新しい local edit を上書きしない。
 
 ---

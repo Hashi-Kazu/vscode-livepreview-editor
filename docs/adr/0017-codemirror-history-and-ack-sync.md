@@ -22,7 +22,15 @@ on obsolete text, which can resurrect prior content during Undo.
   acknowledges only an applied or no-op snapshot.
 - Before `WorkspaceEdit` the host records expected LF text and TextDocument
   version in a version-keyed ledger. Only that pair is consumed as a self echo.
-- Any other document change is authoritative. The Webview recreates its
+- Any other document change is classified by `classifyDocumentChange`. A
+  self-save reconciliation — a save participant or format-on-save rewrite
+  detected either by the `SelfSaveGuard` own-save window or by
+  `isSaveParticipantNormalization` — is a *history-preserving* resync: the
+  Webview applies the `computeRemotePatch` minimal diff under `applyingRemote`
+  with `addToHistory.of(false)`, so a debounced save while the user is still
+  typing keeps the undo stack intact.
+- Only a genuine external change (Git pull, another editor's real content edit)
+  or an `applyEdit` failure rollback is authoritative: the Webview recreates its
   EditorState after mapping selection with `computeRemotePatch`, clearing its
   history.
 
@@ -31,3 +39,7 @@ on obsolete text, which can resurrect prior content during Undo.
 VS Code source-editor Undo may retain its own WorkspaceEdit history. A source
 Undo is external to Live Preview and therefore resets, rather than reuses, the
 Webview history.
+
+Because save participants and own-save format-on-save rewrites now reconcile
+without discarding history, a brief typing pause that triggers a debounced save
+no longer clears the user's undo stack; only true external edits reset it.
