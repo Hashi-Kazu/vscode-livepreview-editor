@@ -6,6 +6,7 @@ import {
   dedupeFilesAgainstUris,
   hasMediaPayload,
   parseDataTransferUris,
+  parsePlainFilePaths,
   parsePlainFileUriList,
   parseUriList,
   uniqueMediaName,
@@ -100,5 +101,43 @@ describe('R-29-05 URI clipboard media', () => {
       .toBe('[test](ガントチャート.md)');
     expect(buildMediaSnippet({ isImage: false, target: 'ガントチャート.md' }).text)
       .toBe('[ガントチャート](ガントチャート.md)');
+  });
+});
+
+describe('R-29-05 absolute path text/plain fallback', () => {
+  it('converts a raw POSIX absolute path line to a file: URI', () => {
+    expect(parsePlainFilePaths('/workspace/docs/a.md')).toEqual(['file:///workspace/docs/a.md']);
+  });
+
+  it('converts a raw Windows drive path to a lowercase-drive file: URI', () => {
+    expect(parsePlainFilePaths('C:\\workspace\\docs\\a.md')).toEqual(['file:///c:/workspace/docs/a.md']);
+  });
+
+  it('converts a Windows UNC path to a file: URI with the server as authority', () => {
+    expect(parsePlainFilePaths('\\\\server\\share\\docs\\a.md')).toEqual(['file://server/share/docs/a.md']);
+  });
+
+  it('rejects ordinary prose, relative paths, and http(s) URLs', () => {
+    expect(parsePlainFilePaths('ordinary prose')).toEqual([]);
+    expect(parsePlainFilePaths('docs/a.md')).toEqual([]);
+    expect(parsePlainFilePaths('https://example.com')).toEqual([]);
+  });
+
+  it('requires every non-empty line to be an absolute path', () => {
+    expect(parsePlainFilePaths('/workspace/docs/a.md\nordinary prose')).toEqual([]);
+  });
+
+  it('merges into parseDataTransferUris as a fallback, preferring file: URIs and deduping', () => {
+    expect(parseDataTransferUris({
+      uriList: 'file:///workspace/docs/a.md',
+      plainText: '/workspace/docs/a.md\n/workspace/docs/b.md',
+    })).toEqual(['file:///workspace/docs/a.md', 'file:///workspace/docs/b.md']);
+    expect(parseDataTransferUris({ plainText: '/workspace/docs/a.md' })).toEqual([
+      'file:///workspace/docs/a.md',
+    ]);
+    // A file: URI text/plain fallback still wins over the raw-path fallback.
+    expect(parseDataTransferUris({ plainText: 'file:///workspace/docs/a.md' })).toEqual([
+      'file:///workspace/docs/a.md',
+    ]);
   });
 });

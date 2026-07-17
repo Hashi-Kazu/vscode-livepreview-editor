@@ -49,7 +49,8 @@ export function parseDataTransferUris(params: {
   plainText?: unknown;
 }): string[] {
   const direct = [...parseUriList(params.uriList), ...parseUriList(params.codeUriList)];
-  const plain = parsePlainFileUriList(params.plainText);
+  const plainUriList = parsePlainFileUriList(params.plainText);
+  const plain = plainUriList.length > 0 ? plainUriList : parsePlainFilePaths(params.plainText);
   const result: string[] = [];
   const seen = new Set<string>();
   for (const raw of [...direct, ...plain]) {
@@ -77,6 +78,55 @@ export function parsePlainFileUriList(value: unknown): string[] {
   })
     ? candidates
     : [];
+}
+
+const POSIX_ABSOLUTE_PATH = /^\//;
+const WINDOWS_DRIVE_PATH = /^([A-Za-z]):[\\/]/;
+const WINDOWS_UNC_PATH = /^\\\\([^\\]+)\\(.*)$/;
+
+/** Percent-encode each `/`-separated path segment for use inside a `file:` URI. */
+function encodePathSegments(pathname: string): string {
+  return pathname.split('/').map(encodeURIComponent).join('/');
+}
+
+/** Normalize a single absolute filesystem path (POSIX or Windows) to a `file:` URI string, or `null` if it is not an absolute path. */
+function absoluteFilePathToUri(candidate: string): string | null {
+  const uncMatch = WINDOWS_UNC_PATH.exec(candidate);
+  if (uncMatch) {
+    const [, server, rest] = uncMatch;
+    return `file://${server}/${encodePathSegments(rest.replace(/\\/g, '/'))}`;
+  }
+  const driveMatch = WINDOWS_DRIVE_PATH.exec(candidate);
+  if (driveMatch) {
+    const drive = driveMatch[1].toLowerCase();
+    const rest = candidate.slice(driveMatch[0].length).replace(/\\/g, '/');
+    return `file:///${drive}:/${encodePathSegments(rest)}`;
+  }
+  if (POSIX_ABSOLUTE_PATH.test(candidate)) {
+    return `file://${encodePathSegments(candidate)}`;
+  }
+  return null;
+}
+
+/**
+ * `text/plain` is also a fallback when every meaningful line is a raw absolute
+ * filesystem path (e.g. VS Code's "Copy Path"), rather than a `file:` URI.
+ * Each line is normalized to a `file:` URI string so the host's existing
+ * `relativizeUri` validation (workspace membership, existence) applies
+ * unchanged. Relative paths, HTTP(S) URLs, and ordinary prose all yield `[]`,
+ * as does any mix where not every non-empty line is an absolute path.
+ */
+export function parsePlainFilePaths(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  const candidates = parseUriList(value);
+  if (candidates.length === 0) return [];
+  const uris: string[] = [];
+  for (const candidate of candidates) {
+    const uri = absoluteFilePathToUri(candidate);
+    if (uri === null) return [];
+    uris.push(uri);
+  }
+  return uris;
 }
 
 /** Whether a paste/drop needs the extension's media handling rather than CodeMirror's default text paste. */
