@@ -57,6 +57,33 @@ describe('Phase 3: IME composition handling', () => {
   });
 });
 
+describe('compositionend final-text delivery (R-03-08/R-05-08)', () => {
+  it('compositionend flushes final Japanese text without waiting for another key', () => {
+    const sent: string[] = [];
+    let pendingCompositionChange = true;
+    const flush = (text: string) => {
+      if (!shouldFlushComposition({ composing: false, pendingCompositionChange, applyingRemote: false })) return;
+      pendingCompositionChange = false;
+      sent.push(text);
+    };
+    flush('あいうえお'); // compositionend microtask reads the final CM state
+    expect(sent).toEqual(['あいうえお']);
+    flush('あいうえお');
+    expect(sent).toHaveLength(1);
+  });
+
+  it('ASCII after composition is an independent edit rather than the IME flush trigger', () => {
+    const sent: string[] = [];
+    let pendingCompositionChange = true;
+    if (shouldFlushComposition({ composing: false, pendingCompositionChange, applyingRemote: false })) {
+      pendingCompositionChange = false;
+      sent.push('あいうえお');
+    }
+    if (shouldEmitEdit({ docChanged: true, composing: false, applyingRemote: false })) sent.push('あいうえおa');
+    expect(sent).toEqual(['あいうえお', 'あいうえおa']);
+  });
+});
+
 describe('stale update / IME flush', () => {
   it('shouldApplyRemoteUpdate: baseVersion がローカル版数未満の update は適用しない', () => {
     expect(shouldApplyRemoteUpdate({ baseVersion: 1, localVersion: 2, composing: false })).toBe(false);

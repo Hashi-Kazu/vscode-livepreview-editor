@@ -40,7 +40,7 @@
 
 ## 安全な文書切り替え
 
-各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` と保存の完了後に実行される。
+各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` と保存の完了後に実行される。失焦・dispose の flush も同じキューへ追加するため、dispose 前に受信した edit はパネル破棄後でも TextDocument への適用と保存を完走する（Webview 返信だけを抑止する）。
 
 各文書バインドには単調増加する `generation` を付ける。Webview は `edit`、`toggleTask`、`openLink`、`renderError` に現在の generation を付与し、ホストは現在値と異なる遅延メッセージを拒否する。切り替え時は次を一括して更新する。
 
@@ -54,7 +54,7 @@
 
 Webview 編集のたびに `workspace.openTextDocument(uri)` で対象を取得する。この API は文書をロードするがエディタを reveal しないため、標準ソースタブを閉じた後も Live Preview から編集できる。
 
-編集は `diffRange` で最小差分を計算し、文書 EOL に `fromLF` で戻して `WorkspaceEdit.replace` を 1 回適用する。これにより Undo 粒度、CRLF、IME 抑制、外部変更との echo 判定を従来どおり維持する。`WorkspaceEdit` は**即時適用**する。保存は毎打鍵の即時保存をやめ、`SaveDebouncer`（`src/core/saveDebouncer.ts`）でアイドル窓ぶん遅延・合体して 1 回にまとめる。これは、毎打鍵の `document.save()` が保存参加者/format on save を都度走らせ、その非同期エコーが外部変更と誤判定されてキャレットを巻き戻す/ビューア undo を打ち消す不具合を避けるためである。保存実行時は `workspace.openTextDocument(binding.uri)` で現在の TextDocument を再取得し、dirty のときだけ保存する。未保存分はビューアの非アクティブ化・破棄（`disposeViewer`）・バインド切替（`switchDocument`）で `flush()` して永続化する。差分なし、`workspace.applyEdit` の false/失敗時、または URI/generation が変わった旧バインドは保存（デバウンス要求）しない。resync を Webview へ返す `setText` は `computeRemotePatch` でキャレットを再マップし、置換範囲が打鍵行に掛かってもキャレットを手前へ戻さない。
+編集は `diffRange` で最小差分を計算し、文書 EOL に `fromLF` で戻して `WorkspaceEdit.replace` を 1 回適用する。Webview edit の ack 版数は受信時ではなく、`WorkspaceEdit` 成功または差分なし確認まで完了した時点で進めるため、適用待ちの document event は新しいローカル edit を名乗れない。false 時は失敗 edit 版数を基準に権威ある文書内容を返し、より新しい local edit は stale update として拒否する。`WorkspaceEdit` は**即時適用**する。保存は `SaveDebouncer`（`src/core/saveDebouncer.ts`）でアイドル合体し、未保存分は非アクティブ化・破棄・バインド切替で edit キューの後に `flush()` する。Webview は IME 合成中の edit を抑制し、`compositionend` 後のマイクロタスクで確定全文を一度だけ送信してから保留 remote を新しい版数で再検証する。URI-only paste は `text/uri-list` を解析し、workspace 内の非画像を文書相対リンク、画像を `assets/` へのコピーとして `insertMedia` 経路へ渡す。resync を Webview へ返す `setText` は `computeRemotePatch` でキャレットを再マップし、置換範囲が打鍵行に掛かってもキャレットを手前へ戻さない。
 
 ## Webview 描画
 

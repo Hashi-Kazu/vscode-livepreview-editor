@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.25.0
+**バージョン**: 1.25.1
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-17
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-17 時点 / v1.25.0）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.24.2 では、保存参加者（trailing-whitespace 除去・最終改行挿入等）由来の変更が時間ベースの `SelfSaveGuard` 抑制窓を外れて届いても外部変更と誤判定しないよう、タイミング非依存の内容ベース判定 `isSaveParticipantNormalization`（`src/core/sync.ts`）を追加した。両文字列を行末空白除去・末尾改行無視で正規化して一致すれば自己起因の正規化とみなし `shouldResync` を抑制する。実差分のある真の外部編集は従来どおり検知・再同期する（R-04-02）。v1.24.3 では、見出しと本文の視覚差別化を MPE（Markdown Preview Enhanced）/GitHub 風に強化した。サイズ階層・太さ（h1/h2 は `font-weight: 700`）・上下余白（`padding-top: 1.2em`／`padding-bottom: 0.4em`、h1 は `padding-top: 1.4em`）・h1/h2 下罫線・h5/h6 の減色を見直した（R-28-05、CSS のみで対応・行ベースレイアウトと `padding` による高さ計測は不変）。v1.25.0 では、打鍵ごとの即時 `document.save()` が保存参加者/format on save を毎キーストローク走らせ、その非同期エコーがキャレットを巻き戻す/ビューア undo を打ち消す不具合を修正した。`WorkspaceEdit` の適用は即時のまま、保存は `SaveDebouncer`（`src/core/saveDebouncer.ts`）でアイドル合体し、非アクティブ化・破棄・バインド切替でフラッシュする（R-03-08）。加えて安全網として、resync 適用時（`setText`）に現在の選択を `computeRemotePatch`（`src/core/sync.ts`）で最小差分へ再マップし、置換範囲が打鍵行に掛かってもキャレットを打鍵位置より手前へ戻さないようにした（R-04-02）。CodeMirror と VS Code の二重 undo 履歴を完全一致させることはできず、ソースエディタ側の undo をビューアの CodeMirror 履歴へ戻せない制約は既知の仕様上の制約とする。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-07-18 時点 / v1.25.1）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.25.1 では、Webview edit の版数を受信時ではなく `WorkspaceEdit` の成功または差分なし確認後にだけ ack し、適用待ちの古い document update が連続入力・CodeMirror Undo を巻き戻さないようにした。IME は `compositionend` 後のマイクロタスクで確定全文を一度だけ送信するため、次キー入力・失焦を待たず TextDocument へ反映される。パネル破棄後も既受信 edit はキューを完走して保存し、URI-only paste は workspace 内の文書相対リンクまたは `assets/` へコピーした画像として挿入する。CodeMirror と VS Code の二重 undo 履歴を完全一致させることはできず、ソースエディタ側の undo をビューアの CodeMirror 履歴へ戻せない制約は既知の仕様上の制約とする。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -127,7 +127,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
 - ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、標準ソースエディタを表示しないこと。Webview 編集および `toggleTask` は `WorkspaceEdit` を**即時適用**すること（適用は遅延しない）。**保存は遅延・合体**する: 適用成功後に `SaveDebouncer`（`src/core/saveDebouncer.ts`）でアイドル窓ぶんの保存を先送りし、連続打鍵をまとめて 1 回だけ現在のバインドの TextDocument を再取得して `document.save()` すること。これにより保存参加者/format on save が毎キーストローク走ってその非同期エコーがキャレットを巻き戻す/ビューア undo を打ち消す不具合を避ける。未保存分は**ビューアの非アクティブ化（`onDidChangeViewState` の非 active）・破棄（`disposeViewer`）・バインド切替（`switchDocument`）でフラッシュ**して確実に永続化すること（クラッシュ時の未フラッシュ編集喪失を最小化）。差分なし、`workspace.applyEdit` の false/失敗時、またはバインド変更時は保存（デバウンス要求）しないこと。保存実行時に document が dirty でなければ何もしない。`workspace.applyEdit` が false の場合は警告を表示し、document の現テキストで Webview を再同期する。`document.save()` が false の場合は警告を表示する。破棄済み webview へは postMessage しない。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、標準ソースエディタを表示しないこと。Webview 編集および `toggleTask` は `WorkspaceEdit` を**即時適用**すること（適用は遅延しない）。**保存は遅延・合体**する: 適用成功後に `SaveDebouncer`（`src/core/saveDebouncer.ts`）でアイドル窓ぶんの保存を先送りし、連続打鍵をまとめて 1 回だけ現在のバインドの TextDocument を再取得して `document.save()` すること。失焦・破棄・バインド切替の flush は先行する受信済み edit の適用後に同一キューで実行し、破棄後も既受信 edit の TextDocument 適用と保存は完走させる（ただし破棄済み webview へは postMessage しない）。差分なし、`workspace.applyEdit` の false/失敗時、またはバインド変更時は保存（デバウンス要求）しないこと。保存実行時に document が dirty でなければ何もしない。`workspace.applyEdit` が false の場合は警告を表示し、失敗 edit の版数を基準に document の現テキストで Webview を再同期する。`document.save()` が false の場合は警告を表示する。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
 - ■■□ R-03-10 Live Preview の対象ファイルが VS Code 内でリネームされた場合は、受信済みの保留編集を適用した後にビューアを新 URI へ再バインドし、世代番号、パネルタイトル、resource base、`localResourceRoots`、TextDocument 変更リスナーを更新して編集を継続すること。新 URI を別ビューアが所有している場合は重複を避けるため旧 URI 側を閉じること。対象ファイルが削除された場合はビューアを閉じること。
 
@@ -139,7 +139,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。
 - ■■□ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。バインド対象ドキュメントの**すべての保存**（拡張ホスト自身の `document.save()` に加え、同一ドキュメントを別ビュー/別グループで開いている通常テキストエディタ側の autosave・手動保存・format on save を含む）に伴い保存参加者（trailing-whitespace 除去・最終改行挿入・format on save 等）が生じさせた変更は外部変更として扱わず、Webview へエコーバックしない（`isDuringOwnSave`）。抑制窓は `document.save()` の同期区間ではなく、`onWillSaveTextDocument`→`onDidSaveTextDocument` の保存ライフサイクルで決定的に区切り、`SelfSaveGuard`（`src/core/selfSaveGuard.ts`）によりマイクロタスク＋1マクロタスク分の後続ターンまで維持する。保存参加者イベントが did-save 解決後のターンで届いても外部変更と誤判定されず、同一ドキュメントを別ビューで同時に開いていても、もう一方のエディタ由来の保存を起点としたキャレットの巻き戻りは発生しない。より新しい `begin()` が割り込んだ場合、古い `end()` によるクリアは破棄される（トークン管理）。保存以外で発生した `onDidChangeTextDocument`（実際の外部編集）は従来どおり検知・再同期する。さらに、時間ベースの抑制窓（`SelfSaveGuard`）を外れて保存参加者由来の変更が届いた場合に備え、タイミング非依存の内容ベース判定 `isSaveParticipantNormalization`（`src/core/sync.ts`）を補完として設ける。Webview 側テキストとドキュメント側テキストをそれぞれ「各行の行末空白除去」「末尾改行の有無を無視」で正規化し、正規化後が一致し元の2文字列が不一致の場合のみ自己起因の正規化とみなして `shouldResync` を抑制する（`isSaveNormalization`）。本文に実差分がある変更では常に `false` を返し、真の外部編集（Git pull・他エディタの本文編集）は従来どおり再同期させる。さらに安全網として、resync を Webview へ適用する `setText` は現在の primary selection を保持する。`computeRemotePatch`（`src/core/sync.ts`）で共通接頭辞・接尾辞を除いた最小差分と、その差分を通したキャレット再マップ（接頭辞は不変・接尾辞は差分長分シフト・置換範囲内はその末尾側エッジに固定）を算出し、CodeMirror 既定の「置換範囲先頭へ collapse」に頼らず選択を明示的に再設定する。これにより保存/format のエコーが打鍵行に掛かる置換であってもキャレットが打鍵位置より手前へ巻き戻らない（等価論理位置を維持）。保存自体を毎打鍵から遅延・合体（R-03-08）したことでエコー頻度も大幅に減る。CodeMirror（ビューア）と VS Code（TextDocument）は独立した undo 履歴を持ち完全一致させられないため、ソースエディタ側の undo をビューアの CodeMirror 履歴へ redo で戻せない二重履歴制約は既知の仕様上の制約とする（手動確認）。
-- ■■■ R-04-03 Webview のローカル編集版数より古い `baseVersion` を持つ remote update は破棄し、入力直後のキャレットを古い全文で巻き戻さないこと（`shouldApplyRemoteUpdate`）。`baseVersion` がない旧メッセージは版数比較をスキップすること。
+- ■■□ R-04-03 Webview のローカル編集版数より古い `baseVersion` を持つ remote update は破棄し、入力直後のキャレットを古い全文で巻き戻さないこと（`shouldApplyRemoteUpdate`）。ホストが送る `baseVersion` は edit の受信時ではなく、最後に `WorkspaceEdit` が成功または差分なし確認まで完了した版数とする。`workspace.applyEdit` false の rollback は失敗 edit 版数を基準にして、より新しいローカル edit を上書きしない。`baseVersion` がない旧メッセージは版数比較をスキップすること。
 
 ---
 
@@ -161,7 +161,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-05-05 Webview の可視ビューポートに前後 50 行のパディングとカーソル・選択行を加えた範囲へ装飾計算を限定し（`viewportWindow` を `StateEffect` で装飾用 `StateField` に結線）、数千行でもキー入力・カーソル移動時の全行再計算を行わず処理時間が上限内に収まること。
 - ■■■ R-05-06 CRLF 行末の文書でも記法検知・タスクトグルが正しく動作し、Webview 編集の反映時にファイルの EOL を保持して最小差分のみ適用すること。CRLF/LF 混在文書では未編集行を含む各行の EOL を行単位で維持すること（`toLF`/`fromLF`/`fromLFPreserving`、`splitLines` の CR 除外、`toggleTaskAt` の CR 許容）。
 - ■■■ R-05-07 `buildDecorations` の `RangeSetBuilder.add()` 呼び出しは CodeMirror が要求する `(from, startSide)` 昇順を遵守すること。`MarkDecoration` の `startSide`（500000000）は `Decoration.replace` の `startSide`（499999999）より大きいため、同一 `from` では `hide`/`replaceWidget` を `mark` より前に追加すること（`sideOf` の順序を修正）。また `builder.add()` が例外をスローした場合は `onError` で報告し `Decoration.none` を返してエディタが空白になることを防ぐこと。
-- ■■■ R-05-08 IME 合成中に受信した remote update は最新1件を保留し、合成終了後に適用時点の `editVersion` で再検証して古ければ破棄すること。IME の確定変更は保留 remote の適用より先に現在の全文を `edit` として確実にフラッシュし、その後の版数で保留 remote を判定すること（`shouldFlushComposition` / `shouldApplyRemoteUpdate`）。
+- ■■□ R-05-08 IME 合成中に受信した remote update は最新1件を保留し、合成終了後に適用時点の `editVersion` で再検証して古ければ破棄すること。IME の確定変更は `ViewUpdate` だけに依存せず `compositionend` 後のマイクロタスクでも検出し、保留 remote の適用より先に現在の全文を一度だけ `edit` として確実にフラッシュする。その後の版数で保留 remote を判定し、`applyingRemote` 中は保留変更を消費しない（`shouldFlushComposition` / `shouldApplyRemoteUpdate`）。
 
 ### R-06 設定 #settings
 
@@ -379,4 +379,4 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-29-02 `buildMediaSnippet` は、画像は `![alt text](<target>)`（プレースホルダ `alt text`）、非画像は `[text](target)`（プレースホルダ `text`）を生成し、プレースホルダ範囲（`placeholderFrom`/`placeholderTo`）が該当文字列を指すこと。`target` は `formatMarkdownLinkTarget` 適用済みを受け取る。
 - ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
-- ■■□ R-29-05 クリップボード画像ペーストで画像が document フォルダ相対の `assets/` に保存され `![alt text](<...>)`（スペースを含むパスは山括弧付き）が挿入・描画されること。`.md` 等の非画像ファイルのドロップで `[text](...)` が挿入されること。ファイル・URI を含まない通常テキストのペースト/ドロップは CodeMirror 既定挙動を変えないこと。（host↔webview 往復・実ファイル保存・D&D 実挙動は自動化困難のため手動確認）
+- ■■□ R-29-05 クリップボード画像ペーストで画像が document フォルダ相対の `assets/` に保存され `![alt text](<...>)`（スペースを含むパスは山括弧付き）が挿入・描画されること。`text/uri-list` は CRLF/LF・空行・`#` コメントを処理し、File と同じ URI は重複挿入しない。URI-only paste も対象とし、workspace 内の非画像 URI は Markdown 文書フォルダ基準の相対 `[text](...)`、画像 URI は `assets/` へコピーして画像リンクを挿入する（`..` を含む同一 workspace 内相対パスを許可）。workspace 外 URI は警告してリンクを挿入しない。ファイル・URI を含まない通常テキストのペースト/ドロップは CodeMirror 既定挙動を変えないこと。（host↔webview 往復・実ファイル保存・D&D 実挙動は自動化困難のため手動確認）

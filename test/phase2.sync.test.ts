@@ -8,6 +8,8 @@ import {
   fromLF,
   fromLFPreserving,
   isSaveParticipantNormalization,
+  appliedEditVersion,
+  failedEditBaseVersion,
 } from '../src/core/sync';
 
 describe('Phase 2: external change detection (shouldResync)', () => {
@@ -60,6 +62,21 @@ describe('Phase 2: external change detection (shouldResync)', () => {
     }
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith({ type: 'update', text: 'b' });
+  });
+});
+
+describe('Phase 2: edit acknowledgement versions (R-04-02/R-04-03)', () => {
+  it('host update uses only the last successfully applied edit version', () => {
+    const applied = 3;
+    // The received edit is still awaiting WorkspaceEdit, so an update stamped
+    // with 3 cannot be mistaken for an acknowledgement of local version 4.
+    expect(appliedEditVersion({ previousVersion: applied, receivedVersion: 4, completed: false })).toBe(3);
+    expect(appliedEditVersion({ previousVersion: applied, receivedVersion: 4, completed: true })).toBe(4);
+  });
+
+  it('uses the failed edit version for an authoritative rollback without advancing the acknowledgement', () => {
+    expect(failedEditBaseVersion({ appliedVersion: 3, failedVersion: 4 })).toBe(4);
+    expect(appliedEditVersion({ previousVersion: 3, receivedVersion: 4, completed: false })).toBe(3);
   });
 });
 

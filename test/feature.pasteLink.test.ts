@@ -3,6 +3,9 @@ import {
   isImageFile,
   formatMarkdownLinkTarget,
   buildMediaSnippet,
+  dedupeUrisAgainstFiles,
+  hasMediaPayload,
+  parseUriList,
   uniqueMediaName,
 } from '../src/core/pasteLink';
 
@@ -58,5 +61,22 @@ describe('R-29-04 uniqueMediaName', () => {
     taken.add(first);
     const second = uniqueMediaName('image.png', (n) => taken.has(n));
     expect(second).toBe('image-2.png');
+  });
+});
+
+describe('R-29-05 URI clipboard media', () => {
+  it('URI-only paste inserts one document-relative Markdown or copied image link', () => {
+    const uris = parseUriList('# copied by Explorer\r\nfile:///workspace/docs/ガントチャート.md\r\n\r\nfile:///workspace/docs/ガントチャート.md');
+    expect(uris).toEqual(['file:///workspace/docs/ガントチャート.md']);
+    expect(hasMediaPayload({ fileCount: 0, uris })).toBe(true);
+    expect(buildMediaSnippet({ isImage: false, target: 'ガントチャート.md' }).text).toBe('[text](ガントチャート.md)');
+    expect(buildMediaSnippet({ isImage: true, target: '<assets/新規 ビットマップ イメージ.bmp>' }).text)
+      .toBe('![alt text](<assets/新規 ビットマップ イメージ.bmp>)');
+  });
+
+  it('does not intercept ordinary text and deduplicates an accompanying file URI', () => {
+    // Plain clipboard text has no text/uri-list data and remains CodeMirror-owned.
+    expect(hasMediaPayload({ fileCount: 0, uris: [] })).toBe(false);
+    expect(dedupeUrisAgainstFiles(['file:///workspace/docs/image.png'], ['image.png'])).toEqual([]);
   });
 });

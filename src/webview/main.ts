@@ -9,6 +9,7 @@ import { history, historyKeymap, defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import { computeRemotePatch, shouldApplyRemoteUpdate, shouldEmitEdit, shouldFlushComposition } from '../core/sync';
+import { dedupeUrisAgainstFiles, hasMediaPayload, parseUriList } from '../core/pasteLink';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
 import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
@@ -191,33 +192,10 @@ function postEdit(text: string) {
 const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
   if (update.docChanged && update.view.composing) pendingCompositionChange = true;
 
-  let flushedComposition = false;
-  if (
-    shouldFlushComposition({
-      composing: update.view.composing,
-      pendingCompositionChange,
-      applyingRemote,
-    })
-  ) {
-    pendingCompositionChange = false;
-    postEdit(view.state.doc.toString());
-    flushedComposition = true;
-  }
-
-  if (!update.view.composing && pendingRemote !== undefined) {
-    const remote = pendingRemote;
-    pendingRemote = undefined;
-    if (
-      shouldApplyRemoteUpdate({
-        baseVersion: remote.baseVersion,
-        localVersion: editVersion,
-        composing: false,
-      }) &&
-      remote.text !== update.view.state.doc.toString()
-    ) {
-      setText(remote.text);
-    }
-  }
+  const flushedComposition = flushPendingComposition();
+  // A normal local edit must be posted before any deferred remote is applied.
+  // The composition path has already posted its final edit in flush above.
+  if (flushedComposition || !update.docChanged) applyPendingRemote();
 
   if (flushedComposition) return;
 
@@ -396,6 +374,42 @@ const view = new EditorView({
   parent: document.getElementById('editor')!,
 });
 
+/** Send a composition's final full document exactly once, after it is settled. */
+function flushPendingComposition(): boolean {
+  if (!shouldFlushComposition({ composing: view.composing, pendingCompositionChange, applyingRemote })) {
+    return false;
+  }
+  pendingCompositionChange = false;
+  postEdit(view.state.doc.toString());
+  return true;
+}
+
+/** Re-check a deferred host update only after any local IME acknowledgement. */
+function applyPendingRemote(): void {
+  if (view.composing || applyingRemote || pendingRemote === undefined) return;
+  const remote = pendingRemote;
+  pendingRemote = undefined;
+  if (
+    shouldApplyRemoteUpdate({
+      baseVersion: remote.baseVersion,
+      localVersion: editVersion,
+      composing: false,
+    }) &&
+    remote.text !== view.state.doc.toString()
+  ) {
+    setText(remote.text);
+  }
+}
+
+// CodeMirror need not dispatch another ViewUpdate after an IME confirmation.
+// Read its final state in a microtask after the editor's own event handler.
+view.dom.addEventListener('compositionend', () => {
+  queueMicrotask(() => {
+    flushPendingComposition();
+    applyPendingRemote();
+  });
+});
+
 function requestSelectionLayerHeightSync() {
   view.plugin(selectionLayerHeightPlugin)?.schedule();
 }
@@ -500,13 +514,10 @@ async function collectAndSendMedia(dataTransfer: DataTransfer | null): Promise<b
     }
   }
 
-  const uriList = dataTransfer.getData('text/uri-list');
-  const uris = uriList
-    ? uriList
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith('#'))
-    : [];
+  const uris = dedupeUrisAgainstFiles(
+    parseUriList(dataTransfer.getData('text/uri-list')),
+    files.map((file) => file.name),
+  );
 
   if (files.length === 0 && uris.length === 0) return false;
 
@@ -528,19 +539,20 @@ async function collectAndSendMedia(dataTransfer: DataTransfer | null): Promise<b
 
 view.dom.addEventListener('paste', (event) => {
   const dt = (event as ClipboardEvent).clipboardData;
-  const hasFile = !!dt && ((dt.files && dt.files.length > 0) ||
-    (dt.items && Array.from(dt.items).some((i) => i.kind === 'file')));
-  if (!hasFile) return; // plain text paste → CodeMirror default
+  const fileCount = !dt ? 0 : (dt.files?.length ?? 0) ||
+    (dt.items ? Array.from(dt.items).filter((i) => i.kind === 'file').length : 0);
+  const hasMedia = !!dt && hasMediaPayload({ fileCount, uris: parseUriList(dt.getData('text/uri-list')) });
+  if (!hasMedia) return; // plain text paste → CodeMirror default
   event.preventDefault();
   void collectAndSendMedia(dt);
 });
 
 view.dom.addEventListener('drop', (event) => {
   const dt = (event as DragEvent).dataTransfer;
-  const hasFile = !!dt && ((dt.files && dt.files.length > 0) ||
-    (dt.items && Array.from(dt.items).some((i) => i.kind === 'file')) ||
-    !!dt.getData('text/uri-list'));
-  if (!hasFile) return; // plain text drop → CodeMirror default
+  const fileCount = !dt ? 0 : (dt.files?.length ?? 0) ||
+    (dt.items ? Array.from(dt.items).filter((i) => i.kind === 'file').length : 0);
+  const hasMedia = !!dt && hasMediaPayload({ fileCount, uris: parseUriList(dt.getData('text/uri-list')) });
+  if (!hasMedia) return; // plain text drop → CodeMirror default
   event.preventDefault();
   // Move the caret to the drop position before inserting.
   try {

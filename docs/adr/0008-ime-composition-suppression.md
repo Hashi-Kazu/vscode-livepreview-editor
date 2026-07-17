@@ -19,7 +19,7 @@ metadata:
 
 ## 決定
 
-`shouldEmitEdit({ docChanged, composing, applyingRemote })` が `composing === true` のとき `false` を返すことで、IME 変換中は edit を postMessage しない。
+`shouldEmitEdit({ docChanged, composing, applyingRemote })` が `composing === true` のとき `false` を返すことで、IME 変換中は edit を postMessage しない。確定後は `ViewUpdate` の非 composing 判定に加え、`compositionend` の後にマイクロタスクを登録して CodeMirror 自身のイベント処理後の最終 state を読む。保留変更があれば同一の冪等な flush 関数で全文を一度だけ送信し、その ack 版数で保留 remote を再検証する。
 
 ```ts
 export function shouldEmitEdit({ docChanged, composing, applyingRemote }): boolean {
@@ -40,4 +40,4 @@ export function shouldEmitEdit({ docChanged, composing, applyingRemote }): boole
 ## 捨てた選択肢
 
 - **常に emit する**: IME ユーザーの入力が壊れる（バグ）
-- **compositionend でまとめて送る**: CodeMirror の `ViewUpdate` ハンドラで判定する現方式がより簡潔
+- **ViewUpdate だけで確定を判定する**: IME 確定だけでは次の `ViewUpdate` が発生しない実装があり、次キー・失焦まで TextDocument へ反映されない

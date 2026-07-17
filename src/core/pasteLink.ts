@@ -24,6 +24,43 @@ export function isImageFile(name: string): boolean {
   return IMAGE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
 }
 
+/** Parse `text/uri-list`, ignoring its comment lines and duplicate entries. */
+export function parseUriList(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const line of value.split(/\r\n?|\n/)) {
+    const uri = line.trim();
+    if (!uri || uri.startsWith('#') || seen.has(uri)) continue;
+    seen.add(uri);
+    result.push(uri);
+  }
+  return result;
+}
+
+/** Whether a paste/drop needs the extension's media handling rather than CodeMirror's default text paste. */
+export function hasMediaPayload(params: { fileCount: number; uris: readonly string[] }): boolean {
+  return params.fileCount > 0 || params.uris.length > 0;
+}
+
+/**
+ * Remove URI-list entries that describe a simultaneously supplied File. The
+ * browser File API exposes no filesystem URI, so filename identity is the
+ * strongest portable identity available to Webviews.
+ */
+export function dedupeUrisAgainstFiles(uris: readonly string[], fileNames: readonly string[]): string[] {
+  const names = new Set(fileNames.map((name) => name.toLowerCase()));
+  return uris.filter((raw) => {
+    try {
+      const pathname = decodeURIComponent(new URL(raw).pathname);
+      const name = pathname.split('/').at(-1)?.toLowerCase();
+      return !name || !names.has(name);
+    } catch {
+      return true;
+    }
+  });
+}
+
 /**
  * Format a link target for Markdown. Paths containing a space, `(`, or `)` are
  * wrapped in angle brackets like VS Code does. When wrapping, any literal `<` or

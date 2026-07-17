@@ -260,6 +260,32 @@ export function shouldFlushComposition(params: {
   return !params.composing && params.pendingCompositionChange && !params.applyingRemote;
 }
 
+/**
+ * Advance the host acknowledgement only after a Webview edit is known to be
+ * represented by the TextDocument.  Receiving an edit is deliberately not an
+ * acknowledgement: `workspace.applyEdit()` is asynchronous, and advertising
+ * its version early lets an older document event overwrite newer local input.
+ */
+export function appliedEditVersion(params: {
+  previousVersion: number;
+  receivedVersion: unknown;
+  completed: boolean;
+}): number {
+  if (!params.completed || typeof params.receivedVersion !== 'number') return params.previousVersion;
+  return Math.max(params.previousVersion, params.receivedVersion);
+}
+
+/**
+ * Version to attach to an authoritative rollback after a failed edit.  A
+ * client that has already produced a newer edit will reject this old rollback,
+ * while the client that sent the failed edit can still accept it.
+ */
+export function failedEditBaseVersion(params: { appliedVersion: number; failedVersion: unknown }): number {
+  return typeof params.failedVersion === 'number'
+    ? Math.max(params.appliedVersion, params.failedVersion)
+    : params.appliedVersion;
+}
+
 /** Normalise any CRLF/CR to LF (the convention used on the webview/CodeMirror side). */
 export function toLF(text: string): string {
   return text.replace(/\r\n?/g, '\n');

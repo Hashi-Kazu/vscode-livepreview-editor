@@ -6,6 +6,8 @@ import {
   diffRange,
   fromLFPreserving,
   isSaveParticipantNormalization,
+  appliedEditVersion,
+  failedEditBaseVersion,
   shouldResync,
   toggleTaskAt,
   toLF,
@@ -21,8 +23,10 @@ import {
 import { resolveSettings } from './core/viewport';
 import {
   buildMediaSnippet,
+  dedupeUrisAgainstFiles,
   formatMarkdownLinkTarget,
   isImageFile,
+  parseUriList,
   uniqueMediaName,
 } from './core/pasteLink';
 
@@ -31,6 +35,7 @@ interface ViewerBinding {
   key: string;
   generation: number;
   webviewText: string;
+  /** Last Webview edit version confirmed in the TextDocument. */
   lastEditVersion: number;
   changeSubscription: vscode.Disposable;
   /**
@@ -171,7 +176,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       if (event.webviewPanel.active) this.markInteracted(viewer);
       // Flush pending edits whenever the panel loses active focus so nothing
       // stays unsaved while the user works elsewhere (durability, R-03-08).
-      else viewer.binding.saveDebouncer.flush();
+      else this.enqueue(viewer, async () => viewer.binding.saveDebouncer.flush());
     });
     viewer.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('livePreview.fontSize')) return;
@@ -185,6 +190,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   }
 
   private handleMessage(viewer: Viewer, message: any): void {
+    // A message received after disposal must not create a new operation, but
+    // operations received before disposal remain in the serial queue.
+    if (viewer.disposed) return;
     if (message?.type === 'interacted') {
       this.markInteracted(viewer);
       return;
@@ -198,10 +206,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         this.enqueue(viewer, async () => {
           if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
           if (typeof message.text !== 'string') return;
-          if (typeof message.version === 'number') {
-            viewer.binding.lastEditVersion = Math.max(viewer.binding.lastEditVersion, message.version);
-          }
-          await this.applyEdit(viewer, message.text);
+          await this.applyEdit(viewer, message.text, message.version);
         });
         break;
       case 'toggleTask':
@@ -241,7 +246,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   private enqueue(viewer: Viewer, operation: () => Promise<void>): void {
     viewer.operationQueue = viewer.operationQueue
       .then(async () => {
-        if (viewer.disposed) return;
         await operation();
       })
       .catch((error) => {
@@ -250,7 +254,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       });
   }
 
-  private async applyEdit(viewer: Viewer, newLF: string): Promise<void> {
+  private async applyEdit(viewer: Viewer, newLF: string, receivedVersion?: unknown): Promise<void> {
     const binding = viewer.binding;
     const document = await vscode.workspace.openTextDocument(binding.uri);
     if (viewer.binding !== binding) return;
@@ -260,7 +264,14 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const target = fromLFPreserving(newLF, current, eol);
     binding.webviewText = newLF;
     const diff = diffRange(current, target);
-    if (!diff) return;
+    if (!diff) {
+      binding.lastEditVersion = appliedEditVersion({
+        previousVersion: binding.lastEditVersion,
+        receivedVersion,
+        completed: true,
+      });
+      return;
+    }
 
     const edit = new vscode.WorkspaceEdit();
     edit.replace(
@@ -283,11 +294,19 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           type: 'update',
           text: binding.webviewText,
           binding: binding.generation,
-          baseVersion: binding.lastEditVersion,
+          baseVersion: failedEditBaseVersion({
+            appliedVersion: binding.lastEditVersion,
+            failedVersion: receivedVersion,
+          }),
         });
       }
       return;
     }
+    binding.lastEditVersion = appliedEditVersion({
+      previousVersion: binding.lastEditVersion,
+      receivedVersion,
+      completed: true,
+    });
     // Persist is deferred and coalesced: the WorkspaceEdit above already
     // applied immediately (R-04-01), but saving on every keystroke would run
     // save participants / format-on-save per key, whose async echoes get
@@ -334,27 +353,41 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const targetDir = vscode.Uri.joinPath(documentFolder, destFolder);
 
     const relTargets: string[] = [];
-
     const files = Array.isArray(message.files) ? message.files : [];
-    if (files.length > 0) {
-      const taken = await this.directoryNames(targetDir);
-      if (files.length > 0) {
-        await this.ensureDirectory(targetDir);
-      }
-      for (const file of files) {
-        if (!file || typeof file.name !== 'string' || !file.data) continue;
-        const name = uniqueMediaName(sanitizeFileName(file.name), (n) => taken.has(n));
-        taken.add(name);
-        const fileUri = vscode.Uri.joinPath(targetDir, name);
-        await vscode.workspace.fs.writeFile(fileUri, new Uint8Array(file.data));
-        relTargets.push(joinRelative(destFolder, name));
-      }
+    const validFiles = files.filter((file): file is { name: string; data: Uint8Array } =>
+      !!file && typeof file.name === 'string' && !!file.data,
+    );
+    const uriTargets = dedupeUrisAgainstFiles(
+      parseUriList(Array.isArray(message.uris) ? message.uris.join('\n') : ''),
+      validFiles.map((file) => file.name),
+    );
+    const imageUris: vscode.Uri[] = [];
+    for (const raw of uriTargets) {
+      const resolved = this.relativizeUri(raw, documentFolder);
+      if (!resolved) continue;
+      if (isImageFile(path.basename(resolved.uri.fsPath))) imageUris.push(resolved.uri);
+      else relTargets.push(resolved.relative);
     }
 
-    const uris = Array.isArray(message.uris) ? message.uris : [];
-    for (const raw of uris) {
-      const rel = this.relativizeUri(raw, documentFolder);
-      if (rel) relTargets.push(rel);
+    if (validFiles.length > 0 || imageUris.length > 0) {
+      const taken = await this.directoryNames(targetDir);
+      await this.ensureDirectory(targetDir);
+      for (const file of validFiles) {
+        const name = uniqueMediaName(sanitizeFileName(file.name), (n) => taken.has(n));
+        taken.add(name);
+        await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(targetDir, name), new Uint8Array(file.data));
+        relTargets.push(joinRelative(destFolder, name));
+      }
+      for (const source of imageUris) {
+        try {
+          const name = uniqueMediaName(sanitizeFileName(path.basename(source.fsPath)), (n) => taken.has(n));
+          taken.add(name);
+          await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(targetDir, name), await vscode.workspace.fs.readFile(source));
+          relTargets.push(joinRelative(destFolder, name));
+        } catch {
+          vscode.window.showWarningMessage(`Live Preview: 画像ファイルを読み込めませんでした: ${source.fsPath}`);
+        }
+      }
     }
 
     if (relTargets.length === 0) return;
@@ -416,8 +449,8 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     }
   }
 
-  /** Return a forward-slash path relative to the document folder, or undefined. */
-  private relativizeUri(raw: unknown, documentFolder: vscode.Uri): string | undefined {
+  /** Resolve a workspace file URI to a document-relative forward-slash target. */
+  private relativizeUri(raw: unknown, documentFolder: vscode.Uri): { uri: vscode.Uri; relative: string } | undefined {
     if (typeof raw !== 'string' || !raw) return undefined;
     let uri: vscode.Uri;
     try {
@@ -426,14 +459,17 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       return undefined;
     }
     if (uri.scheme !== 'file') return undefined;
-    const bases = [documentFolder, ...(vscode.workspace.workspaceFolders?.map((f) => f.uri) ?? [])];
-    for (const base of bases) {
-      const rel = path.relative(base.fsPath, uri.fsPath);
-      if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
-        return rel.split(path.sep).join('/');
-      }
+    const inWorkspace = (vscode.workspace.workspaceFolders ?? []).some((folder) => {
+      const rel = path.relative(folder.uri.fsPath, uri.fsPath);
+      return rel !== '' && !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel);
+    });
+    if (!inWorkspace) {
+      vscode.window.showWarningMessage('Live Preview: ワークスペース外のファイルはリンクに挿入できません。');
+      return undefined;
     }
-    return undefined;
+    const relative = path.relative(documentFolder.fsPath, uri.fsPath);
+    if (!relative || path.isAbsolute(relative)) return undefined;
+    return { uri, relative: relative.split(path.sep).join('/') };
   }
 
   private async followActiveEditor(uri: vscode.Uri): Promise<void> {
@@ -599,8 +635,11 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private disposeViewer(viewer: Viewer): void {
     viewer.disposed = true;
-    // Flush any unsaved edits before tearing the binding down (durability).
-    viewer.binding.saveDebouncer.flush();
+    // Queue flush behind edits already received from the Webview.  The panel is
+    // gone, but those edits are still allowed to reach the TextDocument/save.
+    this.enqueue(viewer, async () => {
+      viewer.binding.saveDebouncer.flush();
+    });
     viewer.binding.changeSubscription.dispose();
     for (const subscription of viewer.binding.saveLifecycleSubscriptions) subscription.dispose();
     viewer.messageSubscription?.dispose();

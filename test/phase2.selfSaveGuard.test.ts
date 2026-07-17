@@ -93,6 +93,21 @@ describe('Phase 2: SaveDebouncer (R-03-08 deferred/coalesced save)', () => {
     debouncer.flush();
     expect(save).toHaveBeenCalledTimes(1);
   });
+
+  it('confirmed IME edit is applied before blur or dispose flush', async () => {
+    const events: string[] = [];
+    const fake = makeFakeDebounceScheduler();
+    const debouncer = new SaveDebouncer(() => events.push('save'), fake.schedule);
+    let queue = Promise.resolve();
+    // Received edit and lifecycle flush share the same serial operation queue.
+    queue = queue.then(() => {
+      events.push('apply:あいうえお');
+      debouncer.request();
+    });
+    queue = queue.then(() => debouncer.flush());
+    await queue;
+    expect(events).toEqual(['apply:あいうえお', 'save']);
+  });
 });
 
 describe('Phase 2: SelfSaveGuard (R-04-02 self-save echo suppression)', () => {
