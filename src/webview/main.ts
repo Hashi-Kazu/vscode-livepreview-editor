@@ -3,7 +3,7 @@
  * decoration plugin, and bridges document changes to/from the extension host
  * over `postMessage`.
  */
-import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
+import { EditorState, Prec, StateEffect, StateField, Transaction } from '@codemirror/state';
 import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, isolateHistory } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
@@ -36,7 +36,9 @@ let applyingRemote = false;
 let editVersion = 0;
 let ackVersion = 0;
 let pendingCompositionChange = false;
-let pendingRemote: { text: string; baseVersion: number | undefined; rollback?: boolean } | undefined;
+let pendingRemote:
+  | { text: string; baseVersion: number | undefined; rollback?: boolean; preserveHistory?: boolean }
+  | undefined;
 let nextMediaRequestId = 1;
 
 interface PendingMediaRequest {
@@ -462,7 +464,7 @@ function applyPendingRemote(): void {
     pendingLocalChange: pendingCompositionChange,
     rollback: remote.rollback,
   })) {
-    if (remote.text !== view.state.doc.toString()) setText(remote.text, remote.rollback);
+    if (remote.text !== view.state.doc.toString()) setText(remote.text, remote.rollback, remote.preserveHistory);
     else if (remote.rollback) ackVersion = editVersion;
   }
 }
@@ -713,7 +715,7 @@ view.dom.addEventListener(
   { passive: false },
 );
 
-function setText(text: string, rollback = false) {
+function setText(text: string, rollback = false, preserveHistory = false) {
   const doc = view.state.doc.toString();
   if (doc === text) return;
 
@@ -726,14 +728,28 @@ function setText(text: string, rollback = false) {
   const sel = view.state.selection.main;
   const patch = computeRemotePatch(doc, text, { anchor: sel.anchor, head: sel.head });
 
-  // An authoritative document state invalidates every inverse transaction
-  // based on the previous text. Replacing EditorState (rather than merely
-  // annotating a transaction out of history) makes CodeMirror history the sole
-  // owner and prevents old text from reappearing through Undo.
   applyingRemote = true;
   try {
     pendingMediaRequests.clear();
-    view.setState(makeState(text, { anchor: patch.anchor, head: patch.head }));
+    if (preserveHistory) {
+      // A self-save echo (save participant / format-on-save inside our own save
+      // window) must reconcile the document without destroying the undo stack
+      // the user is still typing against. Apply the minimal patch and keep it
+      // out of the history so the just-typed edits remain undoable, while the
+      // `applyingRemote` guard prevents echoing it back as a local edit.
+      view.dispatch({
+        changes: { from: patch.from, to: patch.to, insert: patch.insert },
+        selection: { anchor: patch.anchor, head: patch.head },
+        annotations: Transaction.addToHistory.of(false),
+      });
+    } else {
+      // An authoritative external document state invalidates every inverse
+      // transaction based on the previous text. Replacing EditorState (rather
+      // than merely annotating a transaction out of history) makes CodeMirror
+      // history the sole owner and prevents old text from reappearing through
+      // Undo.
+      view.setState(makeState(text, { anchor: patch.anchor, head: patch.head }));
+    }
     if (rollback) ackVersion = editVersion;
   } finally {
     applyingRemote = false;
@@ -785,10 +801,11 @@ window.addEventListener('message', (event) => {
           text: msg.text,
           baseVersion: msg.baseVersion,
           rollback: msg.rollback === true,
+          preserveHistory: msg.preserveHistory === true,
         };
         break;
       }
-      if (msg.text !== view.state.doc.toString()) setText(msg.text, msg.rollback === true);
+      if (msg.text !== view.state.doc.toString()) setText(msg.text, msg.rollback === true, msg.preserveHistory === true);
       else if (msg.rollback === true) ackVersion = editVersion;
       break;
     case 'settings':
@@ -811,6 +828,17 @@ window.addEventListener('message', (event) => {
         insertMedia(msg.text, msg.placeholderFrom, msg.placeholderTo, request);
       }
       break;
+  }
+});
+
+// Explicit save (Ctrl+S / Cmd+S). A WebviewPanel is not a CustomTextEditor, so
+// VS Code's own Ctrl+S never reaches the bound TextDocument. Capture the
+// keystroke, suppress the browser "save page" default, and ask the host to
+// persist the document (R-03-08).
+window.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === 's' || event.key === 'S')) {
+    event.preventDefault();
+    vscode.postMessage({ type: 'save', binding });
   }
 });
 

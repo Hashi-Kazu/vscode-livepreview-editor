@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.26.0 — アイドル自動保存を廃止し明示保存＋ライフサイクル flush へ変更
+
+### 変更
+
+- 毎打鍵 400ms アイドル自動保存（`SaveDebouncer`）を廃止し、標準 VS Code エディタと同じ明示保存（Webview の Ctrl+S／Cmd+S を捕捉し host で `performSave`）と、失焦・破棄・バインド切替時の flush 保存モデルへ変更（R-03-08、ADR-0018）。編集は従来どおり最小 `WorkspaceEdit` で即時反映し、Undo 粒度・画面即時反映・データ喪失防止は維持する。
+- 保存参加者・format-on-save エコーに対する Undo 安全機構（`SelfSaveGuard` own-save 窓、`isSaveParticipantNormalization`、`preserveHistory` レコンサイル）は据え置き、真の外部変更のみ履歴をリセットする挙動を維持。
+
+### 既知の制約
+
+- WebviewPanel は `CustomTextEditor` ではないため、パネル自体に dirty バッジは表示されない。ソースタブが開いていれば VS Code 標準の dirty ドットで未保存状態が分かる。
+
+## v1.25.5 — ワークスペース内画像のペースト/ドロップを原本への相対リンクへ変更
+
+### 変更
+
+- ワークスペース内の画像 URI をペースト/ドロップした際、従来は原本を `assets/` へ複製してから複製先へリンクしていたが、非画像ファイルと同様に複製せず `![alt text](元画像への相対パス)` を挿入するよう変更（R-29-05）。VS Code エディター相当の挙動に統一した。ワークスペース外画像やクリップボードのスクリーンショット等バイト列ペーストは従来どおり `assets/` へ保存されリンクされる。
+
+## v1.25.4 — ペーストした絶対パス文字列の相対リンク化
+
+### 変更
+
+- `text/plain` の paste で、貼り付け内容の全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときも `file:` URI 相当に正規化して候補へ合流するよう拡張。VS Code の「パスのコピー」等で得た生パス文字列の貼り付けが、既存の workspace 内判定・相対リンク化（`relativizeUri`）を通るようになった（R-29-05）。既存の `file://` URI 全行 fallback を優先し、行が混在する場合や相対パス・通常文章・HTTP(S) URL は従来どおり CodeMirror 既定の貼り付けに委ねる。
+
+## v1.25.3 — 保存参加者エコーで Undo 履歴が消える回帰の修正
+
+### 修正
+
+- デバウンス保存・format-on-save 由来の書き換えを履歴保持レコンサイル（`preserveHistory`）に変更し、少し入力を止めて保存が走っても直前の打鍵を Undo/Redo できるよう修正。
+- 真の外部変更（git pull・他エディタの実内容編集）だけ従来どおり履歴をリセットするよう `classifyDocumentChange` で分類。
+
 ## v1.25.2 — Live Preview の Undo・同期・ファイル貼り付け修正
 
 ### 修正

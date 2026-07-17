@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.25.2
+**バージョン**: 1.26.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-17
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-18 時点 / v1.25.2）**: Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は authoritative update として履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
+> ▶️ **開発継続中（2026-07-17 時点 / v1.26.0）**: 毎打鍵アイドル自動保存（`SaveDebouncer`）を廃止し、標準エディタと同じ明示保存（Webview の Ctrl+S→host `performSave`）＋失焦・破棄・バインド切替時の flush 保存へ変更した。編集は従来どおり最小 `WorkspaceEdit` で即時反映する。Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
 ---
 
@@ -127,7 +127,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
 - ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は `SaveDebouncer` で遅延・合体し、失焦・破棄・バインド切替の flush は先行して受信済みの edit 適用後に同一 queue で完走する。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は明示保存（Webview の Ctrl+S／Cmd+S を捕捉し `preventDefault` して host へ `save` メッセージを送り `performSave` を実行する）と、失焦・破棄・バインド切替時の flush 保存（`performSave` 直接呼び出し）で行い、いずれも先行して受信済みの edit 適用後に同一 queue で完走する。毎打鍵アイドル自動保存は行わない。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。なお WebviewPanel は CustomTextEditor ではないため、パネル自体の dirty バッジは表示されない（ソースタブが開いていれば VS Code 標準の dirty ドットで未保存を示す）。これは既知の制約とする。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
 - ■■□ R-03-10 Live Preview の対象ファイルが VS Code 内でリネームされた場合は、受信済みの保留編集を適用した後にビューアを新 URI へ再バインドし、世代番号、パネルタイトル、resource base、`localResourceRoots`、TextDocument 変更リスナーを更新して編集を継続すること。新 URI を別ビューアが所有している場合は重複を避けるため旧 URI 側を閉じること。対象ファイルが削除された場合はビューアを閉じること。
 
@@ -137,8 +137,8 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜双方向同期＞
 
-- ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。Live Preview の Undo/Redo は CodeMirror `history()` だけが所有し、ローカル transaction を履歴へ入れる。外部変更または apply 失敗 rollback は `computeRemotePatch` で選択を再マップした新しい EditorState に置換して履歴を破棄する。
-- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`WorkspaceEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed ledger へ記録し、その組だけを自己エコーとして消費する。ledger に一致しない変更は EOL・末尾改行・行末空白だけの差分を含め authoritative external update として Webview へ配信し、ack は apply 成功または差分なし確認後だけ送る。
+- ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。Live Preview の Undo/Redo は CodeMirror `history()` だけが所有し、ローカル transaction を履歴へ入れる。自己保存由来（保存参加者・own-save 窓中の format-on-save）の書き換えは `computeRemotePatch` の最小差分を `addToHistory.of(false)` で適用し、履歴を保持したままレコンサイルする（`preserveHistory`）。真の外部変更または apply 失敗 rollback だけが、選択を再マップした新しい EditorState に置換して履歴を破棄する。
+- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`WorkspaceEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed ledger へ記録し、その組だけを自己エコーとして消費する。ledger に一致しない変更は `classifyDocumentChange` で分類し、自己保存由来（`SelfSaveGuard.isActive` の own-save 窓、または `isSaveParticipantNormalization` が説明できる EOL・末尾改行・行末空白だけの差分）は `preserveHistory` 付きで履歴を保持して再同期し、真の外部変更のみ authoritative update として履歴を破棄する。ack は apply 成功または差分なし確認後だけ送る。
 - ■■□ R-04-03 Webview は edit version と ack version を別管理し、external update を `baseVersion === editVersion === ackVersion` のときだけ適用する。未 ack local edit、IME、または保留 local change 中は最新1件を保留して ack 後に再判定し、古い base は破棄する。旧形式（baseVersion なし）は未 ack local edit がない場合だけ適用する。`workspace.applyEdit` false の rollback は失敗 edit version を基準にして、より新しい local edit を上書きしない。
 
 ---
@@ -371,7 +371,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** 標準 Markdown エディタと同様に、画像バイナリのペーストやファイルのドロップだけでワークスペースへ画像を保存し、Markdown リンクを自動挿入できることは編集体験の要であるため。v1.5.0 で削除した「画像ペースト保存」を、Obsidian 独自挙動ではなく標準 Markdown エディタ相当の挙動として v1.24.0 で再導入する。
 
-> **説明：** 画像判定・山括弧エスケープ・スニペット生成・ファイル名衝突回避は VS Code 非依存の純粋関数（`src/core/pasteLink.ts`: `isImageFile`／`formatMarkdownLinkTarget`／`buildMediaSnippet`／`uniqueMediaName`）が担う。Webview（`src/webview/main.ts`）は `paste`/`drop` でファイル・`text/uri-list` を収集し、ファイルまたは URI があるときのみ `preventDefault` して `{ type: 'pasteMedia', binding, files: [{ name, data: Uint8Array }], uris? }` をホストへ送る（ファイルも URI も無い通常テキストは CodeMirror 既定に委ねる）。ホスト（`src/livePreviewViewerManager.ts` `handlePasteMedia`）はバイナリを document フォルダ相対の保存先（既定 `assets/`）へ `workspace.fs.writeFile` で保存し、同名衝突は `-N` 連番で回避、URI は document フォルダ／ワークスペース内なら相対パス化する。`isCurrentBinding` 確認後、単一スニペットを `{ type: 'insertMedia', binding, text, placeholderFrom, placeholderTo }` として返信し、Webview が現在の選択範囲へ挿入してプレースホルダ（`alt text`／`text`）を選択状態にする。挿入後は既存 edit フローで保存まで確定する。往復は `enqueue` で直列化し、`resolveSrc`（R-26-01）で `assets/` 配下の画像が追加設定なしに描画される。
+> **説明：** 画像判定・山括弧エスケープ・スニペット生成・ファイル名衝突回避は VS Code 非依存の純粋関数（`src/core/pasteLink.ts`: `isImageFile`／`formatMarkdownLinkTarget`／`buildMediaSnippet`／`uniqueMediaName`）が担う。Webview（`src/webview/main.ts`）は `paste`/`drop` でファイル・`text/uri-list` を収集し、ファイルまたは URI があるときのみ `preventDefault` して `{ type: 'pasteMedia', binding, files: [{ name, data: Uint8Array }], uris? }` をホストへ送る（ファイルも URI も無い通常テキストは CodeMirror 既定に委ねる）。ホスト（`src/livePreviewViewerManager.ts` `handlePasteMedia`）はバイナリを document フォルダ相対の保存先（既定 `assets/`）へ `workspace.fs.writeFile` で保存し、同名衝突は `-N` 連番で回避する。ワークスペース内 URI（画像・非画像とも）は複製せず document フォルダ基準の相対パスへ変換し、元ファイルへ直接リンクする。`isCurrentBinding` 確認後、単一スニペットを `{ type: 'insertMedia', binding, text, placeholderFrom, placeholderTo }` として返信し、Webview が現在の選択範囲へ挿入してプレースホルダ（`alt text`／`text`）を選択状態にする。挿入後は既存 edit フローで保存まで確定する。往復は `enqueue` で直列化し、`resolveSrc`（R-26-01）で `assets/` 配下の画像が追加設定なしに描画される。
 
 ###### ＜ペースト/ドロップ＞
 
@@ -379,4 +379,4 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-29-02 `buildMediaSnippet` は、画像は `![alt text](<target>)`（プレースホルダ `alt text`）、非画像は `[text](target)` を生成し、プレースホルダ範囲（`placeholderFrom`/`placeholderTo`）が該当文字列を指すこと。非画像の表示名は貼り付け開始時の非空選択を優先し、なければ target basename の最終拡張子を除いた名前とする。`target` は `formatMarkdownLinkTarget` 適用済みを受け取る。
 - ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
-- ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は全行 file URI のときだけ fallback とし、通常テキスト・HTTP URL の既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内非画像 URI は document フォルダ基準の相対リンク、画像 URI は `assets/` へコピーする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+- ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   shouldResync,
+  classifyDocumentChange,
   diffRange,
   computeRemotePatch,
   cursorLinesFromSelections,
@@ -33,17 +34,6 @@ describe('Phase 2: external change detection (shouldResync)', () => {
     ).toBe(false);
   });
 
-  it('resyncs every non-ledger document change, including a save participant rewrite', () => {
-    expect(
-      shouldResync({
-        isFromWebview: false,
-        isDuringOwnSave: true,
-        webviewText: 'abc ',
-        documentText: 'abc',
-      }),
-    ).toBe(true);
-  });
-
   it('still resyncs on a genuine external change while not in our own save', () => {
     expect(
       shouldResync({
@@ -53,6 +43,55 @@ describe('Phase 2: external change detection (shouldResync)', () => {
         documentText: 'new (git pull)',
       }),
     ).toBe(true);
+  });
+});
+
+describe('Phase 2: history-preserving vs authoritative resync (classifyDocumentChange, R-04-01/R-04-02)', () => {
+  it('does not resync a Webview echo or already-equal text', () => {
+    expect(
+      classifyDocumentChange({ isFromWebview: true, webviewText: 'new', documentText: 'new' }),
+    ).toEqual({ resync: false, preserveHistory: false });
+    expect(
+      classifyDocumentChange({ isFromWebview: false, webviewText: 'same', documentText: 'same' }),
+    ).toEqual({ resync: false, preserveHistory: false });
+  });
+
+  it('resyncs a save-participant rewrite during our own save WITHOUT discarding history', () => {
+    // An explicit / on-blur save trimmed a trailing space; the user is still
+    // typing. The reconcile must happen (resync) but keep the undo stack
+    // (preserveHistory).
+    expect(
+      classifyDocumentChange({
+        isFromWebview: false,
+        isDuringOwnSave: true,
+        webviewText: 'abc ',
+        documentText: 'abc',
+      }),
+    ).toEqual({ resync: true, preserveHistory: true });
+  });
+
+  it('preserves history for a content-detected save normalization outside the timing window', () => {
+    expect(
+      classifyDocumentChange({
+        isFromWebview: false,
+        isDuringOwnSave: false,
+        webviewText: 'abc\ndef',
+        documentText: 'abc\ndef\n',
+        isSaveNormalization: true,
+      }),
+    ).toEqual({ resync: true, preserveHistory: true });
+  });
+
+  it('DISCARDS history for a genuine external change (git pull / another editor)', () => {
+    expect(
+      classifyDocumentChange({
+        isFromWebview: false,
+        isDuringOwnSave: false,
+        webviewText: 'old',
+        documentText: 'new (git pull)',
+        isSaveNormalization: false,
+      }),
+    ).toEqual({ resync: true, preserveHistory: false });
   });
 
   it('drives a mocked webview.postMessage exactly once on external change', () => {
