@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.24.2
+**バージョン**: 1.24.3
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-17
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-17 時点 / v1.24.2）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.24.2 では、保存参加者（trailing-whitespace 除去・最終改行挿入等）由来の変更が時間ベースの `SelfSaveGuard` 抑制窓を外れて届いても外部変更と誤判定しないよう、タイミング非依存の内容ベース判定 `isSaveParticipantNormalization`（`src/core/sync.ts`）を追加した。両文字列を行末空白除去・末尾改行無視で正規化して一致すれば自己起因の正規化とみなし `shouldResync` を抑制する。実差分のある真の外部編集は従来どおり検知・再同期する（R-04-02）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-07-17 時点 / v1.24.3）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.24.2 では、保存参加者（trailing-whitespace 除去・最終改行挿入等）由来の変更が時間ベースの `SelfSaveGuard` 抑制窓を外れて届いても外部変更と誤判定しないよう、タイミング非依存の内容ベース判定 `isSaveParticipantNormalization`（`src/core/sync.ts`）を追加した。両文字列を行末空白除去・末尾改行無視で正規化して一致すれば自己起因の正規化とみなし `shouldResync` を抑制する。実差分のある真の外部編集は従来どおり検知・再同期する（R-04-02）。v1.24.3 では、見出しと本文の視覚差別化を MPE（Markdown Preview Enhanced）/GitHub 風に強化した。サイズ階層・太さ（h1/h2 は `font-weight: 700`）・上下余白（`padding-top: 1.2em`／`padding-bottom: 0.4em`、h1 は `padding-top: 1.4em`）・h1/h2 下罫線・h5/h6 の減色を見直した（R-28-05、CSS のみで対応・行ベースレイアウトと `padding` による高さ計測は不変）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -351,7 +351,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-28-04 本文・見出し・各記法の文字色を VS Code 標準テーマの色変数（`var(--vscode-...)`）に追従させ、独自のハードコード色を用いないこと。
 - ■■□ R-28-05 本文体裁を GitHub / VS Code 標準 Markdown プレビュー（github-markdown-css 風）に寄せること。具体的には次を満たすこと（描画エンジンと装飾ロジックは変更せず CSS の体裁のみで実現する）:
   - 本文フォントは UI/サンセリフ（`var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, sans-serif))`）とし、コード（`.cm-lp-code`/`.cm-lp-codeblock`）のみ monospace を維持。行間は 1.6 前後。
-  - 見出し `.cm-lp-h1`〜`h6` を GitHub 風サイズ（h1≈2em / h2≈1.5em / h3≈1.25em / h4≈1em / h5≈0.9em / h6≈0.85em 目安）にし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`）と上下マージンを付与する。
+  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.4em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`、境界線上の空きを含め `padding-bottom: 0.6em`）を付与する。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
   - インラインコードは淡背景＋角丸の小ピル、ブロックコード `.cm-lp-codeblock` は全幅背景＋十分なパディング（例 `12px 16px`）にする。
   - 引用 `.cm-lp-quote`・表 `table.cm-lp-table`（ボーダー・ヘッダ背景・任意のゼブラ）・水平線 `.cm-lp-hr-line` を GitHub プレビュー風にする。
   - すべての色は `var(--vscode-*)` 変数でテーマ追従を維持し（ハードコード色禁止・フォールバックのみ可）、`.cm-lp-table-row` の `font-variant-numeric: tabular-nums` を維持する。カーソル行で生記法が見えても体裁が崩れないこと（カーソル行表示ロジックは変更しない）。

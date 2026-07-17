@@ -4,6 +4,12 @@
 
 > ▶️ **開発再開（2026-06-22 時点）**: v1.11.0 の開発凍結を v1.12.0 で解除し、開発を再開した。
 
+## v1.24.3 — 見出しと本文の視覚差別化を MPE 風に強化
+
+### 変更
+
+- **見出し（h1〜h6）と本文の視覚差別化を Markdown Preview Enhanced（GitHub 系）の見た目に寄せて強化。** サイズ階層（h2 1.5em→1.6em / h3 1.25em→1.3em / h4 1em→1.15em / h5 0.9em→1em / h6 0.85em→0.9em）、太さ（h1/h2 は `font-weight: 700`）、見出し行の上下余白（`padding-top: 0.8em→1.2em`／`padding-bottom: 0.3em→0.4em`、h1 は `padding-top: 1.4em`）、h1/h2 下罫線の余白（`padding-bottom: 0.55em→0.6em`）、小見出しの減色（`var(--vscode-descriptionForeground)` を h6 のみから h5/h6 の両方へ拡大）を `media/editor.css` で更新した（R-28-05）。行ベースのレイアウト・`padding` による高さ計測（R-28-14）は変更していない。
+
 ## v1.24.2 — 保存参加者由来の間欠的なキャレット巻き戻りを修正
 
 ### 修正

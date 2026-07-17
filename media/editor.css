@@ -106,14 +106,21 @@ body {
   line-height: 1.45;
 }
 
-/* --- Headings (GitHub-preview sizing) ------------------------------------- */
+/* --- Headings (GitHub-preview sizing, MPE-style strengthened hierarchy) --- */
 .cm-lp-heading {
   font-weight: 600;
   line-height: 1.25;
   /* Headings follow the VS Code standard editor foreground color (no custom
      hard-coded heading color). Size/weight are kept; only the color is theme-
-     driven (R-28-04). */
+     driven (R-28-04). h5/h6 override to a muted color below for extra
+     de-emphasis relative to body text. */
   color: var(--vscode-editor-foreground);
+}
+/* h1/h2 carry a heavier weight than the other heading levels to strengthen
+   the top of the visual hierarchy (GitHub/MPE-style). */
+.cm-lp-h1,
+.cm-lp-h2 {
+  font-weight: 700;
 }
 /* Heading decorations are line decorations, so margins/borders apply to the
    whole heading line (GitHub vertical rhythm). */
@@ -126,21 +133,30 @@ body {
   /* margin-top/bottom → padding-top/bottom: getBoundingClientRect() は margin を
      含まないため、margin を使うと CodeMirror の height oracle が見出し行の実寸を
      過小評価しスクロール量に比例したクリック位置ずれが累積する (R-28-14)。 */
-  padding-top: 0.8em;
-  padding-bottom: 0.3em;
+  padding-top: 1.2em;
+  padding-bottom: 0.4em;
+}
+/* h1 gets extra top padding to separate it further from preceding content. */
+.cm-line.cm-lp-h1 {
+  padding-top: 1.4em;
 }
 .cm-lp-h1 { font-size: 2em; }
-.cm-lp-h2 { font-size: 1.5em; }
-.cm-lp-h3 { font-size: 1.25em; }
-.cm-lp-h4 { font-size: 1em; }
-.cm-lp-h5 { font-size: 0.9em; }
-.cm-lp-h6 { font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+.cm-lp-h2 { font-size: 1.6em; }
+.cm-lp-h3 { font-size: 1.3em; }
+.cm-lp-h4 { font-size: 1.15em; }
+.cm-lp-h5 { font-size: 1em; }
+.cm-lp-h6 { font-size: 0.9em; }
+/* h5/h6 are de-emphasized relative to body text, matching GitHub/MPE preview. */
+.cm-lp-h5,
+.cm-lp-h6 {
+  color: var(--vscode-descriptionForeground);
+}
 /* h1/h2 get an underline rule like GitHub-flavored Markdown preview. */
 .cm-line.cm-lp-h1,
 .cm-line.cm-lp-h2 {
   border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3)));
-  /* 0.3em 下余白 + 0.25em border 上の空き = 0.55em（padding-bottom を上書き）*/
-  padding-bottom: 0.55em;
+  /* 0.4em 下余白 + 0.2em border 上の空き = 0.6em（padding-bottom を上書き）*/
+  padding-bottom: 0.6em;
 }
 
 .cm-lp-quote {
