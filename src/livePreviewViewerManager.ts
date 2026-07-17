@@ -1,7 +1,14 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { SelfSaveGuard } from './core/selfSaveGuard';
-import { diffRange, fromLFPreserving, shouldResync, toggleTaskAt, toLF } from './core/sync';
+import {
+  diffRange,
+  fromLFPreserving,
+  isSaveParticipantNormalization,
+  shouldResync,
+  toggleTaskAt,
+  toLF,
+} from './core/sync';
 import {
   decideFileEventAction,
   decideFollow,
@@ -470,12 +477,14 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       if (event.document.uri.toString() !== binding.key) return;
       const documentText = toLF(event.document.getText());
       const fromWebview = documentText === binding.webviewText;
+      const isSaveNormalization = isSaveParticipantNormalization(binding.webviewText, documentText);
       if (
         shouldResync({
           isFromWebview: fromWebview,
           webviewText: binding.webviewText,
           documentText,
           isDuringOwnSave: binding.saveGuard.isActive,
+          isSaveNormalization,
         })
       ) {
         binding.webviewText = documentText;

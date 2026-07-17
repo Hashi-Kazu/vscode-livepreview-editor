@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.24.1
+**バージョン**: 1.24.3
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-15
+**最終更新**: 2026-07-17
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-15 時点 / v1.23.3）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.23.3 では、自己保存の抑制ウィンドウが `document.save()` の同期区間しか覆っておらず、保存参加者（trailing-whitespace 除去・最終改行挿入等）の変更イベントが save() 解決後の後続ターンで届くと外部変更と誤判定される問題を修正した。`SelfSaveGuard`（`src/core/selfSaveGuard.ts`）でトークン管理により、save() 解決後もマイクロタスク＋1マクロタスク分は抑制を維持し、より新しい保存が割り込んだ場合のみ即座に切り替える（R-04-02）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
+> ▶️ **開発継続中（2026-07-17 時点 / v1.24.3）**: v1.11.0 の開発凍結は v1.12.0 で解除済み。v1.24.2 では、保存参加者（trailing-whitespace 除去・最終改行挿入等）由来の変更が時間ベースの `SelfSaveGuard` 抑制窓を外れて届いても外部変更と誤判定しないよう、タイミング非依存の内容ベース判定 `isSaveParticipantNormalization`（`src/core/sync.ts`）を追加した。両文字列を行末空白除去・末尾改行無視で正規化して一致すれば自己起因の正規化とみなし `shouldResync` を抑制する。実差分のある真の外部編集は従来どおり検知・再同期する（R-04-02）。v1.24.3 では、見出しと本文の視覚差別化を MPE（Markdown Preview Enhanced）/GitHub 風に強化した。サイズ階層・太さ（h1/h2 は `font-weight: 700`）・上下余白（`padding-top: 1.2em`／`padding-bottom: 0.4em`、h1 は `padding-top: 1.4em`）・h1/h2 下罫線・h5/h6 の減色を見直した（R-28-05、CSS のみで対応・行ベースレイアウトと `padding` による高さ計測は不変）。改めて凍結する場合は本バナーを凍結表記に戻し、凍結理由（品質安定・スコープ確定）を踏まえて判断すること。
 
 ---
 
@@ -138,7 +138,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜双方向同期＞
 
 - ■■■ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。
-- ■■□ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。バインド対象ドキュメントの**すべての保存**（拡張ホスト自身の `document.save()` に加え、同一ドキュメントを別ビュー/別グループで開いている通常テキストエディタ側の autosave・手動保存・format on save を含む）に伴い保存参加者（trailing-whitespace 除去・最終改行挿入・format on save 等）が生じさせた変更は外部変更として扱わず、Webview へエコーバックしない（`isDuringOwnSave`）。抑制窓は `document.save()` の同期区間ではなく、`onWillSaveTextDocument`→`onDidSaveTextDocument` の保存ライフサイクルで決定的に区切り、`SelfSaveGuard`（`src/core/selfSaveGuard.ts`）によりマイクロタスク＋1マクロタスク分の後続ターンまで維持する。保存参加者イベントが did-save 解決後のターンで届いても外部変更と誤判定されず、同一ドキュメントを別ビューで同時に開いていても、もう一方のエディタ由来の保存を起点としたキャレットの巻き戻りは発生しない。より新しい `begin()` が割り込んだ場合、古い `end()` によるクリアは破棄される（トークン管理）。保存以外で発生した `onDidChangeTextDocument`（実際の外部編集）は従来どおり検知・再同期する。
+- ■■□ R-04-02 外部変更（Git pull・他エディタ編集）を検知し、自身の編集エコーと区別して Webview を再同期する（`shouldResync`）。バインド対象ドキュメントの**すべての保存**（拡張ホスト自身の `document.save()` に加え、同一ドキュメントを別ビュー/別グループで開いている通常テキストエディタ側の autosave・手動保存・format on save を含む）に伴い保存参加者（trailing-whitespace 除去・最終改行挿入・format on save 等）が生じさせた変更は外部変更として扱わず、Webview へエコーバックしない（`isDuringOwnSave`）。抑制窓は `document.save()` の同期区間ではなく、`onWillSaveTextDocument`→`onDidSaveTextDocument` の保存ライフサイクルで決定的に区切り、`SelfSaveGuard`（`src/core/selfSaveGuard.ts`）によりマイクロタスク＋1マクロタスク分の後続ターンまで維持する。保存参加者イベントが did-save 解決後のターンで届いても外部変更と誤判定されず、同一ドキュメントを別ビューで同時に開いていても、もう一方のエディタ由来の保存を起点としたキャレットの巻き戻りは発生しない。より新しい `begin()` が割り込んだ場合、古い `end()` によるクリアは破棄される（トークン管理）。保存以外で発生した `onDidChangeTextDocument`（実際の外部編集）は従来どおり検知・再同期する。さらに、時間ベースの抑制窓（`SelfSaveGuard`）を外れて保存参加者由来の変更が届いた場合に備え、タイミング非依存の内容ベース判定 `isSaveParticipantNormalization`（`src/core/sync.ts`）を補完として設ける。Webview 側テキストとドキュメント側テキストをそれぞれ「各行の行末空白除去」「末尾改行の有無を無視」で正規化し、正規化後が一致し元の2文字列が不一致の場合のみ自己起因の正規化とみなして `shouldResync` を抑制する（`isSaveNormalization`）。本文に実差分がある変更では常に `false` を返し、真の外部編集（Git pull・他エディタの本文編集）は従来どおり再同期させる。
 - ■■■ R-04-03 Webview のローカル編集版数より古い `baseVersion` を持つ remote update は破棄し、入力直後のキャレットを古い全文で巻き戻さないこと（`shouldApplyRemoteUpdate`）。`baseVersion` がない旧メッセージは版数比較をスキップすること。
 
 ---
@@ -351,7 +351,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-28-04 本文・見出し・各記法の文字色を VS Code 標準テーマの色変数（`var(--vscode-...)`）に追従させ、独自のハードコード色を用いないこと。
 - ■■□ R-28-05 本文体裁を GitHub / VS Code 標準 Markdown プレビュー（github-markdown-css 風）に寄せること。具体的には次を満たすこと（描画エンジンと装飾ロジックは変更せず CSS の体裁のみで実現する）:
   - 本文フォントは UI/サンセリフ（`var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, sans-serif))`）とし、コード（`.cm-lp-code`/`.cm-lp-codeblock`）のみ monospace を維持。行間は 1.6 前後。
-  - 見出し `.cm-lp-h1`〜`h6` を GitHub 風サイズ（h1≈2em / h2≈1.5em / h3≈1.25em / h4≈1em / h5≈0.9em / h6≈0.85em 目安）にし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`）と上下マージンを付与する。
+  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.4em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`、境界線上の空きを含め `padding-bottom: 0.6em`）を付与する。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
   - インラインコードは淡背景＋角丸の小ピル、ブロックコード `.cm-lp-codeblock` は全幅背景＋十分なパディング（例 `12px 16px`）にする。
   - 引用 `.cm-lp-quote`・表 `table.cm-lp-table`（ボーダー・ヘッダ背景・任意のゼブラ）・水平線 `.cm-lp-hr-line` を GitHub プレビュー風にする。
   - すべての色は `var(--vscode-*)` 変数でテーマ追従を維持し（ハードコード色禁止・フォールバックのみ可）、`.cm-lp-table-row` の `font-variant-numeric: tabular-nums` を維持する。カーソル行で生記法が見えても体裁が崩れないこと（カーソル行表示ロジックは変更しない）。

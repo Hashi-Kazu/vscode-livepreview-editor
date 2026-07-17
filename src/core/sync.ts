@@ -22,6 +22,17 @@ export interface ResyncParams {
    * cursor jumps back while the user is still typing.
    */
   isDuringOwnSave?: boolean;
+  /**
+   * True when {@link isSaveParticipantNormalization} determined that the
+   * change is explainable purely by VS Code's built-in save participants
+   * (trailing-whitespace trim, final-newline insertion). This is a
+   * content-based complement to {@link isDuringOwnSave}'s time-based window:
+   * some save-participant rewrites can land outside the `SelfSaveGuard`
+   * window (e.g. under load), and without this check they would be
+   * misdetected as an external change, intermittently snapping the cursor
+   * back while the user is still typing.
+   */
+  isSaveNormalization?: boolean;
 }
 
 /**
@@ -33,10 +44,46 @@ export interface ResyncParams {
  * own `document.save()` — must not, otherwise the cursor jumps and edits
  * fight each other.
  */
-export function shouldResync({ isFromWebview, webviewText, documentText, isDuringOwnSave }: ResyncParams): boolean {
+export function shouldResync({
+  isFromWebview,
+  webviewText,
+  documentText,
+  isDuringOwnSave,
+  isSaveNormalization,
+}: ResyncParams): boolean {
   if (isFromWebview) return false;
   if (isDuringOwnSave) return false;
+  if (isSaveNormalization) return false;
   return webviewText !== documentText;
+}
+
+/**
+ * Normalise text the way VS Code's built-in save participants deterministically
+ * do: strip trailing whitespace (spaces/tabs) from every line, and ignore
+ * whether the text ends with a trailing newline.
+ */
+function normalizeForSaveParticipants(text: string): string {
+  const withoutTrailingEol = text.replace(/(?:\r\n|\n)$/, '');
+  return withoutTrailingEol
+    .split(/\r\n|\n/)
+    .map((line) => line.replace(/[ \t]+$/, ''))
+    .join('\n');
+}
+
+/**
+ * Decide whether a document change can be fully explained by VS Code's
+ * built-in save participants (`files.trimTrailingWhitespace` /
+ * `files.insertFinalNewline`) rather than by a real external edit.
+ *
+ * This is a timing-independent, content-based check: it returns `true` only
+ * when the two texts differ, but become identical once trailing whitespace
+ * per line and a trailing final newline are ignored. Any genuine content
+ * difference (Git pull, another editor's edits, etc.) makes this `false`, so
+ * true external edits still trigger a resync.
+ */
+export function isSaveParticipantNormalization(webviewText: string, documentText: string): boolean {
+  if (webviewText === documentText) return false;
+  return normalizeForSaveParticipants(webviewText) === normalizeForSaveParticipants(documentText);
 }
 
 /** A line/character position (0-based), mirroring vscode.Position. */

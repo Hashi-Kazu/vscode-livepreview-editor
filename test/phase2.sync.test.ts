@@ -6,6 +6,7 @@ import {
   offsetToPos,
   fromLF,
   fromLFPreserving,
+  isSaveParticipantNormalization,
 } from '../src/core/sync';
 
 describe('Phase 2: external change detection (shouldResync)', () => {
@@ -58,6 +59,51 @@ describe('Phase 2: external change detection (shouldResync)', () => {
     }
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith({ type: 'update', text: 'b' });
+  });
+});
+
+describe('save-participant normalization is not treated as external (R-04-02)', () => {
+  it('detects trailing-whitespace-only changes as save-participant normalization', () => {
+    const webviewText = 'line one \nline two\t\nline three';
+    const documentText = 'line one\nline two\nline three';
+    expect(isSaveParticipantNormalization(webviewText, documentText)).toBe(true);
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        webviewText,
+        documentText,
+        isSaveNormalization: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('detects a trailing-final-newline-only difference as save-participant normalization', () => {
+    const webviewText = 'abc\ndef';
+    const documentText = 'abc\ndef\n';
+    expect(isSaveParticipantNormalization(webviewText, documentText)).toBe(true);
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        webviewText,
+        documentText,
+        isSaveNormalization: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('does NOT flag a genuine content change as save-participant normalization', () => {
+    const webviewText = 'old content';
+    const documentText = 'new content (git pull)';
+    const isSaveNormalization = isSaveParticipantNormalization(webviewText, documentText);
+    expect(isSaveNormalization).toBe(false);
+    expect(
+      shouldResync({
+        isFromWebview: false,
+        webviewText,
+        documentText,
+        isSaveNormalization,
+      }),
+    ).toBe(true);
   });
 });
 
