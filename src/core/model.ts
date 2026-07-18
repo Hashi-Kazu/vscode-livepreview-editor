@@ -797,3 +797,73 @@ export function computeDecorationsSafe(
     return { ok: false, specs: [], error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/** A single ATX heading discovered by {@link scanHeadings}. */
+export interface HeadingInfo {
+  /** Heading strength, 1–6 (number of leading `#`). */
+  level: number;
+  /** Heading text with the `#` marker and its trailing whitespace removed. */
+  text: string;
+  /** 0-based line index of the heading. */
+  line: number;
+  /** Absolute offset of the first character of the heading line. */
+  from: number;
+  /** Absolute offset just past the last character of the heading line. */
+  to: number;
+}
+
+/**
+ * Scan the whole document for ATX headings (`#` … `######`), skipping any `#`
+ * that lives inside a fenced code block (those are literal text, not headings).
+ * Pure & framework-agnostic; walks the entire document (not viewport-limited) so
+ * it can drive full-document features such as heading-section folding (R-30) and
+ * is reusable by other outline-style features.
+ */
+export function scanHeadings(doc: string): HeadingInfo[] {
+  const lines = splitLines(doc);
+  const code = detectCodeBlocks(lines);
+  const out: HeadingInfo[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (code.role[i]) continue; // `#` inside a fenced code block is literal text
+    const m = HEADING_RE.exec(lines[i].text);
+    if (!m) continue;
+    out.push({
+      level: m[1].length,
+      text: m[3].trim(),
+      line: i,
+      from: lines[i].from,
+      to: lines[i].to,
+    });
+  }
+  return out;
+}
+
+/**
+ * Compute the collapsible range of the heading section that starts on `line`
+ * (0-based). The range runs from the END of the heading line to the end of the
+ * line immediately before the next heading of the same or stronger strength
+ * (level ≤ this heading's level). If no such heading follows, the section
+ * extends to the end of the document. Returns `null` when `line` is not a
+ * heading or the section has no body lines to fold. Fenced code blocks are
+ * ignored when locating the next heading, so a section spanning a code block is
+ * folded correctly. Pure & framework-agnostic.
+ */
+export function headingFoldRange(doc: string, line: number): { from: number; to: number } | null {
+  const lines = splitLines(doc);
+  const headings = scanHeadings(doc);
+  const current = headings.find((h) => h.line === line);
+  if (!current) return null;
+
+  let endLine = lines.length - 1;
+  for (const h of headings) {
+    if (h.line > line && h.level <= current.level) {
+      endLine = h.line - 1;
+      break;
+    }
+  }
+
+  const from = lines[line].to;
+  const to = lines[endLine].to;
+  if (to <= from) return null; // nothing beneath this heading to fold
+  return { from, to };
+}

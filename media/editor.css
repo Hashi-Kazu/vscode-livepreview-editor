@@ -410,3 +410,45 @@ table.cm-lp-table tr:nth-child(2n) td {
   opacity: 1;
   visibility: visible;
 }
+
+/* --- R-30 heading fold --- */
+/* Heading-section folding (codeFolding + custom foldService + foldGutter).
+   The fold gutter must NOT act like a permanent gutter column that shifts the
+   text: keep it transparent/borderless and compensate its width against the
+   content's left padding so headings and body still share the 48px left edge
+   (R-28-07). Marker glyphs and the fold placeholder follow the active theme via
+   --vscode-* variables (R-28-04). */
+.cm-editor .cm-gutters {
+  background: transparent;
+  border-right: none;
+  color: var(--vscode-descriptionForeground);
+}
+.cm-editor .cm-foldGutter {
+  /* 18px gutter + 30px content padding-left = 48px total left edge. */
+  width: 18px;
+}
+.cm-editor .cm-foldGutter .cm-gutterElement {
+  padding: 0;
+  text-align: center;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+}
+.cm-editor .cm-foldGutter .cm-gutterElement:hover {
+  opacity: 1;
+}
+/* Reduce the content left padding by the gutter width so the total left offset
+   (gutter + padding) stays at 48px and heading/body left edges keep aligning
+   with the selection-layer clip (R-28-07 / R-28-15). */
+.cm-content {
+  padding-left: 30px !important;
+}
+/* Folded-section placeholder: a subtle, theme-following pill. */
+.cm-foldPlaceholder {
+  background: var(--vscode-editorWidget-background, rgba(127, 127, 127, 0.12));
+  border: 1px solid var(--vscode-widget-border, transparent);
+  color: var(--vscode-descriptionForeground);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin: 0 2px;
+}

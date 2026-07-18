@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow, tableRowSourceLine } from '../src/core/model';
+import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow, tableRowSourceLine, scanHeadings, headingFoldRange } from '../src/core/model';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
 const slice = (doc: string, s: DecoSpec) => doc.slice(s.from, s.to);
@@ -267,6 +267,78 @@ describe('R-27 <details> アコーディオン', () => {
       const before = doc;
       computeDecorations(doc, new Set([0]));
       expect(before).toBe(doc);
+    });
+  });
+});
+
+// R-30: 見出しセクション折りたたみ
+describe('R-30 見出しセクション折りたたみ', () => {
+  describe('scanHeadings（R-30-01）', () => {
+    it('全見出しをレベル・テキスト・行番号・オフセット付きで返す', () => {
+      const doc = ['# A', 'body', '## B', 'more', '### C'].join('\n');
+      const headings = scanHeadings(doc);
+      expect(headings.map((h) => [h.level, h.text, h.line])).toEqual([
+        [1, 'A', 0],
+        [2, 'B', 2],
+        [3, 'C', 4],
+      ]);
+      // オフセットは見出し行の絶対位置。
+      const lines = splitLines(doc);
+      expect(headings[1].from).toBe(lines[2].from);
+      expect(headings[1].to).toBe(lines[2].to);
+    });
+
+    it('フェンスコードブロック内の # は見出しとして誤検知しない', () => {
+      const doc = ['# Real', '```', '# not a heading', '## also not', '```', '## Real2'].join('\n');
+      const headings = scanHeadings(doc);
+      expect(headings.map((h) => [h.text, h.line])).toEqual([
+        ['Real', 0],
+        ['Real2', 5],
+      ]);
+    });
+  });
+
+  describe('headingFoldRange（R-30-02）', () => {
+    it('次の同レベル見出しの直前行末までを折りたたみ範囲として返す', () => {
+      const doc = ['# A', 'body1', 'body2', '# B', 'body3'].join('\n');
+      const lines = splitLines(doc);
+      const range = headingFoldRange(doc, 0);
+      expect(range).toEqual({ from: lines[0].to, to: lines[2].to });
+    });
+
+    it('より強い（浅い）見出しの直前で範囲を打ち切る', () => {
+      const doc = ['# A', 'a1', '## B', 'b1', '# C'].join('\n');
+      const lines = splitLines(doc);
+      // ## B のセクションは # C の直前（b1 の行末）まで。
+      expect(headingFoldRange(doc, 2)).toEqual({ from: lines[2].to, to: lines[3].to });
+      // # A のセクションは # C の直前まで（## B を含む）。
+      expect(headingFoldRange(doc, 0)).toEqual({ from: lines[0].to, to: lines[3].to });
+    });
+
+    it('同レベル以下の見出しが無ければ文書末まで折りたたむ', () => {
+      const doc = ['# A', 'x', '## B', 'y'].join('\n');
+      const lines = splitLines(doc);
+      expect(headingFoldRange(doc, 0)).toEqual({ from: lines[0].to, to: lines[3].to });
+    });
+
+    it('配下が無い場合は null を返す', () => {
+      // 見出しが最終行。
+      expect(headingFoldRange('body\n# Last', 1)).toBeNull();
+      // 直後に同レベル見出しが続き、間に本文が無い。
+      const doc = ['# A', '# B', 'b'].join('\n');
+      expect(headingFoldRange(doc, 0)).toBeNull();
+    });
+
+    it('見出し行でなければ null を返す', () => {
+      expect(headingFoldRange(['# A', 'body'].join('\n'), 1)).toBeNull();
+    });
+
+    it('コードブロックを跨いでも正しく範囲を返す', () => {
+      const doc = ['# A', 'intro', '```', '# not a heading', '```', 'outro', '# B'].join('\n');
+      const lines = splitLines(doc);
+      // コード内の # は見出し扱いされないので、# A は次の実見出し # B の直前
+      //（outro 行末）まで畳む。コードブロックを跨いでも打ち切られない。
+      expect(headingFoldRange(doc, 0)).toEqual({ from: lines[0].to, to: lines[5].to });
     });
   });
 });

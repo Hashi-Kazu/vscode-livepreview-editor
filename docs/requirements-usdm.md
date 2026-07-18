@@ -328,7 +328,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** 補足情報を `<details>` アコーディオンで畳んで見通しを良くするため。見出しガター折りたたみは不要のため廃止し、HTML の `<details><summary>` 記法のレンダリングに置き換える。
 
-> **説明：** HTML の `<details><summary>…</summary>…</details>` ブロックをプレビュー上でアコーディオンとしてレンダリングする。判定は純粋関数 `detectDetailsBlocks`（`src/core/model.ts`）が担い、**ビューア専用**としてカーソル位置に依らず常にブロック全体を 1 つの `details-block` ウィジェット（既定で折りたたんだ＝閉じた状態）へ置換する（生の HTML を表示する編集モードは持たない）。Webview 層（`src/webview/decorations.ts`）が実際の `<details>` 要素にマッピングし、`<summary>` クリックで開閉する。開閉状態は summary テキストをキーに `openDetails` 集合で記憶し、再描画後も保持する（同一サマリのアコーディオンは状態を共有する制限あり）。アコーディオン本文の編集は標準ソースエディタで行う。見出し（`#`）単位のガター折りたたみ（旧 `foldService`/`foldGutter`）は v1.7.0 で廃止した。
+> **説明：** HTML の `<details><summary>…</summary>…</details>` ブロックをプレビュー上でアコーディオンとしてレンダリングする。判定は純粋関数 `detectDetailsBlocks`（`src/core/model.ts`）が担い、**ビューア専用**としてカーソル位置に依らず常にブロック全体を 1 つの `details-block` ウィジェット（既定で折りたたんだ＝閉じた状態）へ置換する（生の HTML を表示する編集モードは持たない）。Webview 層（`src/webview/decorations.ts`）が実際の `<details>` 要素にマッピングし、`<summary>` クリックで開閉する。開閉状態は summary テキストをキーに `openDetails` 集合で記憶し、再描画後も保持する（同一サマリのアコーディオンは状態を共有する制限あり）。アコーディオン本文の編集は標準ソースエディタで行う。見出し（`#`）単位のガター折りたたみ（旧 `foldService`/`foldGutter`）は v1.7.0 で廃止したが、その後、廃止時の問題（常設ガター列がレイアウト幅を占有し左端整列 R-28-07 と衝突する）を回避した別方式として、`<details>` アコーディオンとは独立の見出し折りたたみを R-30 で再導入した。
 
 ###### ＜折りたたみ＞
 
@@ -380,6 +380,19 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
 - ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+
+### R-30 見出しセクション折りたたみ #headingfold
+
+> **理由：** 長い文書を見出し単位で畳んで見通しを良くするため。見出し（`#`）単位のガター折りたたみは v1.7.0 で一度廃止した（R-27）が、廃止時の問題（常設ガター列がレイアウト幅を占有し、左余白設計・見出し/本文の左端整列 R-28-07 と衝突する）を回避した設計で、`<details>` アコーディオン（R-27）とは独立の機能として再導入する。
+
+> **説明：** 折りたたみ範囲の算出は VS Code / CodeMirror 非依存の純粋関数（`src/core/model.ts`）が担う。`scanHeadings(doc)` は全見出しをレベル・テキスト・行番号・絶対オフセット付きで返し、`detectCodeBlocks` によりフェンスコードブロック内の `#` を除外する（全文走査。ビューポート限定の `computeDecorations` には依存しない）。`headingFoldRange(doc, line)` は指定行が見出しなら、その行末から次の同レベル以下（同じ以上の強さ、level ≤ 当該レベル）の見出し直前行の行末までを折りたたみ範囲として返し、配下が無ければ `null` を返す（コードブロックを跨いでも正しく範囲を返す）。Webview（`src/webview/main.ts`）は `@codemirror/language` の `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldGutter`＋`foldKeymap` を組み合わせて見出し配下を折りたたみ／展開する。既定は全展開。折りたたみ UI は常設ガター幅でレイアウトを崩さないよう、`.cm-gutters` を透明・最小幅にし、`.cm-content` の左パディングをガター幅ぶん減らして総左余白と見出し/本文の左端整列（R-28-07）を維持する。ガターのマーカー（`▼`/`▶`）と折りたたみプレースホルダは `var(--vscode-*)` 追従（R-28-04）。
+
+###### ＜見出し折りたたみ＞
+
+- ■■□ R-30-01 純粋関数 `scanHeadings` はフェンスコードブロック内の `#` を除外して全見出しを行番号・レベル・テキスト・オフセット付きで返すこと。
+- ■■□ R-30-02 純粋関数 `headingFoldRange` は見出し行に対し、次の同レベル以下の見出し直前までを折りたたみ範囲として返し、配下が無い場合は `null` を返すこと。コードブロックを跨いでも正しく範囲を返すこと。
+- ■■□ R-30-03 Webview は `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldKeymap` で見出し配下を折りたたみ／展開できること。既定は全展開。
+- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。
 
 ### R-31 未保存インジケータ #unsaved
 

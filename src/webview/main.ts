@@ -7,6 +7,7 @@ import { EditorState, Prec, StateEffect, StateField, Transaction } from '@codemi
 import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, isolateHistory } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
+import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/language';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import {
   computeRemotePatch,
@@ -18,6 +19,7 @@ import {
 import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
+import { headingFoldRange } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
 
 interface VsCodeApi {
@@ -408,6 +410,14 @@ const mediaDomHandlers = Prec.highest(
   }),
 );
 
+// R-30: fold whole heading sections. The fold range is computed by the pure
+// full-document scanner `headingFoldRange` (not the viewport-limited decoration
+// pass), so a section is folded correctly even when it spans a code block or
+// lies outside the current viewport.
+const headingFoldService = foldService.of((state, lineStart) =>
+  headingFoldRange(state.doc.toString(), state.doc.lineAt(lineStart).number - 1),
+);
+
 function makeState(text: string, selection?: { anchor: number; head: number }): EditorState {
   return EditorState.create({
     doc: text,
@@ -418,8 +428,15 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       arrowKeymap,
       editingKeymap,
       mediaDomHandlers,
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
       markdown(),
+      // R-30 heading-section folding. `codeFolding()` supplies fold state +
+      // placeholder; `headingFoldService` provides heading ranges; `foldGutter`
+      // renders the ▼/▶ toggles. The gutter is width-compensated in CSS so the
+      // heading/body left edge stays aligned (R-28-07). Sections start expanded.
+      codeFolding(),
+      headingFoldService,
+      foldGutter({ openText: '▼', closedText: '▶' }),
       livePreviewField(),
       viewportDecorationPlugin,
       syncPlugin,
