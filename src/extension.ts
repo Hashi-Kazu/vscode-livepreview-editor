@@ -1,25 +1,41 @@
 import * as vscode from 'vscode';
-import { LivePreviewViewerManager } from './livePreviewViewerManager';
+import { LivePreviewCustomEditorProvider } from './livePreviewCustomEditorProvider';
 
 export function activate(context: vscode.ExtensionContext) {
-  const manager = new LivePreviewViewerManager(context);
-  context.subscriptions.push(manager);
+  const provider = new LivePreviewCustomEditorProvider(context);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('livePreview.openWith', (uri?: vscode.Uri) => {
+    vscode.window.registerCustomEditorProvider(
+      LivePreviewCustomEditorProvider.viewType,
+      provider,
+      {
+        supportsMultipleEditorsPerDocument: false,
+        webviewOptions: { retainContextWhenHidden: true },
+      },
+    ),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('livePreview.openWith', async (uri?: vscode.Uri) => {
       const target = uri ?? vscode.window.activeTextEditor?.document.uri;
       if (!target) {
         vscode.window.showWarningMessage('開く Markdown ファイルが選択されていません。');
         return;
       }
-      void manager.openLive(target);
+      // Open through the Custom Editor. VS Code reveals an existing editor for
+      // the same resource (supportsMultipleEditorsPerDocument: false) instead of
+      // creating a duplicate tab.
+      await vscode.commands.executeCommand('vscode.openWith', target, LivePreviewCustomEditorProvider.viewType, {
+        viewColumn: vscode.ViewColumn.Beside,
+        preserveFocus: false,
+      });
     }),
   );
 
   // Formatting commands (also bound to keyboard shortcuts in package.json).
   for (const kind of ['bold', 'italic', 'strikethrough', 'highlight', 'code']) {
     context.subscriptions.push(
-      vscode.commands.registerCommand(`livePreview.format.${kind}`, () => manager.runFormat(kind)),
+      vscode.commands.registerCommand(`livePreview.format.${kind}`, () => provider.runFormat(kind)),
     );
   }
 }

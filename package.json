@@ -32,6 +32,18 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "livePreview.editor",
+        "displayName": "Markdown Live Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "commands": [
       {
         "command": "livePreview.openWith",
@@ -73,31 +85,31 @@
         "command": "livePreview.format.bold",
         "key": "ctrl+b",
         "mac": "cmd+b",
-        "when": "activeWebviewPanelId == livePreview.viewer"
+        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.italic",
         "key": "ctrl+i",
         "mac": "cmd+i",
-        "when": "activeWebviewPanelId == livePreview.viewer"
+        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.strikethrough",
         "key": "ctrl+shift+x",
         "mac": "cmd+shift+x",
-        "when": "activeWebviewPanelId == livePreview.viewer"
+        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.highlight",
         "key": "ctrl+shift+h",
         "mac": "cmd+shift+h",
-        "when": "activeWebviewPanelId == livePreview.viewer"
+        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.code",
         "key": "ctrl+e",
         "mac": "cmd+e",
-        "when": "activeWebviewPanelId == livePreview.viewer"
+        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
       }
     ],
     "menus": {
@@ -125,11 +137,6 @@
           "minimum": 8,
           "maximum": 40,
           "description": "エディタのフォントサイズ (px)"
-        },
-        "livePreview.followActiveEditor": {
-          "type": "boolean",
-          "default": true,
-          "description": "最後に操作した Live Preview ビューアを、アクティブな Markdown ソースエディタに追従させます。"
         }
       }
     }
