@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow, tableRowSourceLine, scanHeadings, headingFoldRange } from '../src/core/model';
+import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn } from '../src/core/tableEdit';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
 const slice = (doc: string, s: DecoSpec) => doc.slice(s.from, s.to);
@@ -158,6 +159,64 @@ describe('R-22 表のレンダリング', () => {
   it('コードブロック内の表もどきは表にしない', () => {
     const fenced = ['```', '| a | b |', '| - | - |', '```'].join('\n');
     expect(byTag(computeDecorations(fenced, new Set()), 'table-block')).toHaveLength(0);
+  });
+});
+
+// R-22-05: テーブル行列操作（純粋ロジック）
+describe('R-22-05 テーブル行列操作（純粋ロジック）', () => {
+  const table = () => ['| a | b |', '| :-- | --: |', '| 1 | 2 |', '| 3 | 4 |'];
+
+  it('insertTableRow: 下に空行を挿入する（区切り行は維持）', () => {
+    const result = insertTableRow(table(), 0); // 1行目の body の下
+    expect(result).toEqual(['| a | b |', '| :-- | --: |', '| 1 | 2 |', '|   |   |', '| 3 | 4 |']);
+  });
+
+  it("insertTableRow: 'top' は先頭 body 行として挿入する", () => {
+    const result = insertTableRow(table(), 'top');
+    expect(result).toEqual(['| a | b |', '| :-- | --: |', '|   |   |', '| 1 | 2 |', '| 3 | 4 |']);
+  });
+
+  it('insertTableRow: 負のインデックス（ヘッダ相当）は変更しない', () => {
+    expect(insertTableRow(table(), -1)).toEqual(table());
+  });
+
+  it('deleteTableRow: 指定 body 行を削除する', () => {
+    expect(deleteTableRow(table(), 0)).toEqual(['| a | b |', '| :-- | --: |', '| 3 | 4 |']);
+  });
+
+  it('deleteTableRow: ヘッダ削除ガード（範囲外は変更しない）', () => {
+    expect(deleteTableRow(table(), -1)).toEqual(table()); // ヘッダ/区切り相当
+    expect(deleteTableRow(table(), 2)).toEqual(table()); // body 行数超過
+  });
+
+  it('insertTableColumn: 右に列を追加し区切り行の整合を保つ', () => {
+    const result = insertTableColumn(table(), 0, 'right');
+    expect(result).toEqual(['| a |   | b |', '| :-- | --- | --: |', '| 1 |   | 2 |', '| 3 |   | 4 |']);
+  });
+
+  it('insertTableColumn: 左に列を追加する', () => {
+    const result = insertTableColumn(table(), 1, 'left');
+    expect(result).toEqual(['| a |   | b |', '| :-- | --- | --: |', '| 1 |   | 2 |', '| 3 |   | 4 |']);
+  });
+
+  it('deleteTableColumn: 指定列を全行から削除しアライメントを維持する', () => {
+    const result = deleteTableColumn(table(), 0);
+    expect(result).toEqual(['| b |', '| --: |', '| 2 |', '| 4 |']);
+  });
+
+  it('deleteTableColumn: 最後の1列削除はガードする', () => {
+    const single = ['| a |', '| :-- |', '| 1 |'];
+    expect(deleteTableColumn(single, 0)).toEqual(single);
+  });
+
+  it('入力配列を破壊しない', () => {
+    const input = table();
+    const snapshot = input.slice();
+    insertTableRow(input, 0);
+    deleteTableRow(input, 0);
+    insertTableColumn(input, 0, 'right');
+    deleteTableColumn(input, 0);
+    expect(input).toEqual(snapshot);
   });
 });
 

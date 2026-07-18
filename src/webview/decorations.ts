@@ -165,6 +165,8 @@ class TableWidget extends WidgetType {
     htr.setAttribute('data-line', String(this.startLine));
     data.header.forEach((cell, idx) => {
       const th = document.createElement('th');
+      // data-col lets the right-click table menu target a specific column (R-22-06).
+      th.setAttribute('data-col', String(idx));
       appendInlineCell(th, cell);
       if (data.align[idx] && data.align[idx] !== 'none') th.style.textAlign = data.align[idx];
       htr.appendChild(th);
@@ -178,6 +180,8 @@ class TableWidget extends WidgetType {
       tr.setAttribute('data-line', String(this.startLine + 2 + k));
       for (let idx = 0; idx < data.header.length; idx++) {
         const td = document.createElement('td');
+        // data-col lets the right-click table menu target a specific column (R-22-06).
+        td.setAttribute('data-col', String(idx));
         appendInlineCell(td, row[idx] ?? '');
         if (data.align[idx] && data.align[idx] !== 'none') td.style.textAlign = data.align[idx];
         tr.appendChild(td);
