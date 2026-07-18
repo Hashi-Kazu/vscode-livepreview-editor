@@ -105,3 +105,25 @@ export function shouldPostDirtyState(
 ): boolean {
   return !disposed && bindingGeneration === currentBindingGeneration;
 }
+
+/**
+ * Decide which visible tab URIs for a document, newly opened as a side effect
+ * of a Live Preview edit/save operation, should be closed (R-03-08 /
+ * R-03-11).
+ *
+ * A source editor tab for `targetUri` that was already visible before the
+ * operation is left untouched — it may have been opened deliberately by the
+ * user, and this function must never close a tab the user opened themself.
+ * Only a tab that newly appears for `targetUri` between the "before" and
+ * "after" snapshots — i.e. one whose appearance is attributable to the
+ * operation just performed — is reported for closing.
+ */
+export function decideAutoOpenedTabsToClose(
+  targetUri: string,
+  tabUrisBefore: readonly string[],
+  tabUrisAfter: readonly string[],
+): boolean {
+  const wasVisibleBefore = tabUrisBefore.includes(targetUri);
+  if (wasVisibleBefore) return false;
+  return tabUrisAfter.includes(targetUri);
+}
