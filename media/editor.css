@@ -239,6 +239,33 @@ table.cm-lp-table tr:nth-child(2n) td {
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.06));
 }
 
+/* Direct cell editing: the cell holding the in-place <input> and the input
+   itself. The input fills the cell and inherits its typography so editing does
+   not shift the row height. */
+table.cm-lp-table th.cm-lp-table-cell-editing,
+table.cm-lp-table td.cm-lp-table-cell-editing {
+  padding: 0;
+}
+.cm-lp-table-cell-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 6px 13px;
+  border: none;
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+  font: inherit;
+  line-height: 1.6;
+}
+/* Highlight a cell selected for editing via the context menu. */
+table.cm-lp-table th.cm-lp-table-cell-selected,
+table.cm-lp-table td.cm-lp-table-cell-selected {
+  outline: 1px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: -1px;
+}
+
 /* Task-list lines render their text as plain body text (MAIO look): never
    inherit link color/underline just because the source happens to contain a
    link or other inline construct. Actual inline links inside the task keep

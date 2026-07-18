@@ -306,12 +306,39 @@ export function detectMathBlocks(lines: LineInfo[], code: CodeBlockInfo): MathBl
   return blocks;
 }
 
-/** Split a table row into trimmed cell strings (outer pipes ignored). */
+/**
+ * Split a table row into trimmed cell strings (outer pipes ignored).
+ *
+ * A backslash-escaped pipe (`\|`) is treated as a literal `|` *inside* a cell
+ * rather than a column separator, and is unescaped to a bare `|` in the returned
+ * value. This lets cells carry pipe characters (e.g. entered via direct cell
+ * editing) without breaking the table structure. Unescaped outer pipes still
+ * delimit the row and their empty edge cells are dropped, matching the previous
+ * one-leading/one-trailing-pipe behaviour for non-escaped rows.
+ */
 export function parseTableRow(text: string): string[] {
-  let s = text.trim();
-  if (s.startsWith('|')) s = s.slice(1);
-  if (s.endsWith('|')) s = s.slice(0, -1);
-  return s.split('|').map((c) => c.trim());
+  const s = text.trim();
+  const cells: string[] = [];
+  let cur = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '\\' && s[i + 1] === '|') {
+      cur += '|'; // escaped pipe → literal pipe kept within this cell
+      i++;
+      continue;
+    }
+    if (ch === '|') {
+      cells.push(cur);
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  cells.push(cur);
+  // Drop the empty edge cells produced by the outer pipes (`| a | b |`).
+  if (cells.length > 1 && cells[0].trim() === '') cells.shift();
+  if (cells.length > 1 && cells[cells.length - 1].trim() === '') cells.pop();
+  return cells.map((c) => c.trim());
 }
 
 /**

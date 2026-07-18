@@ -17,10 +17,10 @@ import {
   toggleTaskAt,
 } from '../core/sync';
 import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
-import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn } from '../core/tableEdit';
+import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
-import { headingFoldRange } from '../core/model';
+import { headingFoldRange, parseTableRow } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
 
 interface VsCodeApi {
@@ -492,6 +492,9 @@ function applyPendingRemote(): void {
     pendingLocalChange: pendingCompositionChange,
     rollback: remote.rollback,
   })) {
+    // An external host update wins over an in-progress cell edit: cancel it so a
+    // stale input/closure cannot fight the incoming document (R-08 sync).
+    finishActiveCellEdit(false);
     if (remote.text !== view.state.doc.toString()) setText(remote.text, remote.rollback, remote.preserveHistory);
     else if (remote.rollback) ackVersion = editVersion;
   }
@@ -585,6 +588,14 @@ view.dom.addEventListener(
     if (table) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      // Remember the pressed cell so a following dblclick can re-open it for
+      // direct editing even though this mousedown re-renders the block as raw
+      // text (R-22-02). Only primary-button presses are candidates.
+      if (shouldOpenLinkOnMouseDown(event.button)) {
+        const cell = el.closest('.cm-lp-table th, .cm-lp-table td') as HTMLElement | null;
+        lastCellMouseTarget = cell ? readCellTarget(cell) : null;
+        lastCellMouseTime = Date.now();
+      }
       // Only the primary button moves the caret into the block (R-22-02). A
       // secondary press is still swallowed above (so CodeMirror does not move
       // the caret either) but leaves the selection untouched, so the R-22-06
@@ -601,6 +612,25 @@ view.dom.addEventListener(
         }
       }
     }
+  },
+  true, // capture phase
+);
+
+// Double-click a rendered table cell → edit that cell's raw text in place. The
+// first mousedown of the pair already moved the caret into the block and
+// re-rendered it as raw text, so the dblclick target is no longer a table cell;
+// recover the exact cell from `lastCellMouseTarget` recorded on that mousedown
+// and re-render the widget before opening the input. Single-click behaviour
+// (R-22-02) is intentionally left unchanged.
+view.dom.addEventListener(
+  'dblclick',
+  (event) => {
+    if (!lastCellMouseTarget || Date.now() - lastCellMouseTime > 700) return;
+    const target = lastCellMouseTarget;
+    lastCellMouseTarget = null;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    beginCellEditFromTarget(target);
   },
   true, // capture phase
 );
@@ -637,15 +667,28 @@ function onKeyDownForTableMenu(event: KeyboardEvent): void {
  * The block range is the run of consecutive non-empty `|`-bearing lines from the
  * header down (mirrors `detectTableBlocks`).
  */
-function applyTableEdit(startLine: number, transform: (lines: string[]) => string[]): void {
-  const current = view.state.doc.toString();
-  const docLines = current.split('\n');
-  if (startLine < 0 || startLine >= docLines.length) return;
+/**
+ * Locate the run of consecutive `|`-bearing, non-empty lines that make up the
+ * table block starting at `startLine` (mirrors `detectTableBlocks`). Returns the
+ * whole document split into lines together with the block's inclusive end index,
+ * or null when `startLine` is out of range.
+ */
+function tableBlockAt(startLine: number): { docLines: string[]; end: number } | null {
+  const docLines = view.state.doc.toString().split('\n');
+  if (startLine < 0 || startLine >= docLines.length) return null;
   let end = startLine;
   for (let j = startLine + 1; j < docLines.length; j++) {
     if (docLines[j].includes('|') && docLines[j].trim() !== '') end = j;
     else break;
   }
+  return { docLines, end };
+}
+
+function applyTableEdit(startLine: number, transform: (lines: string[]) => string[]): void {
+  const located = tableBlockAt(startLine);
+  if (!located) return;
+  const { docLines, end } = located;
+  const current = docLines.join('\n');
   const block = docLines.slice(startLine, end + 1);
   const next = transform(block);
   if (next.join('\n') === block.join('\n')) return; // guard / no-op
@@ -656,6 +699,159 @@ function applyTableEdit(startLine: number, transform: (lines: string[]) => strin
     changes: { from: patch.from, to: patch.to, insert: patch.insert },
     annotations: isolateHistory.of('full'),
   });
+}
+
+// --- Direct table-cell editing (double-click / "セルを編集") ------------------
+//
+// Double-clicking a rendered table cell (or choosing "セルを編集" from the R-22-06
+// menu) opens a one-line <input> inside that cell so its raw Markdown text can be
+// edited in place while the table stays rendered. Enter / blur / starting another
+// cell edit commit the change through the SAME path as the row/column menu
+// (`updateTableCell` → `applyTableEdit` → `computeRemotePatch` → `view.dispatch`
+// with `isolateHistory.of('full')`); Escape cancels without touching the doc.
+// A literal `|` typed into a cell is escaped (`\|`) by `updateTableCell`/`buildRow`
+// so it never breaks the table structure.
+
+interface CellTarget {
+  startLine: number;
+  rowType: 'header' | 'body';
+  rowIndex: number; // 0-based body index; -1 for the header
+  col: number;
+}
+
+/** Read the cell-edit metadata attached to a rendered th/td (added in
+ *  `decorations.ts` `TableWidget.toDOM`). Returns null when the attributes are
+ *  missing or malformed (e.g. clicking chrome outside a real cell). */
+function readCellTarget(cell: HTMLElement): CellTarget | null {
+  const startLine = Number(cell.getAttribute('data-table-start-line'));
+  const col = Number(cell.getAttribute('data-col'));
+  const rowType = cell.getAttribute('data-row-type');
+  if (!Number.isInteger(startLine) || startLine < 0 || !Number.isInteger(col) || col < 0) return null;
+  if (rowType !== 'header' && rowType !== 'body') return null;
+  const rowIndex = rowType === 'body' ? Number(cell.getAttribute('data-row-index')) : -1;
+  if (rowType === 'body' && (!Number.isInteger(rowIndex) || rowIndex < 0)) return null;
+  return { startLine, rowType, rowIndex, col };
+}
+
+// The most recent table cell pressed with the primary button, so a following
+// dblclick can recover the exact cell even though the first mousedown already
+// moved the caret into the block and re-rendered it as raw text (R-22-02).
+let lastCellMouseTarget: CellTarget | null = null;
+let lastCellMouseTime = 0;
+
+// Commit callback of the cell edit currently in progress (null when idle). Kept
+// at module scope so starting a new edit (or an external host update) can finish
+// the previous one first.
+let activeCellCommit: ((apply: boolean) => void) | null = null;
+
+/** Finish any in-progress cell edit (used before starting a new one or when an
+ *  external host update arrives — the host update then wins). */
+function finishActiveCellEdit(apply: boolean): void {
+  if (activeCellCommit) activeCellCommit(apply);
+}
+
+/**
+ * Begin editing the cell described by `target`. The table may currently be shown
+ * as raw text (a prior single click moved the caret into the block), so first
+ * move the selection to a line *outside* the block, which re-renders the table as
+ * a widget; then find the freshly rendered cell and open its input. When the
+ * table is already a widget (right-click menu path) the selection move is a
+ * harmless no-op that keeps the block inactive.
+ */
+function beginCellEditFromTarget(target: CellTarget): void {
+  const located = tableBlockAt(target.startLine);
+  if (!located) return;
+  const outLine0 = target.startLine > 0 ? target.startLine - 1 : located.end + 1;
+  const clamped = Math.max(0, Math.min(outLine0, view.state.doc.lines - 1));
+  try {
+    const anchor = view.state.doc.line(clamped + 1).from; // doc.line is 1-based
+    view.dispatch({ selection: { anchor } });
+  } catch {
+    return; // line out of range mid-render; abort quietly
+  }
+  const sel =
+    target.rowType === 'header'
+      ? `.cm-lp-table th[data-table-start-line="${target.startLine}"][data-col="${target.col}"]`
+      : `.cm-lp-table td[data-table-start-line="${target.startLine}"]` +
+        `[data-row-index="${target.rowIndex}"][data-col="${target.col}"]`;
+  const cell = view.dom.querySelector(sel) as HTMLElement | null;
+  if (cell) startCellEdit(cell, target);
+}
+
+/** Open the inline <input> for `cell` and wire commit/cancel + event isolation. */
+function startCellEdit(cell: HTMLElement, target: CellTarget): void {
+  finishActiveCellEdit(true); // commit any other cell edit first
+
+  const located = tableBlockAt(target.startLine);
+  if (!located) return;
+  const srcLineIdx = target.rowType === 'header' ? 0 : target.rowIndex + 2;
+  if (srcLineIdx < 0 || target.startLine + srcLineIdx > located.end) return;
+  const cells = parseTableRow(located.docLines[target.startLine + srcLineIdx]);
+  if (target.col < 0 || target.col >= cells.length) return;
+  const original = cells[target.col] ?? '';
+
+  const originalHTML = cell.innerHTML;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cm-lp-table-cell-input';
+  input.setAttribute('aria-label', '表セルを編集');
+  input.value = original;
+
+  cell.classList.add('cm-lp-table-cell-editing');
+  cell.textContent = '';
+  cell.appendChild(input);
+
+  const rowDesc: { type: 'header' } | { type: 'body'; index: number } =
+    target.rowType === 'header' ? { type: 'header' } : { type: 'body', index: target.rowIndex };
+
+  let composing = false;
+  const commit = (apply: boolean) => {
+    if (activeCellCommit !== commit) return; // already finished
+    activeCellCommit = null;
+    const value = input.value;
+    if (apply && value !== original) {
+      // Same body-change path as the row/column menu; the dispatch rebuilds the
+      // whole table widget (updateDOM → false → toDOM), replacing this cell node.
+      applyTableEdit(target.startLine, (l) => updateTableCell(l, rowDesc, target.col, value));
+    } else {
+      // Cancel / no change: drop the input and restore the rendered cell content.
+      cell.classList.remove('cm-lp-table-cell-editing');
+      cell.innerHTML = originalHTML;
+    }
+  };
+  activeCellCommit = commit;
+
+  const stop = (ev: Event) => ev.stopPropagation();
+  for (const type of ['mousedown', 'click', 'dblclick', 'input', 'contextmenu'] as const) {
+    input.addEventListener(type, stop);
+  }
+  input.addEventListener('compositionstart', (ev) => {
+    ev.stopPropagation();
+    composing = true;
+  });
+  input.addEventListener('compositionend', (ev) => {
+    ev.stopPropagation();
+    composing = false;
+  });
+  input.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') {
+      if (ev.isComposing || composing) return; // IME confirmation, not a cell commit
+      ev.preventDefault();
+      commit(true);
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      commit(false);
+    } else if (ev.key === 'Tab') {
+      // Do not let focus leave the Webview or insert a tab character; just commit.
+      ev.preventDefault();
+      commit(true);
+    }
+  });
+  input.addEventListener('blur', () => commit(true));
+
+  input.focus();
+  input.select();
 }
 
 function showTableMenu(
@@ -675,6 +871,7 @@ function showTableMenu(
     const item = document.createElement('div');
     item.className = 'cm-lp-table-menu-item' + (enabled ? '' : ' is-disabled');
     item.setAttribute('role', 'menuitem');
+    if (!enabled) item.setAttribute('aria-disabled', 'true');
     item.textContent = label;
     if (enabled) {
       item.addEventListener('mousedown', (ev) => {
@@ -692,6 +889,15 @@ function showTableMenu(
     menu.appendChild(sep);
   };
 
+  addItem('セルを編集', true, () =>
+    beginCellEditFromTarget({
+      startLine,
+      rowType: isHeader ? 'header' : 'body',
+      rowIndex: isHeader ? -1 : bodyRowIndex,
+      col,
+    }),
+  );
+  addSeparator();
   addItem('行を上に挿入', !isHeader, () =>
     applyTableEdit(startLine, (l) => insertTableRow(l, bodyRowIndex === 0 ? 'top' : bodyRowIndex - 1)),
   );
