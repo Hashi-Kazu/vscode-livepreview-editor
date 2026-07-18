@@ -16,12 +16,6 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('livePreview.pasteFileAsMarkdownLink', () =>
-      manager.pasteFileAsMarkdownLink(),
-    ),
-  );
-
   // Formatting commands (also bound to keyboard shortcuts in package.json).
   for (const kind of ['bold', 'italic', 'strikethrough', 'highlight', 'code']) {
     context.subscriptions.push(
