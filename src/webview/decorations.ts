@@ -242,11 +242,15 @@ const openDetails = new Set<string>();
  *  opened an accordion with the same summary. The block is not editable
  *  in-place — editing happens via the standard source editor. */
 class DetailsWidget extends WidgetType {
-  constructor(private readonly summary: string, private readonly body: string[]) {
+  constructor(private readonly summary: string, private readonly body: string[], private readonly startLine: number) {
     super();
   }
   eq(other: DetailsWidget) {
-    return other.summary === this.summary && JSON.stringify(other.body) === JSON.stringify(this.body);
+    return (
+      other.summary === this.summary &&
+      other.startLine === this.startLine &&
+      JSON.stringify(other.body) === JSON.stringify(this.body)
+    );
   }
   /** Closed ≈ 1 summary line; open ≈ summary + every body line. Body lines paint
    *  at `line-height: 1.4` plus 2px vertical padding (media/editor.css), the
@@ -264,6 +268,9 @@ class DetailsWidget extends WidgetType {
   toDOM(view: EditorView) {
     const details = document.createElement('details');
     details.className = 'cm-lp-details';
+    // data-start-line lets the right-click accordion menu identify which block to
+    // route "Markdownコードを直接編集" to (R-27-07).
+    details.setAttribute('data-start-line', String(this.startLine));
     // Restore the previously-remembered open state for this summary; closed by
     // default otherwise.
     if (openDetails.has(this.summary)) details.open = true;
@@ -504,7 +511,11 @@ function toDecoration(s: DecoSpec): Decoration | null {
       }
       if (s.tag === 'details-block') {
         return Decoration.replace({
-          widget: new DetailsWidget(s.attrs?.summary ?? '', JSON.parse(s.attrs?.body ?? '[]')),
+          widget: new DetailsWidget(
+            s.attrs?.summary ?? '',
+            JSON.parse(s.attrs?.body ?? '[]'),
+            Number(s.attrs?.startLine ?? '0'),
+          ),
           block: true,
         });
       }

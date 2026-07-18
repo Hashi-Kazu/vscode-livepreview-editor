@@ -11,6 +11,7 @@ import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/la
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import {
   computeRemotePatch,
+  cursorLinesFromSelections,
   shouldApplyRemoteUpdate,
   shouldEmitEdit,
   shouldFlushComposition,
@@ -89,10 +90,58 @@ function includeSelectionLines(state: EditorState, lineRange: LineWindow | undef
   };
 }
 
+// R-27-07: 0-based start lines of `<details>` accordions the user has opted into
+// raw-source ("Markdownコードを直接編集") editing for. The model suppresses the
+// accordion widget for these blocks while the caret is inside them, showing the
+// raw `<details><summary>…` HTML as editable lines. Pruned automatically once the
+// caret leaves the block (see `pruneDetailsDirectEdit`), so the accordion re-forms
+// like an active table (R-22-02). Empty by default → accordions are viewer-only
+// widgets (R-27-03).
+const detailsDirectEditStartLines = new Set<number>();
+
+const DETAILS_OPEN_LINE_RE = /^\s*<details(\s[^>]*)?>/i;
+const DETAILS_CLOSE_LINE_RE = /^\s*<\/details>\s*$/i;
+
+/** Inclusive [start,end] line range of the `<details>` block opening at
+ *  `start0` (0-based), or null when `start0` is not a `<details>` opener or the
+ *  block is unterminated. Mirrors `detectDetailsBlocks`'s open/close scan. */
+function detailsBlockRange(docLines: string[], start0: number): { start: number; end: number } | null {
+  if (start0 < 0 || start0 >= docLines.length) return null;
+  if (!DETAILS_OPEN_LINE_RE.test(docLines[start0])) return null;
+  for (let j = start0; j < docLines.length; j++) {
+    if (DETAILS_CLOSE_LINE_RE.test(docLines[j])) return { start: start0, end: j };
+  }
+  return null;
+}
+
+/** Drop any direct-edit opt-in whose accordion no longer contains the caret so
+ *  the widget re-forms (R-27-07). Runs on every recompute (doc/selection change). */
+function pruneDetailsDirectEdit(state: EditorState): void {
+  if (detailsDirectEditStartLines.size === 0) return;
+  const doc = state.doc.toString();
+  const selections = state.selection.ranges.map((r) => ({ from: r.from, to: r.to }));
+  const cursorLines = cursorLinesFromSelections(doc, selections);
+  const docLines = doc.split('\n');
+  for (const start of [...detailsDirectEditStartLines]) {
+    const range = detailsBlockRange(docLines, start);
+    let inside = false;
+    if (range) {
+      for (let l = range.start; l <= range.end; l++) {
+        if (cursorLines.has(l)) {
+          inside = true;
+          break;
+        }
+      }
+    }
+    if (!inside) detailsDirectEditStartLines.delete(start);
+  }
+}
+
 function computeField(state: EditorState, lineRange: LineWindow | undefined): LivePreviewFieldValue {
+  pruneDetailsDirectEdit(state);
   const rangeWithSelection = includeSelectionLines(state, lineRange);
   return {
-    decorations: buildDecorations(state, { lineRange: rangeWithSelection }, onRenderError),
+    decorations: buildDecorations(state, { lineRange: rangeWithSelection, detailsDirectEditStartLines }, onRenderError),
     lineRange,
   };
 }
@@ -579,58 +628,22 @@ view.dom.addEventListener(
       event.stopImmediatePropagation();
       return;
     }
-    // Rendered table → move the caret to the clicked row's source line so the
-    // block becomes "active" on re-render and its cells turn into editable raw
-    // `| a | b |` text (R-22-02). We read `data-line` (0-based) off the clicked
-    // `<tr>`; the delimiter row has none. Without a data-line, swallow the click
-    // (legacy behaviour) so the caret does not jump to the block start.
+    // Rendered table → a normal (primary-button) click edits the clicked cell in
+    // place; it never moves the caret into the block, so a plain click no longer
+    // switches the table to raw `| a | b |` source (R-22-08). Raw-source editing
+    // is reachable only via the "Markdownコードを直接編集" context-menu item
+    // (R-22-09). A secondary press is swallowed here (so CodeMirror does not move
+    // the caret) and handled by the `contextmenu` listener.
     const table = el.closest('.cm-lp-table');
     if (table) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      // Remember the pressed cell so a following dblclick can re-open it for
-      // direct editing even though this mousedown re-renders the block as raw
-      // text (R-22-02). Only primary-button presses are candidates.
       if (shouldOpenLinkOnMouseDown(event.button)) {
         const cell = el.closest('.cm-lp-table th, .cm-lp-table td') as HTMLElement | null;
-        lastCellMouseTarget = cell ? readCellTarget(cell) : null;
-        lastCellMouseTime = Date.now();
-      }
-      // Only the primary button moves the caret into the block (R-22-02). A
-      // secondary press is still swallowed above (so CodeMirror does not move
-      // the caret either) but leaves the selection untouched, so the R-22-06
-      // right-click menu never activates the block (R-22-06).
-      const tr = el.closest('tr');
-      const dl = tr?.getAttribute('data-line');
-      if (dl != null && shouldOpenLinkOnMouseDown(event.button)) {
-        try {
-          const anchor = view.state.doc.line(Number(dl) + 1).from; // doc.line is 1-based
-          view.dispatch({ selection: { anchor } });
-          view.focus();
-        } catch {
-          /* line out of range mid-render; ignore */
-        }
+        const target = cell ? readCellTarget(cell) : null;
+        if (target) beginCellEditFromTarget(target);
       }
     }
-  },
-  true, // capture phase
-);
-
-// Double-click a rendered table cell → edit that cell's raw text in place. The
-// first mousedown of the pair already moved the caret into the block and
-// re-rendered it as raw text, so the dblclick target is no longer a table cell;
-// recover the exact cell from `lastCellMouseTarget` recorded on that mousedown
-// and re-render the widget before opening the input. Single-click behaviour
-// (R-22-02) is intentionally left unchanged.
-view.dom.addEventListener(
-  'dblclick',
-  (event) => {
-    if (!lastCellMouseTarget || Date.now() - lastCellMouseTime > 700) return;
-    const target = lastCellMouseTarget;
-    lastCellMouseTarget = null;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    beginCellEditFromTarget(target);
   },
   true, // capture phase
 );
@@ -732,12 +745,6 @@ function readCellTarget(cell: HTMLElement): CellTarget | null {
   if (rowType === 'body' && (!Number.isInteger(rowIndex) || rowIndex < 0)) return null;
   return { startLine, rowType, rowIndex, col };
 }
-
-// The most recent table cell pressed with the primary button, so a following
-// dblclick can recover the exact cell even though the first mousedown already
-// moved the caret into the block and re-rendered it as raw text (R-22-02).
-let lastCellMouseTarget: CellTarget | null = null;
-let lastCellMouseTime = 0;
 
 // Commit callback of the cell edit currently in progress (null when idle). Kept
 // at module scope so starting a new edit (or an external host update) can finish
@@ -854,6 +861,58 @@ function startCellEdit(cell: HTMLElement, target: CellTarget): void {
   input.select();
 }
 
+/** Move the caret to the start of the given 0-based line (and focus the editor).
+ *  Used to activate a block's cursor-driven raw view (tables R-22-09; the same
+ *  primitive backs the accordion direct-edit entry). */
+function moveCaretToLineStart(line0: number): void {
+  try {
+    const anchor = view.state.doc.line(line0 + 1).from; // doc.line is 1-based
+    view.dispatch({ selection: { anchor } });
+    view.focus();
+  } catch {
+    /* line out of range mid-render; ignore */
+  }
+}
+
+/**
+ * R-27-07: right-click menu for a rendered `<details>` accordion. Its single item
+ * opts the block into raw-source editing (adds its start line to
+ * `detailsDirectEditStartLines`) and moves the caret inside so the model shows the
+ * raw `<details><summary>…` HTML. Reuses the table-menu overlay chrome/lifecycle.
+ */
+function showDetailsMenu(x: number, y: number, startLine: number): void {
+  closeTableMenu();
+  const menu = document.createElement('div');
+  menu.className = 'cm-lp-table-menu';
+  menu.setAttribute('role', 'menu');
+
+  const item = document.createElement('div');
+  item.className = 'cm-lp-table-menu-item';
+  item.setAttribute('role', 'menuitem');
+  item.textContent = 'Markdownコードを直接編集';
+  item.addEventListener('mousedown', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    detailsDirectEditStartLines.add(startLine);
+    moveCaretToLineStart(startLine);
+    closeTableMenu();
+  });
+  menu.appendChild(item);
+
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - 4);
+  const top = Math.min(y, window.innerHeight - rect.height - 4);
+  menu.style.left = `${Math.max(0, left)}px`;
+  menu.style.top = `${Math.max(0, top)}px`;
+
+  tableMenuEl = menu;
+  document.addEventListener('mousedown', onDocMouseDownForTableMenu, true);
+  document.addEventListener('keydown', onKeyDownForTableMenu, true);
+}
+
 function showTableMenu(
   x: number,
   y: number,
@@ -897,6 +956,10 @@ function showTableMenu(
       col,
     }),
   );
+  // R-22-09: move the caret to the table's first source line so the cursor-driven
+  // raw view (R-22-02) kicks in and the block's `| a | b |` Markdown becomes
+  // directly editable text. The widget re-forms once the caret leaves the block.
+  addItem('Markdownコードを直接編集', true, () => moveCaretToLineStart(startLine));
   addSeparator();
   addItem('行を上に挿入', !isHeader, () =>
     applyTableEdit(startLine, (l) => insertTableRow(l, bodyRowIndex === 0 ? 'top' : bodyRowIndex - 1)),
@@ -929,6 +992,15 @@ view.dom.addEventListener(
   'contextmenu',
   (event) => {
     const el = event.target as HTMLElement;
+    // Rendered <details> accordion → offer raw-source editing (R-27-07).
+    const details = el.closest('.cm-lp-details') as HTMLElement | null;
+    if (details) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const startLine = Number(details.getAttribute('data-start-line'));
+      if (Number.isInteger(startLine) && startLine >= 0) showDetailsMenu(event.clientX, event.clientY, startLine);
+      return;
+    }
     const cell = el.closest('.cm-lp-table th, .cm-lp-table td') as HTMLElement | null;
     if (!cell) return; // not a rendered table cell: leave the default menu alone
     // Suppress the default menu and keep CodeMirror from moving the caret.

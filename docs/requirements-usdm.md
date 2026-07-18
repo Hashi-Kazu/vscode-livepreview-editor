@@ -1,13 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.31.0
+**バージョン**: 1.32.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-18
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-18 時点 / v1.31.0）**: v1.31.0 で、表の行・列追加/削除の直後に Live Preview 上の表 DOM が更新されない不具合（`TableWidget.updateDOM` が内容の変わった widget に対しても stale DOM を再利用して `true` を返していたため）を修正し、`updateDOM` が `false` を返して `toDOM()` に新データで再生成させるよう変更した（R-22-01 改訂、高さ再計測の `requestMeasure` は維持）。あわせて、表を表形式のまま任意セルをダブルクリック（または右クリックメニュー「セルを編集」）でインライン `<input>` 編集し、Enter/フォーカスアウトで Markdown へ即時反映・Escape で取消できるセル直接編集を追加した（R-22-07）。セル内の `|` は `\|` にエスケープして保存し表構造を壊さない（`updateTableCell`／`buildRow`／`parseTableRow` の往復、R-22-05 拡張）。v1.29.0 で、Live Preview のみで編集中に閉じたソースタブが自動再表示される現象の根本原因（TextDocument が dirty のまま滞留すること）を断つため、Webview→TextDocument 反映を毎打鍵 apply からタイピング停止後のデバウンス（既定 200ms、モジュール定数 `EDIT_APPLY_DEBOUNCE_MS`）でのバッチ apply へ変更し、apply 直後に必ず即時保存して dirty 窓を最小化するモデルへ移行した（R-03-08／R-04-01、ADR-0019）。全 flush 点（失焦・破棄・バインド切替・明示保存・外部変更処理前）を `flushPendingEdit`（バッチ apply→即時保存）に統一し、取りこぼしをなくした。キャレット退行防止機構（`SelfSaveGuard`／`preserveHistory`／`computeRemotePatch`／`isTrailingNewlineOnlyDifference`）は不変。R-03-11 の自動再表示タブ抑制は撤去せず backstop として残置した。v1.28.2 で、Live Preview のみで編集中に `applyEdit`/`performSave` の副作用として閉じたはずのソースタブが自動再表示される現象を抑制する機能を追加した（R-03-11、`livePreview.suppressSourceAutoOpen`、既定値 `true`）。v1.28.1 で Live Preview の連続 Undo が空行挿入・行数増加を起こす不整合（`files.insertFinalNewline` の最終改行エコーを out-of-history で CodeMirror へ適用していたため）を修正した（R-04-02、`isTrailingNewlineOnlyDifference`）。v1.28.0 ではレイアウト・操作性の強化として、見出しセクション折りたたみ（R-30）、未保存インジケータ（R-31）、数式レンダリング（KaTeX、R-32）、テーブルの行・列操作コンテキストメニュー（R-22-05/06）、見出し下余白の拡大（R-28-05 改訂）を追加した。アウトライン/目次ウィジェット（旧 R-33）は削除した。
+> ▶️ **開発継続中（2026-07-18 時点 / v1.32.0）**: v1.32.0 で、表とアコーディオンの「通常クリック操作」で生 Markdown ソース表示へ切り替わらないよう挙動を整理した。表の通常クリック（プライマリボタン）はキャレットをブロック内へ移さず、クリックされたセルのインライン入力を直接開く（R-22-08。旧「クリック→キャレット移動で生表示化」は撤去し R-22-02 を改訂）。生ソースの直接編集は表右クリックメニュー「Markdownコードを直接編集」からのみ開始でき、対象表の開始行へキャレットを移してカーソル駆動（R-22-02）で生行表示にする（R-22-09）。アコーディオンにも右クリックメニュー「Markdownコードを直接編集」を新設し、`DecorationOptions.detailsDirectEditStartLines`（0 始まり開始行の集合）に登録された `<details>` ブロックはキャレットがブロック内にある間だけウィジェットを抑止して生 HTML 行を描画する（R-27-07）。既定（集合なし）ではカーソル有無に依らず常にウィジェットのままで R-27-03 を満たす。キャレットがブロック外へ出ると表・アコーディオンとも自動でウィジェット表示へ復帰する（`pruneDetailsDirectEdit`）。見出し・リスト・リンク・画像など他ブロックのクリック挙動は不変。v1.31.0 で、表の行・列追加/削除の直後に Live Preview 上の表 DOM が更新されない不具合（`TableWidget.updateDOM` が内容の変わった widget に対しても stale DOM を再利用して `true` を返していたため）を修正し、`updateDOM` が `false` を返して `toDOM()` に新データで再生成させるよう変更した（R-22-01 改訂、高さ再計測の `requestMeasure` は維持）。あわせて、表を表形式のまま任意セルをダブルクリック（または右クリックメニュー「セルを編集」）でインライン `<input>` 編集し、Enter/フォーカスアウトで Markdown へ即時反映・Escape で取消できるセル直接編集を追加した（R-22-07）。セル内の `|` は `\|` にエスケープして保存し表構造を壊さない（`updateTableCell`／`buildRow`／`parseTableRow` の往復、R-22-05 拡張）。v1.29.0 で、Live Preview のみで編集中に閉じたソースタブが自動再表示される現象の根本原因（TextDocument が dirty のまま滞留すること）を断つため、Webview→TextDocument 反映を毎打鍵 apply からタイピング停止後のデバウンス（既定 200ms、モジュール定数 `EDIT_APPLY_DEBOUNCE_MS`）でのバッチ apply へ変更し、apply 直後に必ず即時保存して dirty 窓を最小化するモデルへ移行した（R-03-08／R-04-01、ADR-0019）。全 flush 点（失焦・破棄・バインド切替・明示保存・外部変更処理前）を `flushPendingEdit`（バッチ apply→即時保存）に統一し、取りこぼしをなくした。キャレット退行防止機構（`SelfSaveGuard`／`preserveHistory`／`computeRemotePatch`／`isTrailingNewlineOnlyDifference`）は不変。R-03-11 の自動再表示タブ抑制は撤去せず backstop として残置した。v1.28.2 で、Live Preview のみで編集中に `applyEdit`/`performSave` の副作用として閉じたはずのソースタブが自動再表示される現象を抑制する機能を追加した（R-03-11、`livePreview.suppressSourceAutoOpen`、既定値 `true`）。v1.28.1 で Live Preview の連続 Undo が空行挿入・行数増加を起こす不整合（`files.insertFinalNewline` の最終改行エコーを out-of-history で CodeMirror へ適用していたため）を修正した（R-04-02、`isTrailingNewlineOnlyDifference`）。v1.28.0 ではレイアウト・操作性の強化として、見出しセクション折りたたみ（R-30）、未保存インジケータ（R-31）、数式レンダリング（KaTeX、R-32）、テーブルの行・列操作コンテキストメニュー（R-22-05/06）、見出し下余白の拡大（R-28-05 改訂）を追加した。アウトライン/目次ウィジェット（旧 R-33）は削除した。
 >
 > （v1.26.0 時点） 毎打鍵アイドル自動保存（`SaveDebouncer`）を廃止し、標準エディタと同じ明示保存（Webview の Ctrl+S→host `performSave`）＋失焦・破棄・バインド切替時の flush 保存へ変更した。編集は従来どおり最小 `WorkspaceEdit` で即時反映する。Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
@@ -39,9 +39,9 @@
 | カテゴリ | 動作方針 |
 |------|------|
 | 標準 Markdown 記法（見出し・インライン記法・リスト・タスク・表・コードブロック・リンク・画像 等） | **ライブ編集**（カーソル行で生記法を表示し、他行では装飾表示する） |
-| HTML タグ（`<details>`・`<summary>` 等） | **ビューア専用**（常にウィジェット描画。生の HTML 記法を表示する編集モードは持たない。本文の編集は標準ソースエディタで行う） |
+| HTML タグ（`<details>`・`<summary>` 等） | **ビューア専用**（通常操作では常にウィジェット描画し生の HTML 記法を出さない。ただしコンテキストメニュー「Markdownコードを直接編集」を選んだ場合のみ、キャレットがブロック内にある間だけ生ソース編集へ移行できる。本文の一般的な編集は標準ソースエディタで行う） |
 
-HTML タグを使ったブロック（`<details>` アコーディオン等）は「ビューアとして正しく成立すること」を満足条件とし、ライブ編集対応は要件としない。
+HTML タグを使ったブロック（`<details>` アコーディオン等）は「ビューアとして正しく成立すること」を満足条件とし、通常操作でのライブ編集対応は要件としない。生の HTML 記法を表示する編集モードは通常操作では持たないが、右クリックメニュー「Markdownコードを直接編集」選択時のみ生ソース編集へ移行でき、キャレットがブロック外へ出るとウィジェット表示へ復帰する（R-27-07）。
 
 ## 用語定義
 
@@ -270,7 +270,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜描画＞
 
 - ■■□ R-22-01 表ブロック全体を 1 つの `table-block` ウィジェットに置換し、ヘッダ・整列・行データを保持すること。ウィジェットの `attrs` にブロック開始行（`startLine`）を載せ、Webview が各 `<tr>` に `data-line`（ヘッダ=`startLine`、区切り行はスキップ、`rows[k]`=`startLine+2+k`）を付与できるようにすること。各 `th`/`td` にはセル直接編集用に `data-col`・`data-row-type`（header/body）・`data-row-index`（body の 0 始まり）・`data-table-start-line` を付与すること。`TableWidget.updateDOM` は内容が変わった（`eq()` が false の）widget に対して stale DOM を再利用せず `false` を返して `toDOM()` に新データで再生成させ、行・列/セル編集の直後に追加操作なしで表 DOM を更新すること（高さ再計測の `requestMeasure` は `toDOM` 外で維持、R-28-10/11）。
-- ■■■ R-22-02 表は、カーソルがブロック内にあるときは `table-block` ウィジェットを出さず生の行を表示し**セル内テキストを編集可能**とすること。非カーソル時のみ従来どおりウィジェットへ置換すること。Webview 側でテーブルのクリックは、クリックされた `<tr>` の `data-line` を読み、その行頭へキャレットを移動（`view.dispatch({selection})`＋`view.focus()`）して編集モードへ遷移させること（`data-line` が無い区切り行などはキャレット移動しない）。コードブロック内の表もどきは表にしないこと。
+- ■■■ R-22-02 表は、カーソルがブロック内にあるときは `table-block` ウィジェットを出さず生の行を表示し**セル内テキストを編集可能**とすること。非カーソル時のみ従来どおりウィジェットへ置換すること。ブロックの活性化（キャレットをブロック内へ移す操作）は R-22-09 の右クリックメニュー「Markdownコードを直接編集」経由でのみ行い、Webview 側でのテーブルの通常クリックはキャレットをブロック内へ移さず生表示化しないこと（通常クリックはセル編集＝R-22-08 に回す）。コードブロック内の表もどきは表にしないこと。
 - ■■□ R-22-03 表セル内の最小限のインライン記法（太字 `**` / `__`、斜体 `*` / `_`、インラインコード `` ` ``）を装飾描画し、生のマーカー（例 `**CPM**`）をそのまま表示しないこと（MAIO プレビュー同様）。装飾は Webview 層（`appendInlineCell`）でテキストノードへ安全に変換し、生 HTML を挿入しないこと。
 - ■■■ R-22-04 区切り行は `|` を含み、セル数がヘッダ行と一致する場合のみ表と判定する（水平線 `---` や単独 `-` を区切り行と誤検知しない）。
 
@@ -281,7 +281,12 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜セル直接編集＞
 
-- ■■□ R-22-07 Webview は表を表形式のまま、セルのダブルクリック（または R-22-06 メニュー「セルを編集」）で当該セルのみをインライン `<input type="text"`（`aria-label="表セルを編集"`）で編集させること。ダブルクリックの初回 mousedown は R-22-02 のキャレット移動で表を生表示化するため、その mousedown で押下セル（`data-*`）を記憶し、dblclick でブロック外へ選択を移してウィジェットを再描画してから当該セルの入力欄を開くこと。確定（Enter/blur/別セル編集開始）は `updateTableCell` → 行・列操作と同一の本文変更経路（`computeRemotePatch` → `view.dispatch` ＋ `isolateHistory.of('full')`）で反映し、取消（Escape）は本文を変更しないこと。IME 変換中（`event.isComposing`）の Enter を確定と誤認しないこと。入力欄操作中のイベントを CodeMirror 本体へ誤伝播させず、1 文字ごとに Markdown へ反映しない（確定時のみ）こと。外部更新（host `update`）と競合したときはセル編集をキャンセルして host 更新を優先すること。シングルクリックの既存挙動（R-22-02）は変更しないこと。
+- ■■□ R-22-07 Webview は表を表形式のまま、セルの通常クリック／ダブルクリック（または R-22-06 メニュー「セルを編集」）で当該セルのみをインライン `<input type="text"`（`aria-label="表セルを編集"`）で編集させること。通常クリックはブロックを生表示化せずウィジェットのまま `beginCellEditFromTarget` で当該セルの入力欄を開くこと（R-22-08）。確定（Enter/blur/別セル編集開始）は `updateTableCell` → 行・列操作と同一の本文変更経路（`computeRemotePatch` → `view.dispatch` ＋ `isolateHistory.of('full')`）で反映し、取消（Escape）は本文を変更しないこと。IME 変換中（`event.isComposing`）の Enter を確定と誤認しないこと。入力欄操作中のイベントを CodeMirror 本体へ誤伝播させず、1 文字ごとに Markdown へ反映しない（確定時のみ）こと。外部更新（host `update`）と競合したときはセル編集をキャンセルして host 更新を優先すること。
+
+###### ＜通常クリック＝セル編集・生ソースはメニュー経由＞
+
+- ■■□ R-22-08 表の通常クリック（プライマリボタン）は生 Markdown ソース表示へ切り替えず、クリックされたセル（`.cm-lp-table th/td`）の `readCellTarget` を読んで `beginCellEditFromTarget` でそのセルのインライン入力を開くこと。キャレットをブロック内へ移す処理（旧 R-22-02 のクリック→キャレット移動）は行わないこと。セカンダリボタン（右クリック）は握りつぶし、メニューは `contextmenu` 側（R-22-06/R-22-09）で扱うこと。ダブルクリックでもセル編集に入れる状態を維持すること（初回クリックで既に入力が開くため、二度目のクリックは入力欄内に落ちる）。
+- ■■□ R-22-09 表の右クリックメニュー（R-22-06）に「Markdownコードを直接編集」項目を「セルを編集」の下へ追加すること。選択時、対象表ブロックの開始行（`startLine`）先頭へキャレットを移動（`view.dispatch({selection})`＋`view.focus()`）し、既存のカーソル駆動（R-22-02）で表を生行表示にして生 Markdown を直接編集可能にすること。キャレットがブロック外へ出れば従来どおりウィジェットへ復帰すること（追加の表示モード状態は持たない）。
 
 ---
 
@@ -346,10 +351,11 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-27-01 `<details><summary>…</summary>…</details>` ブロックを検知し、ブロック全体を 1 つの `details-block` ウィジェットへ置換すること。フェンスコードブロック内の `<details>` はアコーディオンとみなさず、閉じタグの無い未終了ブロックは折りたたまない（文末まで畳まない）こと。
 - ■■■ R-27-02 アコーディオンは既定で折りたたんだ（閉じた）状態で表示し、`<summary>` をクリックで開閉できること。開閉状態は再描画後も保持すること（summary テキストをキーに記憶）。
-- ■■■ R-27-03 アコーディオンは**ビューア専用**とし、ブロック内にカーソルがあってもウィジェットのまま（生の HTML 記法を表示しない＝実質非編集）とすること。Webview 側ではウィジェット本体（サマリ以外）のクリックを capture フェーズで握りつぶし（`preventDefault`/`stopImmediatePropagation`）、CodeMirror 既定の mousedown によるキャレット移動を防ぐこと。`<summary>` クリックはネイティブ開閉に通すこと。
+- ■■■ R-27-03 アコーディオンは**通常操作ではビューア専用**とし、ブロック内にカーソルがあってもウィジェットのまま（生の HTML 記法を表示しない）とすること。ただし R-27-07 の右クリックメニュー「Markdownコードを直接編集」を選び、かつキャレットがブロック内にある間だけは生ソース編集へ移行できる（オプトイン）。Webview 側ではウィジェット本体（サマリ以外）の**左**クリックを capture フェーズで握りつぶし（`preventDefault`/`stopImmediatePropagation`）、CodeMirror 既定の mousedown によるキャレット移動を防ぐこと。`<summary>` クリックはネイティブ開閉に通すこと。`computeDecorations` の既定挙動（`DecorationOptions.detailsDirectEditStartLines` を渡さない場合）はカーソル有無に依らず常にウィジェットとし、本要件を満たすこと。
 - ■■□ R-27-04 サマリ行は背景バー・枠・余計な padding を持たず、`▶`（閉）/`▼`（開）の三角マーカー＋サマリテキストのみの軽量な 1 行表示とし、本文インライン要素と馴染ませること。マーカーは開閉状態に追従する（`<details open>` で `▼`、閉で `▶`）。サマリテキストは通常ウェイト（`font-weight: 400`、太字継承を防ぐ）で表示し、マーカーとサマリテキストの間に半角程度の余白（マーカーの `margin-right` 約 `0.4em`）を設けること（MAIO 参照画像準拠）。
 - ■■■ R-27-05 純粋関数 `detailsTagRanges`（`src/core/model.ts`）は各行の構造 HTML タグ（`<details …>`・`<summary …>`・`</summary>`・`</details>` の山括弧を含むタグ文字列）の範囲を返すこと（サマリ本文は含まない）。ビューア専用化により `computeDecorations` 内ではこの範囲を使った行内 `hide` は行わない（ブロック全体がウィジェット置換されるため）が、関数自体の仕様は維持する。
-- ■■■ R-27-06 アコーディオンを開いたとき**本文を描画**すること（ビューア専用）。`detectDetailsBlocks` が `</summary>` より後〜`</details>` 直前の各行から構造タグを除去した本文行群を `DetailsBlock.body` に格納し（前後の空行はトリム）、`details-block` ウィジェットの `attrs.body` に JSON で渡す。Webview 層は `<details>` 内（サマリの後）に各本文行を `.cm-lp-details-body-line` として最小限のインライン記法（太字・斜体・インラインコード、`appendInlineCell`）で描画すること。複数段落・リスト・ネストは簡易描画で割り切る。本文の編集は標準ソースエディタで行う。
+- ■■■ R-27-06 アコーディオンを開いたとき**本文を描画**すること（ビューア専用）。`detectDetailsBlocks` が `</summary>` より後〜`</details>` 直前の各行から構造タグを除去した本文行群を `DetailsBlock.body` に格納し（前後の空行はトリム）、`details-block` ウィジェットの `attrs.body` に JSON で渡す。Webview 層は `<details>` 内（サマリの後）に各本文行を `.cm-lp-details-body-line` として最小限のインライン記法（太字・斜体・インラインコード、`appendInlineCell`）で描画すること。複数段落・リスト・ネストは簡易描画で割り切る。本文の一般的な編集は標準ソースエディタで行う（生ソース直接編集は R-27-07）。
+- ■■□ R-27-07 アコーディオンの右クリック（`.cm-lp-details` 上）でカスタムコンテキストメニュー（`role="menu"`、項目「Markdownコードを直接編集」）を表示し、選択時に当該ブロック開始行を直接編集集合へ登録して生ソース編集へ移行できること。純粋関数側は `DecorationOptions.detailsDirectEditStartLines?: Set<number>`（0 始まり開始行）を受け取り、`detailsDirectEditStartLines?.has(block.start)` かつブロック内にカーソルがあるときのみ `details-block` ウィジェットを emit せず、ブロック内各行（開始行・内側行とも）を通常行として生描画へフォールスルーすること。既定（集合を渡さない）では従来どおり常にウィジェットとし R-27-03 を満たすこと。`details-block` ウィジェットの `attrs` に `startLine` を載せ、Webview は `.cm-lp-details` に `data-start-line` を付与してメニューが対象ブロックを識別できるようにすること。メニュー選択時は開始行先頭へキャレット移動（`view.dispatch({selection})`＋`view.focus()`）してデコレーション再計算をトリガし生行を表示すること。キャレットがブロック外へ出たら集合から該当エントリを除去してウィジェットへ復帰させること（`pruneDetailsDirectEdit`、表 R-22-09 と同じ体験）。`<summary>` の左クリック開閉・開閉状態記憶（R-27-02）、ブロック高さ会計（R-28-10/11）は維持すること。
 
 ### R-28 Live エディターの編集体裁 #editing-ui
 
