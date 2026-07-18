@@ -395,6 +395,7 @@ const MATH_INLINE_RE = /\$([^\s$](?:[^$\n]*[^\s$])?)\$/y;
 const IMAGE_RE = /!\[([^\]\n]*)\]\(([^)\n]+)\)/y;
 const LINK_RE = /\[([^\]\n]+)\]\(([^)\n]+)\)/y;
 const BOLD_RE = /(\*\*|__)(\S[\s\S]*?\S|\S)\1/y;
+const BOLD_ITALIC_RE = /(\*\*\*|___)(\S[\s\S]*?\S|\S)\1/y;
 const ITALIC_RE = /(\*|_)([^\s*_][^*_\n]*?[^\s*_]|[^\s*_])\1/y;
 const STRIKE_RE = /~~(\S[\s\S]*?\S|\S)~~/y;
 const HIGHLIGHT_RE = /==(\S[\s\S]*?\S|\S)==/y;
@@ -515,6 +516,36 @@ export function parseInline(text: string, base: number, cursorLine: boolean, seg
             if (!cur) {
               specs.push({ from: b + i, to: b + labelStart, type: 'hide', tag: 'link-mark' });
               specs.push({ from: b + labelEnd, to: b + i + full.length, type: 'hide', tag: 'link-mark' });
+            }
+            return specs;
+          },
+        };
+      }
+    }
+
+    // Bold + italic combined (***text*** / ___text___) — must be tried before
+    // the plain bold/italic matchers, which would otherwise mis-parse the extra
+    // asterisk/underscore as literal content (leaving a raw `*`/`_` visible).
+    if (!matched) {
+      BOLD_ITALIC_RE.lastIndex = i;
+      m = BOLD_ITALIC_RE.exec(text);
+      if (m && m.index === i && (m[1] !== '___' || underscoreBoundaryOk(text, i, i + m[0].length))) {
+        const marker = m[1]; // *** or ___
+        const content = m[2];
+        const full = m[0];
+        const contentStart = i + marker.length;
+        const contentEnd = contentStart + content.length;
+        matched = {
+          start: i,
+          end: i + full.length,
+          specs: (b, cur) => {
+            const specs: DecoSpec[] = [
+              { from: b + contentStart, to: b + contentEnd, type: 'mark', tag: 'strong', className: 'cm-lp-strong' },
+              { from: b + contentStart, to: b + contentEnd, type: 'mark', tag: 'em', className: 'cm-lp-em' },
+            ];
+            if (!cur) {
+              specs.push({ from: b + i, to: b + contentStart, type: 'hide', tag: 'strong-mark' });
+              specs.push({ from: b + contentEnd, to: b + i + full.length, type: 'hide', tag: 'strong-mark' });
             }
             return specs;
           },
@@ -666,6 +697,45 @@ const QUOTE_RE = /^(\s*)((?:>\s?)+)(.*)$/;
 const ULIST_RE = /^(\s*)([-*+])(\s+)(.*)$/;
 const OLIST_RE = /^(\s*)(\d+[.)])(\s+)(.*)$/;
 
+/** Unordered-list bullet glyphs by nesting level (0=•, 1=○, 2=▪, then repeats),
+ *  matching standard Markdown-preview hierarchy conventions. */
+const ULIST_BULLETS = ['•', '○', '▪'];
+
+/** Convert a positive integer to a lowercase Roman numeral (`i`, `ii`, `iii`, …).
+ *  Used for level-1 ordered-list nesting (R-01-07). Pure & framework-agnostic. */
+export function toRomanLower(num: number): string {
+  if (!Number.isFinite(num) || num <= 0) return String(num);
+  const table: [number, string][] = [
+    [1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'],
+    [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'],
+    [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i'],
+  ];
+  let n = Math.floor(num);
+  let out = '';
+  for (const [val, sym] of table) {
+    while (n >= val) {
+      out += sym;
+      n -= val;
+    }
+  }
+  return out;
+}
+
+/** Convert a positive integer to a lowercase alphabetic numeral (`a`, `b`, …,
+ *  `z`, `aa`, `ab`, …), spreadsheet-column style. Used for level-2 ordered-list
+ *  nesting (R-01-07). Pure & framework-agnostic. */
+export function toAlpha(num: number): string {
+  if (!Number.isFinite(num) || num <= 0) return String(num);
+  let n = Math.floor(num);
+  let out = '';
+  while (n > 0) {
+    n--;
+    out = String.fromCharCode(97 + (n % 26)) + out;
+    n = Math.floor(n / 26);
+  }
+  return out;
+}
+
 /**
  * Compute every decoration for the document.
  *
@@ -727,7 +797,15 @@ export function computeDecorations(
     if (role) {
       const block = code.blockOf[i]!;
       const active = blockHasCursor(block.open, block.close);
-      specs.push({ from: line.from, to: line.from, type: 'line', tag: 'codeblock', className: 'cm-lp-codeblock' });
+      const roleClass =
+        role === 'open' ? 'cm-lp-codeblock-open' : role === 'close' ? 'cm-lp-codeblock-close' : 'cm-lp-codeblock-inside';
+      specs.push({
+        from: line.from,
+        to: line.from,
+        type: 'line',
+        tag: 'codeblock',
+        className: `cm-lp-codeblock ${roleClass}`,
+      });
       if ((role === 'open' || role === 'close') && !active) {
         const fenceMatch = FENCE_RE.exec(line.text)!;
         const fenceStart = line.from + fenceMatch[1].length;
@@ -851,7 +929,16 @@ export function computeDecorations(
     m = QUOTE_RE.exec(line.text);
     if (m) {
       const markerLen = m[1].length + m[2].length;
-      specs.push({ from: line.from, to: line.from, type: 'line', tag: 'quote', className: 'cm-lp-quote' });
+      const depth = (m[2].match(/>/g) || []).length;
+      const level = Math.max(1, Math.min(depth, 6));
+      specs.push({
+        from: line.from,
+        to: line.from,
+        type: 'line',
+        tag: 'quote',
+        className: `cm-lp-quote cm-lp-quote-l${level}`,
+        attrs: { level: String(depth) },
+      });
       if (!isCursor) {
         specs.push({ from: line.from + m[1].length, to: line.from + markerLen, type: 'hide', tag: 'quote-mark' });
       }
@@ -907,7 +994,9 @@ export function computeDecorations(
       const markerStart = line.from + indent;
       const markerEnd = markerStart + m[2].length + m[3].length;
       if (!isCursor) {
-        specs.push({ from: markerStart, to: markerEnd, type: 'replaceWidget', tag: 'list-bullet', attrs: { widget: '•', indent: String(indent) } });
+        const level = Math.floor(indent / 2);
+        const glyph = ULIST_BULLETS[level % ULIST_BULLETS.length];
+        specs.push({ from: markerStart, to: markerEnd, type: 'replaceWidget', tag: 'list-bullet', attrs: { widget: glyph, indent: String(indent) } });
       }
       specs.push(...parseInline(line.text, line.from, isCursor, indent + m[2].length + m[3].length));
       continue;
@@ -924,7 +1013,28 @@ export function computeDecorations(
         className: 'cm-lp-list cm-lp-list-ordered',
         attrs: { indent: String(indent), ordered: 'true' },
       });
-      // Ordered list markers stay visible (numbers carry meaning); just style.
+      // Ordered list markers: level 0 keeps the original Arabic numeral visible
+      // (numbers carry meaning); deeper levels render a Roman-numeral / alphabetic
+      // numeral widget to visually distinguish nesting (never on the cursor line,
+      // where the raw source stays editable per R-01-01).
+      const level = Math.floor(indent / 2);
+      if (level > 0 && !isCursor) {
+        const markerMatch = /^(\d+)([.)])$/.exec(m[2]);
+        if (markerMatch) {
+          const num = parseInt(markerMatch[1], 10);
+          const sep = markerMatch[2];
+          const numeral = level % 3 === 1 ? toRomanLower(num) : toAlpha(num);
+          const markerStart = line.from + indent;
+          const markerEnd = markerStart + m[2].length + m[3].length;
+          specs.push({
+            from: markerStart,
+            to: markerEnd,
+            type: 'replaceWidget',
+            tag: 'list-number',
+            attrs: { widget: `${numeral}${sep}`, indent: String(indent) },
+          });
+        }
+      }
       specs.push(...parseInline(line.text, line.from, isCursor, indent + m[2].length + m[3].length));
       continue;
     }

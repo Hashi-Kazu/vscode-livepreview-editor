@@ -22,7 +22,7 @@ import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, u
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
 import { headingFoldRange, parseTableRow } from '../core/model';
-import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
+import { LineWindow, viewportWindow, zoomFontSize, displayFontSize } from '../core/viewport';
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -486,7 +486,7 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       // heading/body left edge stays aligned (R-28-07). Sections start expanded.
       codeFolding(),
       headingFoldService,
-      foldGutter({ openText: '⌄', closedText: '›' }),
+      foldGutter({ openText: '▾', closedText: '▸' }),
       livePreviewField(),
       viewportDecorationPlugin,
       syncPlugin,
@@ -1106,10 +1106,15 @@ interface FontSizeScrollAnchor {
 
 function applyFontSize(size: number, scrollAnchor?: FontSizeScrollAnchor) {
   fontSize = size;
-  (document.getElementById('editor') as HTMLElement).style.fontSize = `${size}px`;
-  // Keep the decoration layer's block-height estimates in sync with the font
-  // size so `posAtCoords` stays accurate below tables/accordions (R-28-11).
-  setFontSize(size);
+  // The zoom/settings baseline (`fontSize`) stays the raw configured value;
+  // only the rendered px is scaled up (R-28-17) so the preview reads closer to
+  // a standard Markdown preview's default size.
+  const rendered = displayFontSize(size);
+  (document.getElementById('editor') as HTMLElement).style.fontSize = `${rendered}px`;
+  // Keep the decoration layer's block-height estimates in sync with the actual
+  // rendered font size so `posAtCoords` stays accurate below tables/accordions
+  // (R-28-11).
+  setFontSize(rendered);
   // Font changes invalidate both CodeMirror's height oracle and the selection
   // layer's document-height synchronization (R-28-14 / R-28-15).
   requestAnimationFrame(() => {

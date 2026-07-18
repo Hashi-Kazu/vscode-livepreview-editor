@@ -1,12 +1,14 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.34.0
+**バージョン**: 1.35.0
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-19
+**最終更新**: 2026-07-18
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-18 時点 / v1.35.0）**: v1.35.0 で、Live Preview の装飾・レイアウトの見た目を標準 Markdown プレビュー相当に近づける 10 項目の修正を行った。箇条書きは階層別マーカー（`•`/`○`/`▪`）＋本文色追従（R-01-05 改訂）、番号付きリストは 1 段目ローマ数字・2 段目アルファベットの階層別 numeral（R-01-07 新設）、太字＋斜体の複合記法 `***text***`/`___text___` を strong＋em で同時装飾（R-01-08 新設）、入れ子引用（`>>`）を階層クラスで表示（R-02-05 改訂）を純粋関数（`src/core/model.ts`）に実装した。CSS/Webview 側では、見出し下の区切り線・水平線単体の余白縮小、インラインコードの強調、フェンスコードブロックの行別 role クラスによる枠の一体化、折りたたみアイコンの拡大、リスト階層インデントの拡大（R-28-05／R-28-06 改訂）を行った。初期表示フォントサイズはズーム基準値の 1.1 倍で描画するようにした（`displayFontSize`、R-28-17 新設）。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
+>
 > ▶️ **開発継続中（2026-07-19 時点 / v1.34.0）**: v1.34.0 で、Live Preview の編集・保存時に Markdown ソースエディタータブを自動的に閉じる処理を廃止した。ソースタブ再表示への対策は、デバウンス apply 直後の即時保存による TextDocument の dirty 滞留防止に一本化し、拡張機能はユーザーが開いたソースタブを閉じない（R-03-08／R-03-11、ADR-0015／ADR-0019）。
 >
 > v1.33.1 で、保留中の Webview 編集と保存参加者イベントが競合した場合、イベント時点で保存正規化か真の外部変更かを分類し、保存正規化は pending edit の apply→即時保存後に bound TextDocument を再読込して再分類するよう修正した。古い保存正規化 snapshot を更新済み ack version で Webview へ送らず、連続英字入力の本文・キャレットと CodeMirror Undo 履歴を後退させない（R-04-02、ADR-0019）。真の外部変更はイベント snapshot を authoritative として維持する。
@@ -87,8 +89,10 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-01-03 太字 `**text**` を内側テキストの強調として装飾し、`**` マーカーを非カーソル行で隠す。
 - ■■■ R-01-06 アンダースコア強調（`_`・`__`）は ASCII 単語文字に挟まれた語中（例 `my_var_name`）では発火しないこと（CommonMark 準拠。アスタリスクは語中可）。
+- ■■□ R-01-08 太字＋斜体の複合記法 `***text***`/`___text___` を、内側テキストへ `strong` と `em` を同時に適用して装飾し、外側の `***`/`___` マーカーを非カーソル行で隠すこと。太字（`**`）判定が複合記法を誤って「太字＋内側に生の `*` を含む本文」と解釈しないよう、複合記法の判定を通常の太字・斜体判定より先に行うこと。`___` は語境界規則（R-01-06）を尊重すること。カーソル行では生記法を表示すること（R-01-01）。
 - ■■■ R-01-04 見出し `#`〜`######` をレベル別クラスで装飾し、`#` プレフィックスを非カーソル行で隠す。
-- ■■■ R-01-05 リスト `-` / `1.` を検知し、`-` マーカーをビュレットウィジェットへ置換（非カーソル行）。
+- ■■□ R-01-05 リスト `-` / `1.` を検知し、`-` マーカーをビュレットウィジェットへ置換（非カーソル行）。ビュレットは階層（インデント 2 スペースを 1 段として `Math.floor(indent/2)`）に応じて `•`（0 段目）/`○`（1 段目）/`▪`（2 段目、以降 3 段周期で繰り返し）のいずれかに切り替え、色はリンク色ではなく本文文字色（`var(--vscode-editor-foreground)`）に追従すること。
+- ■■□ R-01-07 番号付きリスト `1.`/`1)` は 0 段目（インデント 0〜1）はアラビア数字を生表示のまま維持し、1 段目はローマ数字小文字（`i.`/`ii.`/…）、2 段目はアルファベット小文字（`a.`/`b.`/…、以降 3 段周期で繰り返し）へ非カーソル行でのみマーカーをウィジェット置換すること。カーソル行では変換せず生記法（アラビア数字）を表示すること（R-01-01）。
 
 ---
 
@@ -107,7 +111,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜ブロック＞
 
-- ■■■ R-02-05 引用 `> quote` を装飾し、`>` マーカーを非カーソル行で隠す。
+- ■■□ R-02-05 引用 `> quote` を装飾し、`>` マーカーを非カーソル行で隠す。入れ子引用（`>>`・`>>>` … 最大 6 段）は `>` の連続数を階層深度として検知し、行クラスに `cm-lp-quote-l{1〜6}`（7 段以降は `l6` に丸める）を付与して段数に応じた左インデント・境界線幅を CSS で表現すること（純粋関数は深度算出のみを担い、色は引き続き `var(--vscode-*)` テーマ変数に追従、R-28-04）。マーカー非表示範囲は従来通り全 `>` とその直後の空白を覆うこと。
 - ■■■ R-02-06 フェンスコードブロック（```` ``` ````）を検知し、ブロック内の Markdown を一切装飾しない。
 - ■■■ R-02-07 表（ヘッダ＋区切り行）を検知し、区切り行を非カーソル行で隠す。
 
@@ -377,11 +381,11 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-28-04 本文・見出し・各記法の文字色を VS Code 標準テーマの色変数（`var(--vscode-...)`）に追従させ、独自のハードコード色を用いないこと。
 - ■■□ R-28-05 本文体裁を GitHub / VS Code 標準 Markdown プレビュー（github-markdown-css 風）に寄せること。具体的には次を満たすこと（描画エンジンと装飾ロジックは変更せず CSS の体裁のみで実現する）:
   - 本文フォントは UI/サンセリフ（`var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, sans-serif))`）とし、コード（`.cm-lp-code`/`.cm-lp-codeblock`）のみ monospace を維持。行間は 1.6 前後。
-  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出しと本文の間に十分な余白を設けるため、見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.6em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`、境界線下の空きを含め `padding-bottom: 0.75em`）を付与する。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
-  - インラインコードは淡背景＋角丸の小ピル、ブロックコード `.cm-lp-codeblock` は全幅背景＋十分なパディング（例 `12px 16px`）にする。
-  - 引用 `.cm-lp-quote`・表 `table.cm-lp-table`（ボーダー・ヘッダ背景・任意のゼブラ）・水平線 `.cm-lp-hr-line` を GitHub プレビュー風にする。
+  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出しと本文の間に十分な余白を設けるため、見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.6em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`）を付与する。h1/h2 の境界線下の空きは締まった見た目にするため `padding-bottom: 0.3em`（境界線上の余白と合わせた合計値）とする。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
+  - インラインコードは淡背景＋角丸の小ピル、ブロックコード `.cm-lp-codeblock` は全幅背景＋十分なパディング（例 `12px 16px`）にする。ブロックコードは行ごとの `Decoration.line` にフェンス役割（開始行 `cm-lp-codeblock-open`／内部行 `cm-lp-codeblock-inside`／終了行 `cm-lp-codeblock-close`）別クラスを付与し、上下の角丸・境界線を開始/終了行だけに適用することで、行単位の枠が分裂せず 1 つの連続したブロックとして描画されること（純粋関数側は `computeDecorations` の codeblock line spec に role 別クラスを含めるのみで、フェンス検知ロジック自体は不変）。
+  - 引用 `.cm-lp-quote`・表 `table.cm-lp-table`（ボーダー・ヘッダ背景・任意のゼブラ）・水平線 `.cm-lp-hr-line` を GitHub プレビュー風にする。水平線の上下余白は `padding: 0.05em 0` 目安まで詰め、区切り線単体の視覚的な間延びを抑えること（R-28-14 に従い margin ではなく padding で表現）。
   - すべての色は `var(--vscode-*)` 変数でテーマ追従を維持し（ハードコード色禁止・フォールバックのみ可）、`.cm-lp-table-row` の `font-variant-numeric: tabular-nums` を維持する。カーソル行で生記法が見えても体裁が崩れないこと（カーソル行表示ロジックは変更しない）。
-- ■■□ R-28-06 「Markdown All in One」プレビューに体裁を寄せる追加の磨き込みを行うこと（CSS のみ／装飾ロジック不変）: ブロックコードに淡いボーダー（`border: 1px solid var(--vscode-panel-border)`）、引用に淡い背景バンド（`var(--vscode-textBlockQuote-background)`）、`<details>` アコーディオンのマーカーを小さめ・控えめ（`▶`/`▼`、`font-size: 0.8em` 目安）にし、マーカーとサマリテキストの間に余白（`margin-right: 0.4em` 目安）を設け、サマリテキストを通常ウェイト（`font-weight: 400`）にすること。チェックボックスとタスク本文の間に十分な余白を設けること。
+- ■■□ R-28-06 「Markdown All in One」プレビューに体裁を寄せる追加の磨き込みを行うこと（CSS のみ／装飾ロジック不変、一部は line spec への role/indent 属性付与を伴う）: インラインコード `.cm-lp-code` は背景をやや濃く（`var(--vscode-textCodeBlock-background)` 目安）し `border: 1px solid var(--vscode-panel-border)` を追加して本文から視認しやすくすること。ブロックコードに淡いボーダー（`border: 1px solid var(--vscode-panel-border)`）、引用に淡い背景バンド（`var(--vscode-textBlockQuote-background)`）、`<details>` アコーディオンのマーカーを小さめ・控えめ（`▶`/`▼`、`font-size: 0.8em` 目安）にし、マーカーとサマリテキストの間に余白（`margin-right: 0.4em` 目安）を設け、サマリテキストを通常ウェイト（`font-weight: 400`）にすること。チェックボックスとタスク本文の間に十分な余白を設けること。見出し折りたたみガター（R-30）のシェブロンは視認性のため `font-size` を大きめ（`1.3em` 目安）にし、ガター幅・左端整列（R-28-07）は維持すること。リスト・タスクの階層インデントは、生の先頭空白だけに頼らず行装飾（`Decoration.line` の `attributes.style` に `padding-left`）で `Math.floor(indent/2)` 段あたり `1.5em` 目安を加算し、深い階層ほど視覚的な段差が明確になるようにすること（カーソル行でもレイアウトが崩れないこと）。
 - ■■□ R-28-07 左右の読みやすい余白を「Markdown All in One」プレビューに寄せること（`.cm-content` のパディングを `20px 40px 24px 48px` 目安〔上 `20px`／右 `40px`／下 `24px`／左 `48px`〕とする。CodeMirror のインラインスタイル上書きを防ぐため `!important` を付与する）。見出しは行装飾のためインデントを増やさず、見出しと本文の左端が揃うこと。本文フォントは Markdown サンセリフスタックを明示指定（継承のみに頼らない）し、`font-weight: 400`（通常ウェイト）で等幅へフォールバックしないこと。
 - ■■□ R-28-08 タスク行（`.cm-line.cm-lp-task`）内のインラインリンク（`.cm-lp-task .cm-lp-link`）は R-21-04 に従いリンク色（`.cm-lp-link` の `color` を継承）と下線（hover 含む）を表示すること。`color` の上書きは行わない（R-08-06 の補完）。
 - ■■■ R-28-09 `<details>` アコーディオンは**ビューア専用**（R-27-03）のため、ブロック本文を生記法で表示する編集モードは持たない。本文・サマリのインライン記法（太字・斜体・インラインコード）は `details-block` ウィジェット側（`<summary>` は `appendInlineCell`）でのみ描画し、ブロック内カーソル時に生のマーカー（例 `**ワークパッケージ**`）が見えることはない。本文の編集は標準ソースエディタで行う。装飾は表示のみで入力文字列を変更しないこと。
@@ -392,6 +396,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-28-14 見出し行（`.cm-line.cm-lp-h1`〜`h6`）と HR 行（`.cm-lp-hr-line`）の上下余白が `margin` ではなく `padding` で表現されており、CodeMirror の height oracle が正確な行高さを計測できること。`getBoundingClientRect().height` は CSS `margin` を含まないため、見出し・HR 行の `margin-top`/`margin-bottom` が height oracle に計上されず、スクロール量に比例してクリック位置ずれが累積していた（R-28-10 でテーブルに対して同原則の修正を行ったが、見出し・HR に同問題が残存していた）。対策として `media/editor.css` の見出し `margin-top: 0.8em` → `padding-top: 0.8em`・`margin-bottom: 0.3em` → `padding-bottom: 0.3em`（h1/h2 は border-bottom 上の空きを統合し `padding-bottom: 0.55em`）、HR の `margin: 1em 0` → `padding: 0.15em 0`（余白縮小も兼ねる）へ変換すること。あわせて HR の `border-top` を 2px → 3px（`rgba(127,127,127,0.5)`）に変更し視認性を高めること。`applyFontSize` の末尾で `requestAnimationFrame(() => view.requestMeasure())` を呼び、フォントサイズ変更後に全行の実寸を再測定させること（`src/webview/main.ts`）。
 - ■■■ R-28-15 ドラッグ選択範囲が左右余白にはみ出さず、かつ長文の上部・中盤・末尾やスクロール後でも確実に視認できること。`.cm-selectionLayer` は `contain:size` かつ子要素が absolute 配置のため、CSS 高さ未指定では used height が 0 となり選択矩形がすべてクリップされ、`height:100%` では viewport 高に固定され文書途中以降がクリップされる。対策として `src/webview/main.ts` の専用 `ViewPlugin` が CodeMirror の `requestMeasure` read/write フェーズを使い、read で `view.contentHeight` と対象レイヤーを取得し、write で inline `height: ${view.contentHeight}px` を同期すること。同一キーで重複 measure を集約し、初期生成、`docViewUpdate`（文書・装飾・viewport 由来の DOM 更新）、`geometryChanged` / `docChanged`、フォントサイズ変更、表・`<details>` の再測定後をカバーし、destroy 時は付与した inline height を除去すること。CSS は `width:100%` と `clip-path: inset(0 40px 0 48px)` を維持して左右余白を除外し、固定 height は指定しないこと。
 - ■■□ R-28-16 Live エディター上で Ctrl（Windows/Linux）または Cmd（macOS）を押しながらマウスホイールを操作すると、ホイール上方向で 1px 拡大、下方向で 1px 縮小すること。ホイールの `deltaY` の大きさにかかわらず 1 回の gesture につき 1px のみ変更し、有効範囲は `livePreview.fontSize` と同じ 8〜40px にクランプする。計算は CodeMirror/DOM 非依存の純粋関数 `zoomFontSize`（`src/core/viewport.ts`）で行う。変更は現在の Webview タブ内の `fontSize` 状態だけに適用し、VS Code 設定、他タブ、再度開いたタブには保存・伝播しない。通常の修飾キーなしホイールは従来どおりスクロールし、キーボードショートカットによるズームは追加しない。ズーム時はポインタ直下の文書位置と行内 Y オフセットを変更前に記録し、既存 `applyFontSize` の再計測後に `.cm-scroller.scrollTop` を補正して表示アンカーを維持すること。
+- ■■□ R-28-17 Live エディターの実際の描画フォントサイズは、設定値（`livePreview.fontSize`／ズーム基準値）の 1.1 倍を初期表示から適用すること。ズームの基準値・クランプ（8〜40px）は素の設定値側で維持し（`zoomFontSize` は不変）、`#editor` の実描画 `px` と `setFontSize`（ブロックウィジェットの高さ会計、R-28-11）にはスケール後の値を渡すこと。スケール計算は CodeMirror/DOM 非依存の純粋関数 `displayFontSize`（`src/core/viewport.ts`）で行うこと。
 
 ### R-29 画像・ファイルのペースト/ドロップ挿入 #paste-media
 

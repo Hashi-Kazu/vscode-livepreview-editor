@@ -93,17 +93,38 @@ body {
   border-radius: 4px;
 }
 .cm-lp-code {
-  /* Inline code: subtle tinted pill (GitHub-style). */
+  /* Inline code: tinted pill with a visible border so it reads clearly against
+     the surrounding prose (GitHub-style, strengthened per R-28-06). */
   padding: 0.15em 0.4em;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.22));
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
 }
 .cm-lp-codeblock {
-  /* Block code: full-width background band with generous padding and a subtle
-     border, matching the GitHub / MAIO fenced-code look. */
+  /* Block code: full-width background band, matching the GitHub / MAIO fenced-
+     code look. Each line is its own `Decoration.line`, so the base rule only
+     carries the side borders + background; the top/bottom border and rounding
+     are added only on the open/close role lines below (R-28-05) so the whole
+     block reads as one continuous frame instead of a border box per line. */
   display: block;
-  padding: 12px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.25));
+  padding: 2px 16px;
+  border-left: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.25));
+  border-right: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.25));
   line-height: 1.45;
+}
+.cm-lp-codeblock-open {
+  padding-top: 10px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.25));
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+.cm-lp-codeblock-close {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.25));
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+.cm-lp-codeblock-inside {
+  /* Middle lines: side borders + background only (inherited above). */
 }
 
 /* --- Headings (GitHub-preview sizing, MPE-style strengthened hierarchy) --- */
@@ -155,8 +176,9 @@ body {
 .cm-line.cm-lp-h1,
 .cm-line.cm-lp-h2 {
   border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3)));
-  /* 0.6em 下余白 + 0.15em border 上の空き = 0.75em（padding-bottom を上書き）*/
-  padding-bottom: 0.75em;
+  /* 見出し直下の罫線までの余白を詰めて標準プレビュー相当の締まった見た目にする
+     （padding-bottom を上書き、R-28-14: margin ではなく padding）。 */
+  padding-bottom: 0.3em;
 }
 
 .cm-lp-quote {
@@ -165,6 +187,31 @@ body {
   /* GitHub/MAIO render quotes in a muted color over a faint tinted band. */
   background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
   color: var(--vscode-textBlockQuote-foreground, var(--vscode-descriptionForeground, inherit));
+}
+/* Nested blockquotes (`>>`, `>>>`, …): each additional level adds its own
+   left border + indent so nesting depth reads visually (R-02-05), matching
+   standard Markdown-preview behaviour. Deeper levels reuse the same themed
+   border/background colors (no hard-coded color, R-28-04). */
+.cm-lp-quote-l1 { padding-left: 12px; }
+.cm-lp-quote-l2 {
+  padding-left: 24px;
+  border-left-width: 0.4em;
+}
+.cm-lp-quote-l3 {
+  padding-left: 36px;
+  border-left-width: 0.55em;
+}
+.cm-lp-quote-l4 {
+  padding-left: 48px;
+  border-left-width: 0.7em;
+}
+.cm-lp-quote-l5 {
+  padding-left: 60px;
+  border-left-width: 0.85em;
+}
+.cm-lp-quote-l6 {
+  padding-left: 72px;
+  border-left-width: 1em;
 }
 
 .cm-lp-link {
@@ -177,8 +224,16 @@ body {
 }
 
 .cm-lp-list-bullet {
-  color: var(--vscode-textLink-foreground);
+  /* Bullet color follows the body text color (standard Markdown-preview look),
+     not the link color (R-01-05). */
+  color: var(--vscode-editor-foreground);
   padding-right: 8px;
+}
+
+.cm-lp-list-number {
+  color: var(--vscode-editor-foreground);
+  padding-right: 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 .cm-lp-table-row {
@@ -189,11 +244,14 @@ body {
   display: block;
   /* 2px → 3px: 見やすい太さへ。不透明度も 0.4 → 0.5 に微調整。 */
   border-top: 3px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.5));
-  /* margin: 1em 0 → padding: 0.15em 0: getBoundingClientRect() は margin を含まないため
+  /* margin: 1em 0 → padding: 0.05em 0: getBoundingClientRect() は margin を含まないため
      margin を使うと height oracle が HR 行の実寸を過小評価する (R-28-14)。
-     余白を 1em → 0.4em → 0.15em へ縮小して区切り線の上下の空きをさらに詰めた。 */
-  padding: 0.15em 0;
+     余白を 1em → 0.4em → 0.15em → 0.05em へさらに縮小して区切り線の上下の空きを詰めた。 */
+  padding: 0.05em 0;
   width: 100%;
+}
+.cm-line.cm-lp-hr {
+  line-height: 1;
 }
 
 /* --- Tables (GitHub-preview look) ----------------------------------------- */
@@ -466,9 +524,9 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
   justify-content: flex-end;
   padding: 0 2px 0 0;
   font-family: var(--vscode-editor-font-family, sans-serif);
-  font-size: 0.9em;
+  font-size: 1.3em;
   line-height: 1;
-  transform: translateY(0.2em);
+  transform: translateY(0.15em);
   cursor: pointer;
   color: var(--vscode-descriptionForeground);
   opacity: 0.7;

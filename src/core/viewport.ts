@@ -59,3 +59,15 @@ function clampFontSize(size: number): number {
   if (!Number.isFinite(size)) return DEFAULT_SETTINGS.fontSize;
   return Math.max(8, Math.min(40, Math.round(size)));
 }
+
+/** Scale factor applied to the configured font size for on-screen display
+ *  (R-28-17). The underlying `fontSize` setting/zoom baseline is unchanged;
+ *  only the rendered `px` value is scaled up so the initial preview reads
+ *  closer to a standard Markdown preview's default size. */
+const DISPLAY_SCALE = 1.1;
+
+/** Pure helper: the actual on-screen font size (px) for a given base font size
+ *  setting, per {@link DISPLAY_SCALE} (R-28-17). */
+export function displayFontSize(base: number): number {
+  return Math.round(base * DISPLAY_SCALE);
+}
