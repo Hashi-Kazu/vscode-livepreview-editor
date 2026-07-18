@@ -255,6 +255,57 @@ export function detectDetailsBlocks(lines: LineInfo[], code: CodeBlockInfo): Det
   return blocks;
 }
 
+export interface MathBlock {
+  start: number; // first line index (the `$$` opener)
+  end: number; // last line index (the `$$` closer)
+  tex: string; // the TeX source between the fences (newline-joined)
+}
+
+/**
+ * Identify block math `$$…$$` fences as line ranges. Pure & framework-agnostic.
+ * Two forms are recognised:
+ *   1. Single line: `$$ E = mc^2 $$` (content between the fences on one line).
+ *   2. Multi-line: an opening line beginning with `$$` and a later line that is
+ *      only `$$` (whitespace-trimmed) as the closer.
+ * Fenced code blocks are skipped (a `$$` inside a code block is literal text).
+ * A leading `\$$` is an escaped literal and never opens a block. Unterminated
+ * multi-line fences (no closing `$$` line) are ignored so we never collapse to
+ * end-of-file.
+ */
+export function detectMathBlocks(lines: LineInfo[], code: CodeBlockInfo): MathBlock[] {
+  const blocks: MathBlock[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (code.role[i]) continue;
+    const t = lines[i].text;
+    // Opener: `$$` after optional leading whitespace (so `\$$…` does not match).
+    const open = /^\s*\$\$/.exec(t);
+    if (!open) continue;
+    const rest = t.slice(open[0].length);
+    // Single-line form: `$$ … $$` with non-empty content between the fences.
+    const single = /^(.*?)\$\$\s*$/.exec(rest);
+    if (single && single[1].trim() !== '') {
+      blocks.push({ start: i, end: i, tex: single[1].trim() });
+      continue;
+    }
+    // Multi-line form: scan for a line that is only `$$` (code blocks excluded).
+    let close = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (code.role[j]) continue;
+      if (/^\s*\$\$\s*$/.test(lines[j].text)) {
+        close = j;
+        break;
+      }
+    }
+    if (close === -1) continue; // unterminated — leave as raw text
+    const body: string[] = [];
+    if (rest.trim() !== '') body.push(rest.trim());
+    for (let j = i + 1; j < close; j++) body.push(lines[j].text);
+    blocks.push({ start: i, end: close, tex: body.join('\n').trim() });
+    i = close;
+  }
+  return blocks;
+}
+
 /** Split a table row into trimmed cell strings (outer pipes ignored). */
 export function parseTableRow(text: string): string[] {
   let s = text.trim();
@@ -300,6 +351,10 @@ interface InlineMatch {
 }
 
 const INLINE_CODE_RE = /`([^`\n]+)`/y;
+// Inline math $…$ (KaTeX). Open `$` directly followed by a non-space non-`$`
+// char; close `$` directly preceded by a non-space non-`$` char; no `$`/newline
+// inside. `\$` (escaped dollar) is rejected by the caller (preceding backslash).
+const MATH_INLINE_RE = /\$([^\s$](?:[^$\n]*[^\s$])?)\$/y;
 const IMAGE_RE = /!\[([^\]\n]*)\]\(([^)\n]+)\)/y;
 const LINK_RE = /\[([^\]\n]+)\]\(([^)\n]+)\)/y;
 const BOLD_RE = /(\*\*|__)(\S[\s\S]*?\S|\S)\1/y;
@@ -351,6 +406,29 @@ export function parseInline(text: string, base: number, cursorLine: boolean, seg
           return specs;
         },
       };
+    }
+
+    // Inline math $…$ — priority right after inline code. A `$` immediately
+    // preceded by a backslash is an escaped literal (`\$`), not a delimiter.
+    if (!matched && text[i] === '$' && !(i > 0 && text[i - 1] === '\\')) {
+      MATH_INLINE_RE.lastIndex = i;
+      m = MATH_INLINE_RE.exec(text);
+      if (m && m.index === i) {
+        const tex = m[1];
+        const full = m[0];
+        matched = {
+          start: i,
+          end: i + full.length,
+          specs: (b, cur) => {
+            // On the cursor line the raw `$…$` stays visible (editable); off
+            // cursor it becomes a KaTeX widget. Never mutate the source (R-01-02).
+            if (cur) return [];
+            return [
+              { from: b + i, to: b + i + full.length, type: 'replaceWidget', tag: 'math-inline', attrs: { tex } },
+            ];
+          },
+        };
+      }
     }
 
     if (!matched) {
@@ -579,6 +657,13 @@ export function computeDecorations(
     detailsStartAt.set(db.start, db);
     for (let j = db.start; j <= db.end; j++) detailsMember[j] = true;
   }
+  const mathBlocks = detectMathBlocks(lines, code);
+  const mathStartAt = new Map<number, MathBlock>();
+  const mathMember: boolean[] = new Array(lines.length).fill(false);
+  for (const mb of mathBlocks) {
+    mathStartAt.set(mb.start, mb);
+    for (let j = mb.start; j <= mb.end; j++) mathMember[j] = true;
+  }
   const specs: DecoSpec[] = [];
 
   const inRange = (i: number) =>
@@ -652,6 +737,26 @@ export function computeDecorations(
       });
       i = block.end;
       continue;
+    }
+
+    // --- Block math ($$…$$) ---------------------------------------------
+    if (mathMember[i]) {
+      const block = mathStartAt.get(i);
+      if (!block) continue; // inner lines handled by the start
+      const active = blockHasCursor(block.start, block.end);
+      if (!active) {
+        // Caret outside the block → replace the whole fence with a KaTeX widget.
+        specs.push({
+          from: lines[block.start].from,
+          to: lines[block.end].to,
+          type: 'replaceWidget',
+          tag: 'math-block',
+          attrs: { tex: block.tex },
+        });
+        i = block.end;
+        continue;
+      }
+      // Active: fall through so the raw `$$…$$` fence stays visible/editable.
     }
 
     const isCursor = cursorLines.has(i);

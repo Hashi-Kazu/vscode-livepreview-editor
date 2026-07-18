@@ -411,6 +411,19 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-31-02 Webview はビューア内（CodeMirror DOM 外のオーバーレイ）に未保存インジケータを表示し、dirty=true のときのみ視認でき、dirty=false で消えること。色は `var(--vscode-*)` 追従。
 - ■■□ R-31-03 インジケータ要素は CodeMirror の装飾・高さ計測・クリック位置に干渉しないこと。
 
+### R-32 数式レンダリング #math
+
+> **理由：** Markdown 中の数式（インライン `$…$`・ブロック `$$…$$`）を KaTeX で表示描画し、他の装飾と同様に「非カーソルはレンダリング／カーソル内は生記法」で編集できるようにする。
+
+> **説明：** 装飾判定は CodeMirror 非依存の純粋関数（`src/core/model.ts`）で行う（ADR-0002 / 0003）。インラインは `parseInline` に `$…$` 検知を追加する（優先度はインラインコードの次。開き `$` の直後・閉じ `$` の直前が非空白、内部に `$`／改行を含まない、直前が `\` の `\$` はエスケープとして対象外、コードブロック内は既存 code 判定により対象外）。非カーソル行では `replaceWidget`（tag `math-inline`、`attrs.tex`）へ置換、カーソル行では生記法を表示する。ブロックは新設の純粋関数 `detectMathBlocks(lines, code)` が `$$…$$`（単一行 `$$ … $$` と、`$$` で始まり後続の `$$` 行で閉じる複数行の両形式。コードブロック除外・先頭 `\$$` エスケープ非対象・未終了非対象）を検知し、`computeDecorations` の table/details と同様の位置でキャレットがブロック外のときのみ `replaceWidget`（tag `math-block`、`block: true`）へ置換、ブロック内では生記法を表示する（table と同じ active 判定）。Webview（`src/webview/decorations.ts`）は `MathInlineWidget`／`MathBlockWidget` を追加し、`katex.render(tex, element, { throwOnError: false })` で DOM へ直接描画する（生ユーザー HTML は挿入しない）。KaTeX JS は `dist/webview.js` に IIFE バンドルされ、CSS/フォントは `esbuild.js` が `media/katex/`（`katex.min.css` と `fonts/`）へコピーし、`getHtml`（`src/livePreviewViewerManager.ts`）が `<link>` で配信する。`font-src ${cspSource}` で許可済み。`script-src` は nonce のみを維持し外部 script を追加しない（ADR-0006）。`MathBlockWidget` は `estimatedHeight` を実装し `toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶ（R-28-10 / R-28-11）。本文は書き換えない（R-01-02）。
+
+###### ＜数式レンダリング＞
+
+- ■■□ R-32-01 純粋関数はインライン `$…$` を検知し（開き直後／閉じ直前が非空白・内部に `$`／改行なし・`\$` エスケープ尊重・コードブロック除外）、非カーソル行で数式ウィジェットへ置換、カーソル行で生記法を表示すること。装飾は入力文字列を変更しないこと（R-01-02）。
+- ■■□ R-32-02 純粋関数 `detectMathBlocks` は `$$…$$` ブロック（コードブロック除外・未終了は非対象）を検知し、カーソルがブロック外のとき block 数式ウィジェットへ置換、ブロック内では生記法を表示すること。
+- ■■□ R-32-03 Webview は KaTeX を JS バンドル同梱・CSS/フォントを `media/katex/` から配信して数式を DOM 描画し、レンダリング失敗時も Webview を落とさず生 tex をフォールバック表示すること。CSP（nonce／font-src cspSource）を維持すること。
+- ■■□ R-32-04 block 数式ウィジェットは `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶこと（R-28-10 / R-28-11）。
+
 ### R-33 アウトライン/目次 #outline
 
 > **理由：** 長い文書内で見出し間を素早く移動できるよう、ビューア内にナビゲーション用の目次を設ける。

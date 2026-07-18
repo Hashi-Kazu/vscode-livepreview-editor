@@ -550,3 +550,18 @@ table.cm-lp-table tr:nth-child(2n) td {
   margin: 4px 0;
   background: var(--vscode-menu-separatorBackground, var(--vscode-widget-border, rgba(255, 255, 255, 0.12)));
 }
+
+/* --- R-32 math --- */
+/* Inline KaTeX stays on the text baseline; block math is centred with a little
+   vertical breathing room. Colours inherit the editor foreground (KaTeX uses
+   currentColor), so they follow the VS Code theme (R-28-04). */
+.cm-lp-math-inline {
+  color: var(--vscode-editor-foreground);
+}
+.cm-lp-math-block {
+  display: block;
+  margin: 0.5em 0;
+  text-align: center;
+  color: var(--vscode-editor-foreground);
+  overflow-x: auto;
+}

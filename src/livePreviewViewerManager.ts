@@ -849,6 +849,12 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'editor.css'),
     );
+    // KaTeX stylesheet (R-32). Served from media/katex/; its relative `fonts/…`
+    // url()s resolve against this URI's directory (media/katex/fonts/) and are
+    // allowed by `font-src ${cspSource}`.
+    const katexStyleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'katex', 'katex.min.css'),
+    );
     const nonce = getNonce();
     const csp = [
       `default-src 'none'`,
@@ -864,6 +870,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="${katexStyleUri}" rel="stylesheet" />
   <link href="${styleUri}" rel="stylesheet" />
   <title>Live Preview</title>
 </head>
