@@ -29,6 +29,14 @@ on obsolete text, which can resurrect prior content during Undo.
   Webview applies the `computeRemotePatch` minimal diff under `applyingRemote`
   with `addToHistory.of(false)`, so an explicit save (Ctrl+S) or an on-blur
   flush save while the user is still typing keeps the undo stack intact.
+- A save normalization that changed *only* the document's trailing final
+  newline (`files.insertFinalNewline` / `files.trimFinalNewlines`, detected by
+  `isTrailingNewlineOnlyDifference`) is the one history-preserving case that is
+  *not* pushed into CodeMirror. Applying a boundary-newline insert out-of-history
+  strands the newline when the user later undoes an earlier edit (the inverse
+  change maps around it), inserting a blank line and making undo appear to add
+  lines. The host reconciles only its own dirty state; the Webview keeps the
+  user content it holds, and the final newline is re-applied on each save.
 - Only a genuine external change (Git pull, another editor's real content edit)
   or an `applyEdit` failure rollback is authoritative: the Webview recreates its
   EditorState after mapping selection with `computeRemotePatch`, clearing its
