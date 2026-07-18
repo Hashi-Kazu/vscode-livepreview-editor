@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeDecorations, DecoSpec } from '../src/core/model';
+import { computeDecorations, DecoSpec, detectMathBlocks, splitLines, detectCodeBlocks } from '../src/core/model';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
 const text = (doc: string, s: DecoSpec) => doc.slice(s.from, s.to);
@@ -126,6 +126,89 @@ describe('Phase 2: tables', () => {
     // raw `| a | b |` rows show and the cell text is editable in-place (R-22-02).
     const specs = computeDecorations(doc, new Set([2]));
     expect(byTag(specs, 'table-block')).toHaveLength(0);
+  });
+});
+
+describe('R-32 数式レンダリング', () => {
+  const mathBlocks = (doc: string) => {
+    const lines = splitLines(doc);
+    return detectMathBlocks(lines, detectCodeBlocks(lines));
+  };
+
+  it('renders inline $…$ as a math-inline widget off-cursor (R-32-01)', () => {
+    const doc = 'energy is $E = mc^2$ indeed';
+    const specs = computeDecorations(doc, new Set());
+    const inline = byTag(specs, 'math-inline');
+    expect(inline).toHaveLength(1);
+    expect(inline[0].type).toBe('replaceWidget');
+    expect(inline[0].attrs?.tex).toBe('E = mc^2');
+  });
+
+  it('shows raw inline $…$ on the cursor line (R-32-01)', () => {
+    const doc = 'energy is $E = mc^2$ indeed';
+    const specs = computeDecorations(doc, new Set([0]));
+    expect(byTag(specs, 'math-inline')).toHaveLength(0);
+  });
+
+  it('never mutates the source when decorating inline math (R-01-02)', () => {
+    const doc = 'a $x^2$ b';
+    const before = doc;
+    computeDecorations(doc, new Set());
+    expect(doc).toBe(before);
+  });
+
+  it('does not treat an escaped \\$ as an inline delimiter (R-32-01)', () => {
+    const doc = 'price \\$5 and \\$10 here';
+    const specs = computeDecorations(doc, new Set());
+    expect(byTag(specs, 'math-inline')).toHaveLength(0);
+  });
+
+  it('requires non-space directly inside the $ delimiters (R-32-01)', () => {
+    const doc = 'a $ x $ b';
+    const specs = computeDecorations(doc, new Set());
+    expect(byTag(specs, 'math-inline')).toHaveLength(0);
+  });
+
+  it('detects a multi-line $$…$$ block (R-32-02)', () => {
+    const blocks = mathBlocks(['$$', 'E = mc^2', '$$'].join('\n'));
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ start: 0, end: 2, tex: 'E = mc^2' });
+  });
+
+  it('detects a single-line $$…$$ block (R-32-02)', () => {
+    const blocks = mathBlocks('$$ a + b $$');
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ start: 0, end: 0, tex: 'a + b' });
+  });
+
+  it('replaces an off-cursor $$…$$ block with a math-block widget (R-32-02)', () => {
+    const doc = ['$$', 'E = mc^2', '$$'].join('\n');
+    const specs = computeDecorations(doc, new Set());
+    const block = byTag(specs, 'math-block');
+    expect(block).toHaveLength(1);
+    expect(block[0].type).toBe('replaceWidget');
+    expect(block[0].attrs?.tex).toBe('E = mc^2');
+  });
+
+  it('shows raw $$…$$ when the cursor is inside the block (R-32-02)', () => {
+    const doc = ['$$', 'E = mc^2', '$$'].join('\n');
+    const specs = computeDecorations(doc, new Set([1]));
+    expect(byTag(specs, 'math-block')).toHaveLength(0);
+  });
+
+  it('ignores $$ inside a fenced code block (R-32-02)', () => {
+    const doc = ['```', '$$', 'x = 1', '$$', '```'].join('\n');
+    expect(mathBlocks(doc)).toHaveLength(0);
+  });
+
+  it('ignores an escaped \\$$ opener (R-32-02)', () => {
+    const doc = ['\\$$', 'x = 1', '\\$$'].join('\n');
+    expect(mathBlocks(doc)).toHaveLength(0);
+  });
+
+  it('ignores an unterminated $$ fence (R-32-02)', () => {
+    const doc = ['$$', 'E = mc^2'].join('\n');
+    expect(mathBlocks(doc)).toHaveLength(0);
   });
 });
 

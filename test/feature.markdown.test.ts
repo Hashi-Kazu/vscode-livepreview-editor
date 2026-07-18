@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow, tableRowSourceLine } from '../src/core/model';
+import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow, tableRowSourceLine, scanHeadings, headingFoldRange } from '../src/core/model';
+import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn } from '../src/core/tableEdit';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
 const slice = (doc: string, s: DecoSpec) => doc.slice(s.from, s.to);
@@ -161,6 +162,64 @@ describe('R-22 表のレンダリング', () => {
   });
 });
 
+// R-22-05: テーブル行列操作（純粋ロジック）
+describe('R-22-05 テーブル行列操作（純粋ロジック）', () => {
+  const table = () => ['| a | b |', '| :-- | --: |', '| 1 | 2 |', '| 3 | 4 |'];
+
+  it('insertTableRow: 下に空行を挿入する（区切り行は維持）', () => {
+    const result = insertTableRow(table(), 0); // 1行目の body の下
+    expect(result).toEqual(['| a | b |', '| :-- | --: |', '| 1 | 2 |', '|   |   |', '| 3 | 4 |']);
+  });
+
+  it("insertTableRow: 'top' は先頭 body 行として挿入する", () => {
+    const result = insertTableRow(table(), 'top');
+    expect(result).toEqual(['| a | b |', '| :-- | --: |', '|   |   |', '| 1 | 2 |', '| 3 | 4 |']);
+  });
+
+  it('insertTableRow: 負のインデックス（ヘッダ相当）は変更しない', () => {
+    expect(insertTableRow(table(), -1)).toEqual(table());
+  });
+
+  it('deleteTableRow: 指定 body 行を削除する', () => {
+    expect(deleteTableRow(table(), 0)).toEqual(['| a | b |', '| :-- | --: |', '| 3 | 4 |']);
+  });
+
+  it('deleteTableRow: ヘッダ削除ガード（範囲外は変更しない）', () => {
+    expect(deleteTableRow(table(), -1)).toEqual(table()); // ヘッダ/区切り相当
+    expect(deleteTableRow(table(), 2)).toEqual(table()); // body 行数超過
+  });
+
+  it('insertTableColumn: 右に列を追加し区切り行の整合を保つ', () => {
+    const result = insertTableColumn(table(), 0, 'right');
+    expect(result).toEqual(['| a |   | b |', '| :-- | --- | --: |', '| 1 |   | 2 |', '| 3 |   | 4 |']);
+  });
+
+  it('insertTableColumn: 左に列を追加する', () => {
+    const result = insertTableColumn(table(), 1, 'left');
+    expect(result).toEqual(['| a |   | b |', '| :-- | --- | --: |', '| 1 |   | 2 |', '| 3 |   | 4 |']);
+  });
+
+  it('deleteTableColumn: 指定列を全行から削除しアライメントを維持する', () => {
+    const result = deleteTableColumn(table(), 0);
+    expect(result).toEqual(['| b |', '| --: |', '| 2 |', '| 4 |']);
+  });
+
+  it('deleteTableColumn: 最後の1列削除はガードする', () => {
+    const single = ['| a |', '| :-- |', '| 1 |'];
+    expect(deleteTableColumn(single, 0)).toEqual(single);
+  });
+
+  it('入力配列を破壊しない', () => {
+    const input = table();
+    const snapshot = input.slice();
+    insertTableRow(input, 0);
+    deleteTableRow(input, 0);
+    insertTableColumn(input, 0, 'right');
+    deleteTableColumn(input, 0);
+    expect(input).toEqual(snapshot);
+  });
+});
+
 // R-27: HTML <details> アコーディオン（既定で折りたたみ）
 describe('R-27 <details> アコーディオン', () => {
   const inline = ['<details><summary>クリックして開く</summary>', '', '中身', '', '</details>'].join('\n');
@@ -267,6 +326,107 @@ describe('R-27 <details> アコーディオン', () => {
       const before = doc;
       computeDecorations(doc, new Set([0]));
       expect(before).toBe(doc);
+    });
+  });
+});
+
+// R-30: 見出しセクション折りたたみ
+describe('R-30 見出しセクション折りたたみ', () => {
+  describe('scanHeadings（R-30-01）', () => {
+    it('全見出しをレベル・テキスト・行番号・オフセット付きで返す', () => {
+      const doc = ['# A', 'body', '## B', 'more', '### C'].join('\n');
+      const headings = scanHeadings(doc);
+      expect(headings.map((h) => [h.level, h.text, h.line])).toEqual([
+        [1, 'A', 0],
+        [2, 'B', 2],
+        [3, 'C', 4],
+      ]);
+      // オフセットは見出し行の絶対位置。
+      const lines = splitLines(doc);
+      expect(headings[1].from).toBe(lines[2].from);
+      expect(headings[1].to).toBe(lines[2].to);
+    });
+
+    it('フェンスコードブロック内の # は見出しとして誤検知しない', () => {
+      const doc = ['# Real', '```', '# not a heading', '## also not', '```', '## Real2'].join('\n');
+      const headings = scanHeadings(doc);
+      expect(headings.map((h) => [h.text, h.line])).toEqual([
+        ['Real', 0],
+        ['Real2', 5],
+      ]);
+    });
+
+    it('アウトライン用途: 複数レベルの見出しを網羅し、コードブロック内 # を除外し、行番号が正確であること（R-33-01）', () => {
+      const doc = [
+        '# Title',
+        'intro',
+        '## Section A',
+        '```',
+        '# fake',
+        '## also fake',
+        '```',
+        '### Subsection A.1',
+        'text',
+        '#### Deep',
+        '## Section B',
+        '###### Deepest',
+      ].join('\n');
+      const headings = scanHeadings(doc);
+      expect(headings.map((h) => [h.level, h.text, h.line])).toEqual([
+        [1, 'Title', 0],
+        [2, 'Section A', 2],
+        [3, 'Subsection A.1', 7],
+        [4, 'Deep', 9],
+        [2, 'Section B', 10],
+        [6, 'Deepest', 11],
+      ]);
+      // すべてのレベル 1〜6 が本ドキュメント内の見出し走査で少なくとも一度は
+      // 網羅されていること（アウトラインのインデント表示に必要な情報）。
+      expect(new Set(headings.map((h) => h.level))).toEqual(new Set([1, 2, 3, 4, 6]));
+    });
+  });
+
+  describe('headingFoldRange（R-30-02）', () => {
+    it('次の同レベル見出しの直前行末までを折りたたみ範囲として返す', () => {
+      const doc = ['# A', 'body1', 'body2', '# B', 'body3'].join('\n');
+      const lines = splitLines(doc);
+      const range = headingFoldRange(doc, 0);
+      expect(range).toEqual({ from: lines[0].to, to: lines[2].to });
+    });
+
+    it('より強い（浅い）見出しの直前で範囲を打ち切る', () => {
+      const doc = ['# A', 'a1', '## B', 'b1', '# C'].join('\n');
+      const lines = splitLines(doc);
+      // ## B のセクションは # C の直前（b1 の行末）まで。
+      expect(headingFoldRange(doc, 2)).toEqual({ from: lines[2].to, to: lines[3].to });
+      // # A のセクションは # C の直前まで（## B を含む）。
+      expect(headingFoldRange(doc, 0)).toEqual({ from: lines[0].to, to: lines[3].to });
+    });
+
+    it('同レベル以下の見出しが無ければ文書末まで折りたたむ', () => {
+      const doc = ['# A', 'x', '## B', 'y'].join('\n');
+      const lines = splitLines(doc);
+      expect(headingFoldRange(doc, 0)).toEqual({ from: lines[0].to, to: lines[3].to });
+    });
+
+    it('配下が無い場合は null を返す', () => {
+      // 見出しが最終行。
+      expect(headingFoldRange('body\n# Last', 1)).toBeNull();
+      // 直後に同レベル見出しが続き、間に本文が無い。
+      const doc = ['# A', '# B', 'b'].join('\n');
+      expect(headingFoldRange(doc, 0)).toBeNull();
+    });
+
+    it('見出し行でなければ null を返す', () => {
+      expect(headingFoldRange(['# A', 'body'].join('\n'), 1)).toBeNull();
+    });
+
+    it('コードブロックを跨いでも正しく範囲を返す', () => {
+      const doc = ['# A', 'intro', '```', '# not a heading', '```', 'outro', '# B'].join('\n');
+      const lines = splitLines(doc);
+      // コード内の # は見出し扱いされないので、# A は次の実見出し # B の直前
+      //（outro 行末）まで畳む。コードブロックを跨いでも打ち切られない。
+      expect(headingFoldRange(doc, 0)).toEqual({ from: lines[0].to, to: lines[5].to });
     });
   });
 });

@@ -7,6 +7,7 @@ import { EditorState, Prec, StateEffect, StateField, Transaction } from '@codemi
 import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, isolateHistory } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
+import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/language';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import {
   computeRemotePatch,
@@ -16,8 +17,10 @@ import {
   toggleTaskAt,
 } from '../core/sync';
 import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
+import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
+import { headingFoldRange, scanHeadings, HeadingInfo } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
 
 interface VsCodeApi {
@@ -205,6 +208,42 @@ class SelectionLayerHeightSync {
 }
 
 const selectionLayerHeightPlugin = ViewPlugin.fromClass(SelectionLayerHeightSync);
+
+/**
+ * Recompute the floating outline panel (R-33) whenever the document changes.
+ * `scanHeadings` is a full-document pure scanner (not viewport-limited, unlike
+ * `computeDecorations` — R-05-05), so the outline stays complete regardless of
+ * scroll position. Recomputation is deferred to a microtask so a burst of
+ * keystrokes collapses into a single re-render (lightweight debounce).
+ */
+class OutlineSync {
+  private scheduled = false;
+  private destroyed = false;
+
+  constructor(private readonly view: EditorView) {
+    this.schedule();
+  }
+
+  private schedule() {
+    if (this.scheduled || this.destroyed) return;
+    this.scheduled = true;
+    queueMicrotask(() => {
+      this.scheduled = false;
+      if (this.destroyed) return;
+      renderOutline(scanHeadings(this.view.state.doc.toString()));
+    });
+  }
+
+  update(update: ViewUpdate) {
+    if (update.docChanged) this.schedule();
+  }
+
+  destroy() {
+    this.destroyed = true;
+  }
+}
+
+const outlinePlugin = ViewPlugin.fromClass(OutlineSync);
 
 function postEdit(text: string) {
   editVersion++;
@@ -408,6 +447,14 @@ const mediaDomHandlers = Prec.highest(
   }),
 );
 
+// R-30: fold whole heading sections. The fold range is computed by the pure
+// full-document scanner `headingFoldRange` (not the viewport-limited decoration
+// pass), so a section is folded correctly even when it spans a code block or
+// lies outside the current viewport.
+const headingFoldService = foldService.of((state, lineStart) =>
+  headingFoldRange(state.doc.toString(), state.doc.lineAt(lineStart).number - 1),
+);
+
 function makeState(text: string, selection?: { anchor: number; head: number }): EditorState {
   return EditorState.create({
     doc: text,
@@ -418,10 +465,18 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       arrowKeymap,
       editingKeymap,
       mediaDomHandlers,
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
       markdown(),
+      // R-30 heading-section folding. `codeFolding()` supplies fold state +
+      // placeholder; `headingFoldService` provides heading ranges; `foldGutter`
+      // renders the ▼/▶ toggles. The gutter is width-compensated in CSS so the
+      // heading/body left edge stays aligned (R-28-07). Sections start expanded.
+      codeFolding(),
+      headingFoldService,
+      foldGutter({ openText: '▼', closedText: '▶' }),
       livePreviewField(),
       viewportDecorationPlugin,
+      outlinePlugin,
       syncPlugin,
       EditorView.lineWrapping,
       // Draw CodeMirror's own cursor/selection elements so we can style the
@@ -436,6 +491,73 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
 const view = new EditorView({
   state: makeState(''),
   parent: document.getElementById('editor')!,
+});
+
+// --- R-31: unsaved indicator --------------------------------------------------
+// A fixed overlay outside the CodeMirror DOM so it never interferes with
+// decorations, height measurement, or click-position handling. Its visibility
+// reflects the host's authoritative `TextDocument.isDirty` only (the Webview
+// never estimates dirty state itself).
+const unsavedIndicator = document.createElement('div');
+unsavedIndicator.className = 'cm-lp-unsaved-indicator';
+unsavedIndicator.title = '未保存の変更があります';
+document.body.appendChild(unsavedIndicator);
+
+// --- R-33: outline / table-of-contents panel ---------------------------------
+// A floating overlay outside the CodeMirror DOM (like the R-31 unsaved
+// indicator) so it never interferes with decoration/measure/click-position
+// handling inside `.cm-editor` (R-28-13 / R-28-15). Content is display-only;
+// the user's Markdown source is never modified by this panel (R-01-02).
+const outlinePanel = document.createElement('div');
+outlinePanel.className = 'cm-lp-outline-panel';
+
+const outlineToggle = document.createElement('button');
+outlineToggle.type = 'button';
+outlineToggle.className = 'cm-lp-outline-toggle';
+outlineToggle.title = '目次を表示/非表示';
+outlineToggle.textContent = '目次';
+outlinePanel.appendChild(outlineToggle);
+
+const outlineList = document.createElement('div');
+outlineList.className = 'cm-lp-outline-list';
+outlinePanel.appendChild(outlineList);
+
+let outlineExpanded = false;
+function setOutlineExpanded(expanded: boolean) {
+  outlineExpanded = expanded;
+  outlinePanel.classList.toggle('is-expanded', expanded);
+}
+outlineToggle.addEventListener('click', () => setOutlineExpanded(!outlineExpanded));
+setOutlineExpanded(false);
+
+document.body.appendChild(outlinePanel);
+
+/** Re-render the outline list from a freshly scanned heading array. */
+function renderOutline(headings: HeadingInfo[]) {
+  outlineList.textContent = '';
+  for (const heading of headings) {
+    const item = document.createElement('div');
+    item.className = 'cm-lp-outline-item';
+    item.style.paddingLeft = `${(heading.level - 1) * 12}px`;
+    item.textContent = heading.text || '(見出し)';
+    item.dataset.line = String(heading.line);
+    outlineList.appendChild(item);
+  }
+}
+
+// Clicking an outline item moves the caret to the heading line and scrolls it
+// into view, without editing the document (R-01-02 / R-33-03).
+outlineList.addEventListener('click', (event) => {
+  const item = (event.target as HTMLElement).closest<HTMLElement>('.cm-lp-outline-item');
+  if (!item?.dataset.line) return;
+  const line = Number(item.dataset.line);
+  try {
+    const anchor = view.state.doc.line(line + 1).from; // doc.line is 1-based
+    view.dispatch({ selection: { anchor }, scrollIntoView: true });
+    view.focus();
+  } catch {
+    /* stale line number if the document changed just before the click */
+  }
 });
 
 /** Send a composition's final full document exactly once, after it is settled. */
@@ -557,9 +679,13 @@ view.dom.addEventListener(
     if (table) {
       event.preventDefault();
       event.stopImmediatePropagation();
+      // Only the primary button moves the caret into the block (R-22-02). A
+      // secondary press is still swallowed above (so CodeMirror does not move
+      // the caret either) but leaves the selection untouched, so the R-22-06
+      // right-click menu never activates the block (R-22-06).
       const tr = el.closest('tr');
       const dl = tr?.getAttribute('data-line');
-      if (dl != null) {
+      if (dl != null && shouldOpenLinkOnMouseDown(event.button)) {
         try {
           const anchor = view.state.doc.line(Number(dl) + 1).from; // doc.line is 1-based
           view.dispatch({ selection: { anchor } });
@@ -569,6 +695,142 @@ view.dom.addEventListener(
         }
       }
     }
+  },
+  true, // capture phase
+);
+
+// --- R-22-06: table row/column context menu ----------------------------------
+//
+// Right-clicking a rendered table cell opens a custom overlay menu (built in
+// plain DOM outside the CodeMirror tree) to add/remove rows and columns. The
+// body change goes through the SAME path as the checkbox toggle
+// (`computeRemotePatch` → `view.dispatch` with `isolateHistory.of('full')`), so
+// the existing `syncPlugin` → host `applyEdit` pipeline reflects it as a minimal
+// `WorkspaceEdit`. Right-click never moves the caret or activates the block.
+let tableMenuEl: HTMLElement | null = null;
+
+function closeTableMenu(): void {
+  if (!tableMenuEl) return;
+  tableMenuEl.remove();
+  tableMenuEl = null;
+  document.removeEventListener('mousedown', onDocMouseDownForTableMenu, true);
+  document.removeEventListener('keydown', onKeyDownForTableMenu, true);
+}
+
+function onDocMouseDownForTableMenu(event: MouseEvent): void {
+  if (tableMenuEl && !tableMenuEl.contains(event.target as Node)) closeTableMenu();
+}
+
+function onKeyDownForTableMenu(event: KeyboardEvent): void {
+  if (event.key === 'Escape') closeTableMenu();
+}
+
+/**
+ * Locate the table block that starts at `startLine`, run `transform` on its raw
+ * source lines, and apply the result as a minimal patch (checkbox toggle path).
+ * The block range is the run of consecutive non-empty `|`-bearing lines from the
+ * header down (mirrors `detectTableBlocks`).
+ */
+function applyTableEdit(startLine: number, transform: (lines: string[]) => string[]): void {
+  const current = view.state.doc.toString();
+  const docLines = current.split('\n');
+  if (startLine < 0 || startLine >= docLines.length) return;
+  let end = startLine;
+  for (let j = startLine + 1; j < docLines.length; j++) {
+    if (docLines[j].includes('|') && docLines[j].trim() !== '') end = j;
+    else break;
+  }
+  const block = docLines.slice(startLine, end + 1);
+  const next = transform(block);
+  if (next.join('\n') === block.join('\n')) return; // guard / no-op
+  const nextDoc = docLines.slice(0, startLine).concat(next, docLines.slice(end + 1)).join('\n');
+  const sel = view.state.selection.main;
+  const patch = computeRemotePatch(current, nextDoc, { anchor: sel.anchor, head: sel.head });
+  view.dispatch({
+    changes: { from: patch.from, to: patch.to, insert: patch.insert },
+    annotations: isolateHistory.of('full'),
+  });
+}
+
+function showTableMenu(
+  x: number,
+  y: number,
+  startLine: number,
+  bodyRowIndex: number,
+  col: number,
+  isHeader: boolean,
+): void {
+  closeTableMenu();
+  const menu = document.createElement('div');
+  menu.className = 'cm-lp-table-menu';
+  menu.setAttribute('role', 'menu');
+
+  const addItem = (label: string, enabled: boolean, run: () => void) => {
+    const item = document.createElement('div');
+    item.className = 'cm-lp-table-menu-item' + (enabled ? '' : ' is-disabled');
+    item.setAttribute('role', 'menuitem');
+    item.textContent = label;
+    if (enabled) {
+      item.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        run();
+        closeTableMenu();
+      });
+    }
+    menu.appendChild(item);
+  };
+  const addSeparator = () => {
+    const sep = document.createElement('div');
+    sep.className = 'cm-lp-table-menu-separator';
+    menu.appendChild(sep);
+  };
+
+  addItem('行を上に挿入', !isHeader, () =>
+    applyTableEdit(startLine, (l) => insertTableRow(l, bodyRowIndex === 0 ? 'top' : bodyRowIndex - 1)),
+  );
+  addItem('行を下に挿入', true, () =>
+    applyTableEdit(startLine, (l) => insertTableRow(l, isHeader ? 'top' : bodyRowIndex)),
+  );
+  addItem('行を削除', !isHeader, () => applyTableEdit(startLine, (l) => deleteTableRow(l, bodyRowIndex)));
+  addSeparator();
+  addItem('列を左に挿入', true, () => applyTableEdit(startLine, (l) => insertTableColumn(l, col, 'left')));
+  addItem('列を右に挿入', true, () => applyTableEdit(startLine, (l) => insertTableColumn(l, col, 'right')));
+  addItem('列を削除', true, () => applyTableEdit(startLine, (l) => deleteTableColumn(l, col)));
+
+  // Position within the viewport; append hidden first so we can measure size.
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - 4);
+  const top = Math.min(y, window.innerHeight - rect.height - 4);
+  menu.style.left = `${Math.max(0, left)}px`;
+  menu.style.top = `${Math.max(0, top)}px`;
+
+  tableMenuEl = menu;
+  document.addEventListener('mousedown', onDocMouseDownForTableMenu, true);
+  document.addEventListener('keydown', onKeyDownForTableMenu, true);
+}
+
+view.dom.addEventListener(
+  'contextmenu',
+  (event) => {
+    const el = event.target as HTMLElement;
+    const cell = el.closest('.cm-lp-table th, .cm-lp-table td') as HTMLElement | null;
+    if (!cell) return; // not a rendered table cell: leave the default menu alone
+    // Suppress the default menu and keep CodeMirror from moving the caret.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const table = cell.closest('.cm-lp-table');
+    const headerTr = table?.querySelector('thead tr');
+    const startLine = Number(headerTr?.getAttribute('data-line'));
+    if (!Number.isFinite(startLine)) return;
+    const col = Number(cell.getAttribute('data-col')) || 0;
+    const tr = cell.closest('tr');
+    const isHeader = tr?.parentElement?.tagName === 'THEAD';
+    const bodyRowIndex = isHeader ? -1 : Number(tr?.getAttribute('data-line')) - startLine - 2;
+    showTableMenu(event.clientX, event.clientY, startLine, bodyRowIndex, col, isHeader);
   },
   true, // capture phase
 );
@@ -768,6 +1030,7 @@ window.addEventListener('message', (event) => {
       pendingRemote = undefined;
       pendingMediaRequests.clear();
       renderErrorReported = false;
+      unsavedIndicator.classList.remove('is-visible');
       applyFontSize(msg.fontSize ?? 14);
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
       // Blocks start expanded; the user folds/unfolds via the ▸/▾ gutter.
@@ -813,6 +1076,10 @@ window.addEventListener('message', (event) => {
       break;
     case 'format':
       if (typeof msg.kind === 'string') runFormat(msg.kind);
+      break;
+    case 'dirty':
+      if (msg.binding !== binding) break;
+      unsavedIndicator.classList.toggle('is-visible', msg.dirty === true);
       break;
     case 'insertMedia':
       if (msg.binding !== binding) break;

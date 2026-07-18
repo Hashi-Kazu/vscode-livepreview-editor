@@ -47,6 +47,6 @@ dist/             # ビルド出力（自動生成）
 
 ## 注意事項
 
-- Webview バンドル（`dist/webview.js`）は CodeMirror を含むため約 0.5MB と大きいが正常。
+- Webview バンドル（`dist/webview.js`）は CodeMirror に加え KaTeX（R-32 数式レンダリング、JS 約 +280KB）を含むため大きいが正常。KaTeX の CSS/フォントは `esbuild.js` がビルド時に `media/katex/` へコピーし Webview から配信する。
 - スコープは素の Markdown（CommonMark + GFM）の編集・プレビュー。
 - Obsidian 独自機能（Wikilink / 埋め込み / コールアウト / タグ / 脚注 / バックリンク等）は v1.5.0 で削除済み。再追加時は品質リスクとホスト側ワークスペース I/O を避ける方針を確認する。

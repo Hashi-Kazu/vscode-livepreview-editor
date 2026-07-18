@@ -1,13 +1,15 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.26.0
+**バージョン**: 1.27.0
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-17
+**最終更新**: 2026-07-18
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-17 時点 / v1.26.0）**: 毎打鍵アイドル自動保存（`SaveDebouncer`）を廃止し、標準エディタと同じ明示保存（Webview の Ctrl+S→host `performSave`）＋失焦・破棄・バインド切替時の flush 保存へ変更した。編集は従来どおり最小 `WorkspaceEdit` で即時反映する。Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
+> ▶️ **開発継続中（2026-07-18 時点 / v1.27.0）**: レイアウト・操作性の強化として、見出しセクション折りたたみ（R-30）、未保存インジケータ（R-31）、数式レンダリング（KaTeX、R-32）、アウトライン/目次ウィジェット（R-33）、テーブルの行・列操作コンテキストメニュー（R-22-05/06）、見出し下余白の拡大（R-28-05 改訂）を追加した。
+>
+> （v1.26.0 時点） 毎打鍵アイドル自動保存（`SaveDebouncer`）を廃止し、標準エディタと同じ明示保存（Webview の Ctrl+S→host `performSave`）＋失焦・破棄・バインド切替時の flush 保存へ変更した。編集は従来どおり最小 `WorkspaceEdit` で即時反映する。Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
 ---
 
@@ -127,7 +129,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
 - ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は明示保存（Webview の Ctrl+S／Cmd+S を捕捉し `preventDefault` して host へ `save` メッセージを送り `performSave` を実行する）と、失焦・破棄・バインド切替時の flush 保存（`performSave` 直接呼び出し）で行い、いずれも先行して受信済みの edit 適用後に同一 queue で完走する。毎打鍵アイドル自動保存は行わない。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。なお WebviewPanel は CustomTextEditor ではないため、パネル自体の dirty バッジは表示されない（ソースタブが開いていれば VS Code 標準の dirty ドットで未保存を示す）。これは既知の制約とする。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は明示保存（Webview の Ctrl+S／Cmd+S を捕捉し `preventDefault` して host へ `save` メッセージを送り `performSave` を実行する）と、失焦・破棄・バインド切替時の flush 保存（`performSave` 直接呼び出し）で行い、いずれも先行して受信済みの edit 適用後に同一 queue で完走する。毎打鍵アイドル自動保存は行わない。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。なお WebviewPanel は CustomTextEditor ではないため、パネル自体の dirty バッジは表示されない（ソースタブが開いていれば VS Code 標準の dirty ドットで未保存を示す）。これは既知の制約とする。ビューア内の未保存インジケータ（R-31）がこの制約を補う。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
 - ■■□ R-03-10 Live Preview の対象ファイルが VS Code 内でリネームされた場合は、受信済みの保留編集を適用した後にビューアを新 URI へ再バインドし、世代番号、パネルタイトル、resource base、`localResourceRoots`、TextDocument 変更リスナーを更新して編集を継続すること。新 URI を別ビューアが所有している場合は重複を避けるため旧 URI 側を閉じること。対象ファイルが削除された場合はビューアを閉じること。
 
@@ -262,7 +264,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** GFM テーブルをライブプレビューで実際の表として表示するため。
 
-> **説明：** `detectTableBlocks`/`parseTable` でブロックを解析。表は**カーソルがブロック外のとき**は単一の `table-block` ウィジェットへ置換して HTML テーブル描画し、**カーソルがブロック内に入るとウィジェットを解除して生の行 `| a | b |` を表示**してセル内テキストを直接編集できるようにする。テーブルのクリックは当該行（`<tr data-line>`）へキャレットを移動させ、再描画でブロックがアクティブ化して編集モードへ切り替わる。行の追加や列構造の編集は標準ソースエディタで行う。
+> **説明：** `detectTableBlocks`/`parseTable` でブロックを解析。表は**カーソルがブロック外のとき**は単一の `table-block` ウィジェットへ置換して HTML テーブル描画し、**カーソルがブロック内に入るとウィジェットを解除して生の行 `| a | b |` を表示**してセル内テキストを直接編集できるようにする。テーブルのクリックは当該行（`<tr data-line>`）へキャレットを移動させ、再描画でブロックがアクティブ化して編集モードへ切り替わる。行の追加・削除や列の追加・削除は、テーブルウィジェット上の右クリックによるカスタムコンテキストメニューからも実行できる（`src/core/tableEdit.ts` の純粋関数で生ソース行を編集し、チェックボックストグルと同一の本文変更経路で反映する）。
 
 ###### ＜描画＞
 
@@ -270,6 +272,11 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-22-02 表は、カーソルがブロック内にあるときは `table-block` ウィジェットを出さず生の行を表示し**セル内テキストを編集可能**とすること。非カーソル時のみ従来どおりウィジェットへ置換すること。Webview 側でテーブルのクリックは、クリックされた `<tr>` の `data-line` を読み、その行頭へキャレットを移動（`view.dispatch({selection})`＋`view.focus()`）して編集モードへ遷移させること（`data-line` が無い区切り行などはキャレット移動しない）。コードブロック内の表もどきは表にしないこと。
 - ■■□ R-22-03 表セル内の最小限のインライン記法（太字 `**` / `__`、斜体 `*` / `_`、インラインコード `` ` ``）を装飾描画し、生のマーカー（例 `**CPM**`）をそのまま表示しないこと（MAIO プレビュー同様）。装飾は Webview 層（`appendInlineCell`）でテキストノードへ安全に変換し、生 HTML を挿入しないこと。
 - ■■■ R-22-04 区切り行は `|` を含み、セル数がヘッダ行と一致する場合のみ表と判定する（水平線 `---` や単独 `-` を区切り行と誤検知しない）。
+
+###### ＜行・列操作＞
+
+- ■■□ R-22-05 純粋関数（`src/core/tableEdit.ts`）はテーブルの生ソース行配列に対し、行の追加（上/下）・行の削除、列の追加（左/右）・列の削除を行い、区切り行の整合とアライメントを維持した新配列を返すこと。ヘッダ行の削除・最後の1列削除はガードすること。入力配列を破壊しないこと。
+- ■■□ R-22-06 Webview はテーブルウィジェット上の右クリックでカスタムコンテキストメニューを表示し、行・列操作を実行すること。本文変更はチェックボックストグル（R-08-05）と同一経路（`computeRemotePatch` → `view.dispatch` → 既存 edit 同期）で最小 `WorkspaceEdit` として反映すること。右クリックはキャレット移動・ブロック active 化を起こさないこと。メニュー色は `var(--vscode-*)` 追従。
 
 ---
 
@@ -328,7 +335,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** 補足情報を `<details>` アコーディオンで畳んで見通しを良くするため。見出しガター折りたたみは不要のため廃止し、HTML の `<details><summary>` 記法のレンダリングに置き換える。
 
-> **説明：** HTML の `<details><summary>…</summary>…</details>` ブロックをプレビュー上でアコーディオンとしてレンダリングする。判定は純粋関数 `detectDetailsBlocks`（`src/core/model.ts`）が担い、**ビューア専用**としてカーソル位置に依らず常にブロック全体を 1 つの `details-block` ウィジェット（既定で折りたたんだ＝閉じた状態）へ置換する（生の HTML を表示する編集モードは持たない）。Webview 層（`src/webview/decorations.ts`）が実際の `<details>` 要素にマッピングし、`<summary>` クリックで開閉する。開閉状態は summary テキストをキーに `openDetails` 集合で記憶し、再描画後も保持する（同一サマリのアコーディオンは状態を共有する制限あり）。アコーディオン本文の編集は標準ソースエディタで行う。見出し（`#`）単位のガター折りたたみ（旧 `foldService`/`foldGutter`）は v1.7.0 で廃止した。
+> **説明：** HTML の `<details><summary>…</summary>…</details>` ブロックをプレビュー上でアコーディオンとしてレンダリングする。判定は純粋関数 `detectDetailsBlocks`（`src/core/model.ts`）が担い、**ビューア専用**としてカーソル位置に依らず常にブロック全体を 1 つの `details-block` ウィジェット（既定で折りたたんだ＝閉じた状態）へ置換する（生の HTML を表示する編集モードは持たない）。Webview 層（`src/webview/decorations.ts`）が実際の `<details>` 要素にマッピングし、`<summary>` クリックで開閉する。開閉状態は summary テキストをキーに `openDetails` 集合で記憶し、再描画後も保持する（同一サマリのアコーディオンは状態を共有する制限あり）。アコーディオン本文の編集は標準ソースエディタで行う。見出し（`#`）単位のガター折りたたみ（旧 `foldService`/`foldGutter`）は v1.7.0 で廃止したが、その後、廃止時の問題（常設ガター列がレイアウト幅を占有し左端整列 R-28-07 と衝突する）を回避した別方式として、`<details>` アコーディオンとは独立の見出し折りたたみを R-30 で再導入した。
 
 ###### ＜折りたたみ＞
 
@@ -351,7 +358,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-28-04 本文・見出し・各記法の文字色を VS Code 標準テーマの色変数（`var(--vscode-...)`）に追従させ、独自のハードコード色を用いないこと。
 - ■■□ R-28-05 本文体裁を GitHub / VS Code 標準 Markdown プレビュー（github-markdown-css 風）に寄せること。具体的には次を満たすこと（描画エンジンと装飾ロジックは変更せず CSS の体裁のみで実現する）:
   - 本文フォントは UI/サンセリフ（`var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, sans-serif))`）とし、コード（`.cm-lp-code`/`.cm-lp-codeblock`）のみ monospace を維持。行間は 1.6 前後。
-  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.4em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`、境界線上の空きを含め `padding-bottom: 0.6em`）を付与する。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
+  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出しと本文の間に十分な余白を設けるため、見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.6em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`、境界線下の空きを含め `padding-bottom: 0.75em`）を付与する。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
   - インラインコードは淡背景＋角丸の小ピル、ブロックコード `.cm-lp-codeblock` は全幅背景＋十分なパディング（例 `12px 16px`）にする。
   - 引用 `.cm-lp-quote`・表 `table.cm-lp-table`（ボーダー・ヘッダ背景・任意のゼブラ）・水平線 `.cm-lp-hr-line` を GitHub プレビュー風にする。
   - すべての色は `var(--vscode-*)` 変数でテーマ追従を維持し（ハードコード色禁止・フォールバックのみ可）、`.cm-lp-table-row` の `font-variant-numeric: tabular-nums` を維持する。カーソル行で生記法が見えても体裁が崩れないこと（カーソル行表示ロジックは変更しない）。
@@ -380,3 +387,53 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
 - ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+
+### R-30 見出しセクション折りたたみ #headingfold
+
+> **理由：** 長い文書を見出し単位で畳んで見通しを良くするため。見出し（`#`）単位のガター折りたたみは v1.7.0 で一度廃止した（R-27）が、廃止時の問題（常設ガター列がレイアウト幅を占有し、左余白設計・見出し/本文の左端整列 R-28-07 と衝突する）を回避した設計で、`<details>` アコーディオン（R-27）とは独立の機能として再導入する。
+
+> **説明：** 折りたたみ範囲の算出は VS Code / CodeMirror 非依存の純粋関数（`src/core/model.ts`）が担う。`scanHeadings(doc)` は全見出しをレベル・テキスト・行番号・絶対オフセット付きで返し、`detectCodeBlocks` によりフェンスコードブロック内の `#` を除外する（全文走査。ビューポート限定の `computeDecorations` には依存しない）。`headingFoldRange(doc, line)` は指定行が見出しなら、その行末から次の同レベル以下（同じ以上の強さ、level ≤ 当該レベル）の見出し直前行の行末までを折りたたみ範囲として返し、配下が無ければ `null` を返す（コードブロックを跨いでも正しく範囲を返す）。Webview（`src/webview/main.ts`）は `@codemirror/language` の `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldGutter`＋`foldKeymap` を組み合わせて見出し配下を折りたたみ／展開する。既定は全展開。折りたたみ UI は常設ガター幅でレイアウトを崩さないよう、`.cm-gutters` を透明・最小幅にし、`.cm-content` の左パディングをガター幅ぶん減らして総左余白と見出し/本文の左端整列（R-28-07）を維持する。ガターのマーカー（`▼`/`▶`）と折りたたみプレースホルダは `var(--vscode-*)` 追従（R-28-04）。
+
+###### ＜見出し折りたたみ＞
+
+- ■■□ R-30-01 純粋関数 `scanHeadings` はフェンスコードブロック内の `#` を除外して全見出しを行番号・レベル・テキスト・オフセット付きで返すこと。
+- ■■□ R-30-02 純粋関数 `headingFoldRange` は見出し行に対し、次の同レベル以下の見出し直前までを折りたたみ範囲として返し、配下が無い場合は `null` を返すこと。コードブロックを跨いでも正しく範囲を返すこと。
+- ■■□ R-30-03 Webview は `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldKeymap` で見出し配下を折りたたみ／展開できること。既定は全展開。
+- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。
+
+### R-31 未保存インジケータ #unsaved
+
+> **理由：** `WebviewPanel` は `CustomTextEditor` ではないためパネル自体に dirty バッジが表示されない（R-03-08 の既知の制約）。ソースタブを閉じて Live Preview だけで編集している場合、未保存であることを確認する手段がなくなるため、ビューア内に視認可能なインジケータを設けて補う。
+
+> **説明：** 未保存判定は host（`TextDocument.isDirty`）を正とし、Webview は独自に dirty を推定しない。host（`src/livePreviewViewerManager.ts` `postDirtyState`）は `workspace.openTextDocument(binding.uri)` で取得した `document.isDirty` を `{ type: 'dirty', dirty, binding: binding.generation }` として Webview へ送る。送信タイミングは編集適用成功後（`applyEdit`）、明示保存・flush 保存成功後（`performSave`）、初期表示（`postInit`）、外部変更・自己エコー後（`onDidChangeTextDocument` 経路）、および保存ライフサイクル（既存 `onDidSaveTextDocument`）。破棄済み Webview・バインド世代不一致（`shouldPostDirtyState`）には送らない。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外（`#editor` の兄弟要素）に固定配置のオーバーレイ `cm-lp-unsaved-indicator` を生成し、`dirty` メッセージ（現在の binding 一致時のみ）で表示/非表示クラス（`is-visible`）を切り替える。色は `var(--vscode-editorWarning-foreground)` 追従（フォールバック値あり、R-28-04）。
+
+###### ＜インジケータ表示＞
+
+- ■■□ R-31-01 host は `TextDocument.isDirty` を正として、編集適用後・保存後・初期表示・外部変更後・保存ライフサイクルで `{ type: 'dirty', dirty, binding }` を Webview へ送ること。破棄済み Webview・世代不一致には送らないこと。
+- ■■□ R-31-02 Webview はビューア内（CodeMirror DOM 外のオーバーレイ）に未保存インジケータを表示し、dirty=true のときのみ視認でき、dirty=false で消えること。色は `var(--vscode-*)` 追従。
+- ■■□ R-31-03 インジケータ要素は CodeMirror の装飾・高さ計測・クリック位置に干渉しないこと。
+
+### R-32 数式レンダリング #math
+
+> **理由：** Markdown 中の数式（インライン `$…$`・ブロック `$$…$$`）を KaTeX で表示描画し、他の装飾と同様に「非カーソルはレンダリング／カーソル内は生記法」で編集できるようにする。
+
+> **説明：** 装飾判定は CodeMirror 非依存の純粋関数（`src/core/model.ts`）で行う（ADR-0002 / 0003）。インラインは `parseInline` に `$…$` 検知を追加する（優先度はインラインコードの次。開き `$` の直後・閉じ `$` の直前が非空白、内部に `$`／改行を含まない、直前が `\` の `\$` はエスケープとして対象外、コードブロック内は既存 code 判定により対象外）。非カーソル行では `replaceWidget`（tag `math-inline`、`attrs.tex`）へ置換、カーソル行では生記法を表示する。ブロックは新設の純粋関数 `detectMathBlocks(lines, code)` が `$$…$$`（単一行 `$$ … $$` と、`$$` で始まり後続の `$$` 行で閉じる複数行の両形式。コードブロック除外・先頭 `\$$` エスケープ非対象・未終了非対象）を検知し、`computeDecorations` の table/details と同様の位置でキャレットがブロック外のときのみ `replaceWidget`（tag `math-block`、`block: true`）へ置換、ブロック内では生記法を表示する（table と同じ active 判定）。Webview（`src/webview/decorations.ts`）は `MathInlineWidget`／`MathBlockWidget` を追加し、`katex.render(tex, element, { throwOnError: false })` で DOM へ直接描画する（生ユーザー HTML は挿入しない）。KaTeX JS は `dist/webview.js` に IIFE バンドルされ、CSS/フォントは `esbuild.js` が `media/katex/`（`katex.min.css` と `fonts/`）へコピーし、`getHtml`（`src/livePreviewViewerManager.ts`）が `<link>` で配信する。`font-src ${cspSource}` で許可済み。`script-src` は nonce のみを維持し外部 script を追加しない（ADR-0006）。`MathBlockWidget` は `estimatedHeight` を実装し `toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶ（R-28-10 / R-28-11）。本文は書き換えない（R-01-02）。
+
+###### ＜数式レンダリング＞
+
+- ■■□ R-32-01 純粋関数はインライン `$…$` を検知し（開き直後／閉じ直前が非空白・内部に `$`／改行なし・`\$` エスケープ尊重・コードブロック除外）、非カーソル行で数式ウィジェットへ置換、カーソル行で生記法を表示すること。装飾は入力文字列を変更しないこと（R-01-02）。
+- ■■□ R-32-02 純粋関数 `detectMathBlocks` は `$$…$$` ブロック（コードブロック除外・未終了は非対象）を検知し、カーソルがブロック外のとき block 数式ウィジェットへ置換、ブロック内では生記法を表示すること。
+- ■■□ R-32-03 Webview は KaTeX を JS バンドル同梱・CSS/フォントを `media/katex/` から配信して数式を DOM 描画し、レンダリング失敗時も Webview を落とさず生 tex をフォールバック表示すること。CSP（nonce／font-src cspSource）を維持すること。
+- ■■□ R-32-04 block 数式ウィジェットは `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶこと（R-28-10 / R-28-11）。
+
+### R-33 アウトライン/目次 #outline
+
+> **理由：** 長い文書内で見出し間を素早く移動できるよう、ビューア内にナビゲーション用の目次を設ける。
+
+> **説明：** 見出し抽出は R-30 で追加した全文走査の純粋関数 `scanHeadings`（`src/core/model.ts`）を再利用する（フェンスコードブロック内の `#` は除外。ビューポート限定の `computeDecorations`（R-05-05）には依存しない）。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外にフローティングの目次パネル `cm-lp-outline-panel` を生成し、トグルボタンで表示/非表示を切り替える。ドキュメント変更時（`OutlineSync` ViewPlugin、マイクロタスクで軽くデバウンス）に `scanHeadings(view.state.doc.toString())` を再計算し、見出しレベルに応じてインデントした一覧を描画する。項目クリックで `view.dispatch({ selection: { anchor: doc.line(line + 1).from }, scrollIntoView: true })` により該当見出し行へキャレット移動・スクロールする（`line` は 0-based、`doc.line` は 1-based）。本文は一切書き換えない（R-01-02）。色は `var(--vscode-*)` 追従（R-28-04）。
+
+###### ＜アウトライン/目次＞
+
+- ■■□ R-33-01 純粋関数 `scanHeadings` により全文書の見出し（レベル・テキスト・行番号）を取得すること（コードブロック内 `#` は除外）。ビューポート限定装飾（R-05-05）に依存しないこと。
+- ■■□ R-33-02 Webview はビューア内フローティングパネルに見出しをレベル別インデントで一覧表示し、表示/非表示をトグルできること。色は `var(--vscode-*)` 追従。
+- ■■□ R-33-03 目次項目クリックで該当見出し行へキャレット移動・スクロールすること。本文は変更しないこと（R-01-02）。パネルは CodeMirror の装飾・計測・クリック位置に干渉しないこと。

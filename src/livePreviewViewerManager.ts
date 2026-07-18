@@ -19,6 +19,7 @@ import {
   FileEventAction,
   findViewerForUri,
   isCurrentBinding,
+  shouldPostDirtyState,
   ViewerState,
 } from './core/viewer';
 import { resolveSettings } from './core/viewport';
@@ -176,7 +177,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       // Persist any unsaved edits whenever the panel loses active focus so
       // nothing stays unsaved while the user works elsewhere (durability,
       // R-03-08).
-      else this.enqueue(viewer, async () => this.performSave(viewer.binding));
+      else this.enqueue(viewer, async () => this.performSave(viewer.binding, viewer));
     });
     viewer.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('livePreview.fontSize')) return;
@@ -216,7 +217,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         // edits so the just-typed text is persisted.
         this.enqueue(viewer, async () => {
           if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
-          await this.performSave(viewer.binding);
+          await this.performSave(viewer.binding, viewer);
         });
         break;
       case 'pasteMedia':
@@ -322,6 +323,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       completed: true,
     });
     await this.postAck(viewer, binding, version);
+    await this.postDirtyState(viewer);
     // The WorkspaceEdit above applied immediately (R-04-01), but persistence is
     // no longer triggered per keystroke. Saving happens only on explicit save
     // (Webview Ctrl+S -> `save` message) and on the lifecycle flush points
@@ -339,18 +341,51 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   }
 
   /**
+   * Send the host's authoritative dirty state (`TextDocument.isDirty`, R-31)
+   * to the Webview so it can show/hide the unsaved indicator. The Webview
+   * never estimates dirty state itself; it only reflects what the host sends.
+   */
+  private async postDirtyState(viewer: Viewer): Promise<void> {
+    const binding = viewer.binding;
+    if (!shouldPostDirtyState(viewer.disposed, binding.generation, viewer.binding.generation)) {
+      return;
+    }
+    let document: vscode.TextDocument;
+    try {
+      document = await vscode.workspace.openTextDocument(binding.uri);
+    } catch {
+      return;
+    }
+    if (!shouldPostDirtyState(viewer.disposed, binding.generation, viewer.binding.generation)) {
+      return;
+    }
+    await viewer.panel.webview.postMessage({
+      type: 'dirty',
+      dirty: document.isDirty,
+      binding: binding.generation,
+    });
+  }
+
+  /**
    * Persist the bound document if it has unsaved changes. Invoked on explicit
    * save (Webview Ctrl+S) and on lifecycle flush points (blur / disposal /
    * binding switch). Re-opens the TextDocument by URI so it works after the
    * source tab is closed; a `false`/failed save warns.
+   *
+   * `viewer`, when supplied, receives a post-save dirty-state notification
+   * (R-31) once the save completes successfully, so the unsaved indicator
+   * clears without waiting for `onDidSaveTextDocument` to route through the
+   * operation queue.
    */
-  private async performSave(binding: ViewerBinding): Promise<void> {
+  private async performSave(binding: ViewerBinding, viewer?: Viewer): Promise<void> {
     try {
       const document = await vscode.workspace.openTextDocument(binding.uri);
       if (!document.isDirty) return;
       const saved = await document.save();
       if (!saved) {
         vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
+      } else if (viewer) {
+        await this.postDirtyState(viewer);
       }
     } catch (error) {
       console.error('Live Preview deferred save failed', error);
@@ -612,6 +647,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       if (selfVersion !== undefined) {
         binding.expectedWorkspaceChanges.delete(selfVersion);
         binding.webviewText = documentText;
+        const echoViewer = getViewer();
+        if (echoViewer && !echoViewer.disposed) {
+          this.enqueue(echoViewer, async () => this.postDirtyState(echoViewer));
+        }
         return;
       }
 
@@ -644,6 +683,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           baseVersion: binding.lastAckVersion,
           ...(preserveHistory ? { preserveHistory: true } : {}),
         });
+        await this.postDirtyState(viewer);
       });
     });
     const willSaveSubscription = vscode.workspace.onWillSaveTextDocument((event) => {
@@ -653,6 +693,9 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const didSaveSubscription = vscode.workspace.onDidSaveTextDocument((document) => {
       if (document.uri.toString() !== binding.key) return;
       binding.saveGuard.end(binding.saveToken);
+      const viewer = getViewer();
+      if (!viewer || viewer.disposed) return;
+      this.enqueue(viewer, async () => this.postDirtyState(viewer));
     });
     binding = {
       uri: document.uri,
@@ -684,6 +727,11 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           text: binding.webviewText,
           fontSize: this.currentFontSize(),
           resourceBase,
+          binding: binding.generation,
+        });
+        void panel.webview.postMessage({
+          type: 'dirty',
+          dirty: document.isDirty,
           binding: binding.generation,
         });
       },
@@ -801,6 +849,12 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'media', 'editor.css'),
     );
+    // KaTeX stylesheet (R-32). Served from media/katex/; its relative `fonts/…`
+    // url()s resolve against this URI's directory (media/katex/fonts/) and are
+    // allowed by `font-src ${cspSource}`.
+    const katexStyleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.context.extensionUri, 'media', 'katex', 'katex.min.css'),
+    );
     const nonce = getNonce();
     const csp = [
       `default-src 'none'`,
@@ -816,6 +870,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="${katexStyleUri}" rel="stylesheet" />
   <link href="${styleUri}" rel="stylesheet" />
   <title>Live Preview</title>
 </head>

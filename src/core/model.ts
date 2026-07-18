@@ -255,6 +255,57 @@ export function detectDetailsBlocks(lines: LineInfo[], code: CodeBlockInfo): Det
   return blocks;
 }
 
+export interface MathBlock {
+  start: number; // first line index (the `$$` opener)
+  end: number; // last line index (the `$$` closer)
+  tex: string; // the TeX source between the fences (newline-joined)
+}
+
+/**
+ * Identify block math `$$…$$` fences as line ranges. Pure & framework-agnostic.
+ * Two forms are recognised:
+ *   1. Single line: `$$ E = mc^2 $$` (content between the fences on one line).
+ *   2. Multi-line: an opening line beginning with `$$` and a later line that is
+ *      only `$$` (whitespace-trimmed) as the closer.
+ * Fenced code blocks are skipped (a `$$` inside a code block is literal text).
+ * A leading `\$$` is an escaped literal and never opens a block. Unterminated
+ * multi-line fences (no closing `$$` line) are ignored so we never collapse to
+ * end-of-file.
+ */
+export function detectMathBlocks(lines: LineInfo[], code: CodeBlockInfo): MathBlock[] {
+  const blocks: MathBlock[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (code.role[i]) continue;
+    const t = lines[i].text;
+    // Opener: `$$` after optional leading whitespace (so `\$$…` does not match).
+    const open = /^\s*\$\$/.exec(t);
+    if (!open) continue;
+    const rest = t.slice(open[0].length);
+    // Single-line form: `$$ … $$` with non-empty content between the fences.
+    const single = /^(.*?)\$\$\s*$/.exec(rest);
+    if (single && single[1].trim() !== '') {
+      blocks.push({ start: i, end: i, tex: single[1].trim() });
+      continue;
+    }
+    // Multi-line form: scan for a line that is only `$$` (code blocks excluded).
+    let close = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (code.role[j]) continue;
+      if (/^\s*\$\$\s*$/.test(lines[j].text)) {
+        close = j;
+        break;
+      }
+    }
+    if (close === -1) continue; // unterminated — leave as raw text
+    const body: string[] = [];
+    if (rest.trim() !== '') body.push(rest.trim());
+    for (let j = i + 1; j < close; j++) body.push(lines[j].text);
+    blocks.push({ start: i, end: close, tex: body.join('\n').trim() });
+    i = close;
+  }
+  return blocks;
+}
+
 /** Split a table row into trimmed cell strings (outer pipes ignored). */
 export function parseTableRow(text: string): string[] {
   let s = text.trim();
@@ -300,6 +351,10 @@ interface InlineMatch {
 }
 
 const INLINE_CODE_RE = /`([^`\n]+)`/y;
+// Inline math $…$ (KaTeX). Open `$` directly followed by a non-space non-`$`
+// char; close `$` directly preceded by a non-space non-`$` char; no `$`/newline
+// inside. `\$` (escaped dollar) is rejected by the caller (preceding backslash).
+const MATH_INLINE_RE = /\$([^\s$](?:[^$\n]*[^\s$])?)\$/y;
 const IMAGE_RE = /!\[([^\]\n]*)\]\(([^)\n]+)\)/y;
 const LINK_RE = /\[([^\]\n]+)\]\(([^)\n]+)\)/y;
 const BOLD_RE = /(\*\*|__)(\S[\s\S]*?\S|\S)\1/y;
@@ -351,6 +406,29 @@ export function parseInline(text: string, base: number, cursorLine: boolean, seg
           return specs;
         },
       };
+    }
+
+    // Inline math $…$ — priority right after inline code. A `$` immediately
+    // preceded by a backslash is an escaped literal (`\$`), not a delimiter.
+    if (!matched && text[i] === '$' && !(i > 0 && text[i - 1] === '\\')) {
+      MATH_INLINE_RE.lastIndex = i;
+      m = MATH_INLINE_RE.exec(text);
+      if (m && m.index === i) {
+        const tex = m[1];
+        const full = m[0];
+        matched = {
+          start: i,
+          end: i + full.length,
+          specs: (b, cur) => {
+            // On the cursor line the raw `$…$` stays visible (editable); off
+            // cursor it becomes a KaTeX widget. Never mutate the source (R-01-02).
+            if (cur) return [];
+            return [
+              { from: b + i, to: b + i + full.length, type: 'replaceWidget', tag: 'math-inline', attrs: { tex } },
+            ];
+          },
+        };
+      }
     }
 
     if (!matched) {
@@ -579,6 +657,13 @@ export function computeDecorations(
     detailsStartAt.set(db.start, db);
     for (let j = db.start; j <= db.end; j++) detailsMember[j] = true;
   }
+  const mathBlocks = detectMathBlocks(lines, code);
+  const mathStartAt = new Map<number, MathBlock>();
+  const mathMember: boolean[] = new Array(lines.length).fill(false);
+  for (const mb of mathBlocks) {
+    mathStartAt.set(mb.start, mb);
+    for (let j = mb.start; j <= mb.end; j++) mathMember[j] = true;
+  }
   const specs: DecoSpec[] = [];
 
   const inRange = (i: number) =>
@@ -652,6 +737,26 @@ export function computeDecorations(
       });
       i = block.end;
       continue;
+    }
+
+    // --- Block math ($$…$$) ---------------------------------------------
+    if (mathMember[i]) {
+      const block = mathStartAt.get(i);
+      if (!block) continue; // inner lines handled by the start
+      const active = blockHasCursor(block.start, block.end);
+      if (!active) {
+        // Caret outside the block → replace the whole fence with a KaTeX widget.
+        specs.push({
+          from: lines[block.start].from,
+          to: lines[block.end].to,
+          type: 'replaceWidget',
+          tag: 'math-block',
+          attrs: { tex: block.tex },
+        });
+        i = block.end;
+        continue;
+      }
+      // Active: fall through so the raw `$$…$$` fence stays visible/editable.
     }
 
     const isCursor = cursorLines.has(i);
@@ -796,4 +901,74 @@ export function computeDecorationsSafe(
   } catch (err) {
     return { ok: false, specs: [], error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** A single ATX heading discovered by {@link scanHeadings}. */
+export interface HeadingInfo {
+  /** Heading strength, 1–6 (number of leading `#`). */
+  level: number;
+  /** Heading text with the `#` marker and its trailing whitespace removed. */
+  text: string;
+  /** 0-based line index of the heading. */
+  line: number;
+  /** Absolute offset of the first character of the heading line. */
+  from: number;
+  /** Absolute offset just past the last character of the heading line. */
+  to: number;
+}
+
+/**
+ * Scan the whole document for ATX headings (`#` … `######`), skipping any `#`
+ * that lives inside a fenced code block (those are literal text, not headings).
+ * Pure & framework-agnostic; walks the entire document (not viewport-limited) so
+ * it can drive full-document features such as heading-section folding (R-30) and
+ * is reusable by other outline-style features.
+ */
+export function scanHeadings(doc: string): HeadingInfo[] {
+  const lines = splitLines(doc);
+  const code = detectCodeBlocks(lines);
+  const out: HeadingInfo[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (code.role[i]) continue; // `#` inside a fenced code block is literal text
+    const m = HEADING_RE.exec(lines[i].text);
+    if (!m) continue;
+    out.push({
+      level: m[1].length,
+      text: m[3].trim(),
+      line: i,
+      from: lines[i].from,
+      to: lines[i].to,
+    });
+  }
+  return out;
+}
+
+/**
+ * Compute the collapsible range of the heading section that starts on `line`
+ * (0-based). The range runs from the END of the heading line to the end of the
+ * line immediately before the next heading of the same or stronger strength
+ * (level ≤ this heading's level). If no such heading follows, the section
+ * extends to the end of the document. Returns `null` when `line` is not a
+ * heading or the section has no body lines to fold. Fenced code blocks are
+ * ignored when locating the next heading, so a section spanning a code block is
+ * folded correctly. Pure & framework-agnostic.
+ */
+export function headingFoldRange(doc: string, line: number): { from: number; to: number } | null {
+  const lines = splitLines(doc);
+  const headings = scanHeadings(doc);
+  const current = headings.find((h) => h.line === line);
+  if (!current) return null;
+
+  let endLine = lines.length - 1;
+  for (const h of headings) {
+    if (h.line > line && h.level <= current.level) {
+      endLine = h.line - 1;
+      break;
+    }
+  }
+
+  const from = lines[line].to;
+  const to = lines[endLine].to;
+  if (to <= from) return null; // nothing beneath this heading to fold
+  return { from, to };
 }

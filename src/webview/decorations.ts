@@ -5,6 +5,7 @@
  */
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { EditorState, RangeSetBuilder } from '@codemirror/state';
+import katex from 'katex';
 import { computeDecorationsSafe, DecoSpec, DecorationOptions } from '../core/model';
 import { cursorLinesFromSelections } from '../core/sync';
 
@@ -165,6 +166,8 @@ class TableWidget extends WidgetType {
     htr.setAttribute('data-line', String(this.startLine));
     data.header.forEach((cell, idx) => {
       const th = document.createElement('th');
+      // data-col lets the right-click table menu target a specific column (R-22-06).
+      th.setAttribute('data-col', String(idx));
       appendInlineCell(th, cell);
       if (data.align[idx] && data.align[idx] !== 'none') th.style.textAlign = data.align[idx];
       htr.appendChild(th);
@@ -178,6 +181,8 @@ class TableWidget extends WidgetType {
       tr.setAttribute('data-line', String(this.startLine + 2 + k));
       for (let idx = 0; idx < data.header.length; idx++) {
         const td = document.createElement('td');
+        // data-col lets the right-click table menu target a specific column (R-22-06).
+        td.setAttribute('data-col', String(idx));
         appendInlineCell(td, row[idx] ?? '');
         if (data.align[idx] && data.align[idx] !== 'none') td.style.textAlign = data.align[idx];
         tr.appendChild(td);
@@ -348,6 +353,70 @@ class ImageWidget extends WidgetType {
   }
 }
 
+/** Inline math `$…$` rendered with KaTeX (R-32). Rendering directly into the DOM
+ *  (never `innerHTML` from a raw string) keeps us clear of raw-HTML injection;
+ *  `throwOnError:false` makes KaTeX paint its own error node for bad TeX, and any
+ *  thrown exception falls back to the raw `$tex$` so the Webview never crashes. */
+class MathInlineWidget extends WidgetType {
+  constructor(private readonly tex: string) {
+    super();
+  }
+  eq(other: MathInlineWidget) {
+    return other.tex === this.tex;
+  }
+  toDOM() {
+    const span = document.createElement('span');
+    span.className = 'cm-lp-math-inline';
+    try {
+      katex.render(this.tex, span, { throwOnError: false, displayMode: false });
+    } catch {
+      span.textContent = `$${this.tex}$`;
+    }
+    return span;
+  }
+}
+
+/** Block math `$$…$$` rendered with KaTeX in display mode (R-32). A `block: true`
+ *  replace widget, so it implements `estimatedHeight` (scaled with the current
+ *  font size) and defers `requestMeasure()` to `updateDOM` — never calling it in
+ *  `toDOM`, which runs inside CodeMirror's measure cycle (R-28-10 / R-28-11). */
+class MathBlockWidget extends WidgetType {
+  constructor(private readonly tex: string) {
+    super();
+  }
+  eq(other: MathBlockWidget) {
+    return other.tex === this.tex;
+  }
+  /** Display math paints roughly one editor line per TeX line plus vertical
+   *  chrome (`margin: 0.5em 0` ≈ font-size). Scaling with `currentFontSize`
+   *  keeps the pre-measure estimate close so clicks below the block land right;
+   *  the residual is reconciled by `updateDOM`'s `requestMeasure` (R-28-11). */
+  get estimatedHeight() {
+    const rows = this.tex.split('\n').length;
+    return rows * linePx() + currentFontSize;
+  }
+  toDOM() {
+    const div = document.createElement('div');
+    div.className = 'cm-lp-math-block';
+    try {
+      katex.render(this.tex, div, { throwOnError: false, displayMode: true });
+    } catch {
+      div.textContent = `$$${this.tex}$$`;
+    }
+    // Do NOT requestMeasure here (toDOM runs inside the measure cycle — see
+    // TableWidget). The font-size-aware estimatedHeight gets first paint close;
+    // updateDOM reconciles the residual (R-28-11).
+    return div;
+  }
+  updateDOM(_dom: HTMLElement, view: EditorView): boolean {
+    view.requestMeasure();
+    return true;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
 /** Build a CodeMirror DecorationSet from the pure model for the given state.
  *  On a computation error, invokes `onError` (Webview falls back to source) and
  *  returns an empty set rather than crashing. */
@@ -415,6 +484,12 @@ function toDecoration(s: DecoSpec): Decoration | null {
       }
       if (s.tag === 'hr-widget') {
         return Decoration.replace({ widget: new HrWidget() });
+      }
+      if (s.tag === 'math-inline') {
+        return Decoration.replace({ widget: new MathInlineWidget(s.attrs?.tex ?? '') });
+      }
+      if (s.tag === 'math-block') {
+        return Decoration.replace({ widget: new MathBlockWidget(s.attrs?.tex ?? ''), block: true });
       }
       if (s.tag === 'details-block') {
         return Decoration.replace({
