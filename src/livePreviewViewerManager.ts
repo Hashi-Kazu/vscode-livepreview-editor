@@ -34,11 +34,29 @@ import {
   uniqueMediaName,
 } from './core/pasteLink';
 
+/**
+ * How long to wait after the last Webview keystroke before applying the
+ * buffered edit to the TextDocument and immediately saving it (R-04-01 /
+ * R-03-08). Applying on a short post-typing pause instead of per keystroke
+ * keeps the document from lingering in a dirty state, which is what let VS
+ * Code re-reveal a closed source tab. A module constant, not a setting, to
+ * keep the surface minimal.
+ */
+const EDIT_APPLY_DEBOUNCE_MS = 200;
+
 interface ViewerBinding {
   uri: vscode.Uri;
   key: string;
   generation: number;
   webviewText: string;
+  /**
+   * Latest Webview edit not yet applied to the TextDocument. Successive
+   * keystrokes coalesce here (highest version wins) until the debounce timer
+   * or a flush point applies it. Undefined when nothing is buffered.
+   */
+  pendingEdit?: { text: string; version: number };
+  /** Debounce timer that fires {@link flushPendingEdit} after typing pauses. */
+  editDebounceTimer?: ReturnType<typeof setTimeout>;
   /** Last fresh edit received from the Webview. */
   lastReceivedVersion: number;
   /** Last Webview edit successfully represented by the TextDocument. */
@@ -176,10 +194,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     });
     viewer.viewStateSubscription = panel.onDidChangeViewState((event) => {
       if (event.webviewPanel.active) this.markInteracted(viewer);
-      // Persist any unsaved edits whenever the panel loses active focus so
-      // nothing stays unsaved while the user works elsewhere (durability,
-      // R-03-08).
-      else this.enqueue(viewer, async () => this.performSave(viewer.binding, viewer));
+      // Flush any buffered edit and persist whenever the panel loses active
+      // focus so nothing stays unapplied/unsaved while the user works
+      // elsewhere (durability, R-03-08).
+      else this.enqueue(viewer, async () => this.flushPendingEdit(viewer));
     });
     viewer.configSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('livePreview.fontSize')) return;
@@ -205,13 +223,22 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       case 'ready':
         this.postInit(viewer);
         break;
-      case 'edit':
-        this.enqueue(viewer, async () => {
-          if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
-          if (typeof message.text !== 'string') return;
-          await this.applyEdit(viewer, message.text, message.version);
-        });
+      case 'edit': {
+        // Buffer the edit and (re)arm the debounce timer instead of applying
+        // per keystroke. Coalescing to the latest version keeps the document
+        // out of a lingering dirty state; the timer flushes (apply + save)
+        // once typing pauses (R-04-01 / R-03-08).
+        if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
+        if (typeof message.text !== 'string') return;
+        if (typeof message.version !== 'number') return;
+        const binding = viewer.binding;
+        binding.pendingEdit = { text: message.text, version: message.version };
+        if (binding.editDebounceTimer) clearTimeout(binding.editDebounceTimer);
+        binding.editDebounceTimer = setTimeout(() => {
+          this.enqueue(viewer, async () => this.flushPendingEdit(viewer));
+        }, EDIT_APPLY_DEBOUNCE_MS);
         break;
+      }
       case 'save':
         // Explicit save (Ctrl+S / Cmd+S) forwarded from the Webview: a
         // WebviewPanel is not a CustomTextEditor, so VS Code's own Ctrl+S does
@@ -219,7 +246,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         // edits so the just-typed text is persisted.
         this.enqueue(viewer, async () => {
           if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
-          await this.performSave(viewer.binding, viewer);
+          await this.flushPendingEdit(viewer);
         });
         break;
       case 'pasteMedia':
@@ -328,10 +355,38 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     });
     await this.postAck(viewer, binding, version);
     await this.postDirtyState(viewer);
-    // The WorkspaceEdit above applied immediately (R-04-01), but persistence is
-    // no longer triggered per keystroke. Saving happens only on explicit save
-    // (Webview Ctrl+S -> `save` message) and on the lifecycle flush points
-    // (blur / disposal / binding switch), matching a standard editor (R-03-08).
+    // The WorkspaceEdit above applies the buffered edit as a minimal diff
+    // (R-04-01). Persistence is driven by the caller (`flushPendingEdit`),
+    // which saves immediately after the batch apply so the document does not
+    // linger dirty (R-03-08); this is what stops VS Code from re-revealing a
+    // closed source tab at the source (R-03-11 remains as a backstop).
+  }
+
+  /**
+   * Apply the binding's buffered edit (if any) and immediately persist, all in
+   * the serial operation queue so apply strictly precedes save (R-04-01 /
+   * R-03-08). This is the single choke point every flush site routes through
+   * (debounce fire, blur, disposal, binding switch, explicit save, and before
+   * reconciling an external change) so no buffered keystroke is ever dropped.
+   * Applying and then saving collapses the dirty window to the moment between
+   * the two, which keeps a closed source tab from being re-revealed.
+   */
+  private async flushPendingEdit(viewer: Viewer): Promise<void> {
+    const binding = viewer.binding;
+    if (binding.editDebounceTimer) {
+      clearTimeout(binding.editDebounceTimer);
+      binding.editDebounceTimer = undefined;
+    }
+    const pending = binding.pendingEdit;
+    if (pending) {
+      binding.pendingEdit = undefined;
+      await this.applyEdit(viewer, pending.text, pending.version);
+    }
+    // Re-read the binding: a switch inside `applyEdit` cannot happen (it is
+    // synchronous with respect to the queue), but guarding keeps save bound to
+    // the same generation that owned the pending edit.
+    if (viewer.binding !== binding) return;
+    await this.performSave(binding, viewer);
   }
 
   /** Send an acknowledgement only after success or an identical-text no-op. */
@@ -619,9 +674,11 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     if (document.languageId !== 'markdown') return;
 
     const previous = viewer.binding;
-    // Persist any pending edits for the outgoing binding before its listeners
-    // and URI ownership are replaced (durability, R-03-08).
-    await this.performSave(previous);
+    // Flush the outgoing binding's buffered edit and persist before its
+    // listeners and URI ownership are replaced, so no unapplied keystroke is
+    // carried into the new URI or dropped (durability, R-03-08). `viewer.binding`
+    // is still `previous` here, so `flushPendingEdit` targets it.
+    await this.flushPendingEdit(viewer);
     this.viewersByUri.delete(previous.key);
     previous.changeSubscription.dispose();
     for (const subscription of previous.saveLifecycleSubscriptions) subscription.dispose();
@@ -658,6 +715,19 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           this.enqueue(echoViewer, async () => this.postDirtyState(echoViewer));
         }
         return;
+      }
+
+      // A non-self-echo change is an external edit. If a Webview keystroke is
+      // still buffered (debounce in flight), flush it first so the buffered
+      // local text is committed before the external change is reconciled and
+      // no keystroke is silently dropped (item 5). A genuine conflict still
+      // resolves in favor of the external change via `classifyDocumentChange`
+      // below (R-04-02).
+      if (binding.pendingEdit) {
+        const flushViewer = getViewer();
+        if (flushViewer && !flushViewer.disposed) {
+          this.enqueue(flushViewer, async () => this.flushPendingEdit(flushViewer));
+        }
       }
 
       // A listener is deliberately queued behind the edit that created it.
@@ -781,10 +851,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
   private disposeViewer(viewer: Viewer): void {
     viewer.disposed = true;
-    // Queue save behind edits already received from the Webview.  The panel is
-    // gone, but those edits are still allowed to reach the TextDocument/save.
+    // Queue a flush behind edits already received from the Webview. The panel
+    // is gone, but the buffered edit is still applied and saved.
     this.enqueue(viewer, async () => {
-      await this.performSave(viewer.binding);
+      await this.flushPendingEdit(viewer);
     });
     viewer.binding.changeSubscription.dispose();
     for (const subscription of viewer.binding.saveLifecycleSubscriptions) subscription.dispose();

@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.29.0 — デバウンスバッチ apply＋即時保存で dirty 滞留を解消（ソースタブ自動再表示の発生源対策）
+
+### 変更
+
+- Live Preview のみで編集中に閉じたソースタブが自動再表示される現象の根本原因（TextDocument が dirty のまま滞留すること）を断つため、Webview→TextDocument 反映を毎打鍵 apply からタイピング停止後のデバウンス（既定 200ms、モジュール定数 `EDIT_APPLY_DEBOUNCE_MS`）でのバッチ apply へ変更し、apply 直後に必ず即時保存するモデルへ移行した（R-03-08／R-04-01、ADR-0019、ADR-0018 を supersede）。連続打鍵は最新 version で coalesce し、バッチ apply→即時保存は単一の `flushPendingEdit` 操作として `operationQueue` 内で直列実行する（apply が save に先行）。
+- 全 flush 点（失焦・破棄・バインド切替・明示保存 Ctrl+S・外部変更処理の入口）を `flushPendingEdit` に統一し、未適用キーストロークの取りこぼしを無くした。
+- キャレット退行防止機構（`SelfSaveGuard` own-save 窓、`isSaveParticipantNormalization`、`preserveHistory` レコンサイル、`computeRemotePatch`、`isTrailingNewlineOnlyDifference`）と ack・ledger プロトコルは不変。Live Preview の Undo/Redo は CodeMirror が単独所有のままで不変。
+- R-03-11 の自動再表示ソースタブ抑制（`livePreview.suppressSourceAutoOpen`、`closeAutoOpenedSourceTab`）は撤去せず backstop として残置した。即時保存により通常 `dirty=false` となるため未保存インジケータ（R-31）はほぼ表示されない（apply→save 間の一瞬・保存失敗時のみ）。
+
 ## v1.27.0 — レイアウト・操作性の強化（折りたたみ・数式・アウトライン・テーブル操作ほか）
 
 ### 追加
