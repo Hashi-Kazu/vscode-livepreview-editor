@@ -4,6 +4,7 @@ import {
   decideFollow,
   findViewerForUri,
   isCurrentBinding,
+  shouldPostDirtyState,
 } from '../src/core/viewer';
 
 const viewers = [
@@ -92,5 +93,14 @@ describe('R-03-10: file lifecycle events', () => {
         uris: ['file:///workspace/other.md'],
       }),
     ).toEqual([]);
+  });
+});
+
+describe('R-31-01: unsaved indicator send guard', () => {
+  it('sends only when the viewer is not disposed and the binding is still current', () => {
+    expect(shouldPostDirtyState(false, 4, 4)).toBe(true);
+    expect(shouldPostDirtyState(true, 4, 4)).toBe(false);
+    expect(shouldPostDirtyState(undefined, 4, 4)).toBe(true);
+    expect(shouldPostDirtyState(false, 3, 4)).toBe(false);
   });
 });

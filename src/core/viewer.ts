@@ -91,3 +91,17 @@ export function decideFileEventAction(
 export function isCurrentBinding(messageBinding: number, currentBinding: number): boolean {
   return Number.isInteger(messageBinding) && messageBinding === currentBinding;
 }
+
+/**
+ * Decide whether a `dirty` state notification (R-31) may be sent to a
+ * Webview: it must not be disposed, and the binding that produced the dirty
+ * value must still be the viewer's current binding (guards against a stale
+ * async `openTextDocument` resolving after a binding switch/dispose).
+ */
+export function shouldPostDirtyState(
+  disposed: boolean | undefined,
+  bindingGeneration: number,
+  currentBindingGeneration: number,
+): boolean {
+  return !disposed && bindingGeneration === currentBindingGeneration;
+}

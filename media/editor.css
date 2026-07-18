@@ -385,3 +385,28 @@ table.cm-lp-table tr:nth-child(2n) td {
   line-height: 1.4;
   color: var(--vscode-editor-foreground);
 }
+
+/* --- R-31 unsaved indicator --- */
+/* A fixed overlay outside the CodeMirror DOM (sibling of #editor) reflecting
+   the host's authoritative TextDocument.isDirty. Hidden by default; only
+   shown while dirty=true, so it never interferes with CodeMirror decorations,
+   height measurement, or click-position handling. */
+.cm-lp-unsaved-indicator {
+  position: fixed;
+  top: 8px;
+  right: 12px;
+  z-index: 100;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--vscode-editorWarning-foreground, #cca700);
+  box-shadow: 0 0 0 1px var(--vscode-editor-background, #1e1e1e);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.1s ease-in-out;
+}
+.cm-lp-unsaved-indicator.is-visible {
+  opacity: 1;
+  visibility: visible;
+}

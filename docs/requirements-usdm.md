@@ -127,7 +127,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
 - ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
 - ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は明示保存（Webview の Ctrl+S／Cmd+S を捕捉し `preventDefault` して host へ `save` メッセージを送り `performSave` を実行する）と、失焦・破棄・バインド切替時の flush 保存（`performSave` 直接呼び出し）で行い、いずれも先行して受信済みの edit 適用後に同一 queue で完走する。毎打鍵アイドル自動保存は行わない。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。なお WebviewPanel は CustomTextEditor ではないため、パネル自体の dirty バッジは表示されない（ソースタブが開いていれば VS Code 標準の dirty ドットで未保存を示す）。これは既知の制約とする。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として即時適用する。保存は明示保存（Webview の Ctrl+S／Cmd+S を捕捉し `preventDefault` して host へ `save` メッセージを送り `performSave` を実行する）と、失焦・破棄・バインド切替時の flush 保存（`performSave` 直接呼び出し）で行い、いずれも先行して受信済みの edit 適用後に同一 queue で完走する。毎打鍵アイドル自動保存は行わない。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。なお WebviewPanel は CustomTextEditor ではないため、パネル自体の dirty バッジは表示されない（ソースタブが開いていれば VS Code 標準の dirty ドットで未保存を示す）。これは既知の制約とする。ビューア内の未保存インジケータ（R-31）がこの制約を補う。
 - ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
 - ■■□ R-03-10 Live Preview の対象ファイルが VS Code 内でリネームされた場合は、受信済みの保留編集を適用した後にビューアを新 URI へ再バインドし、世代番号、パネルタイトル、resource base、`localResourceRoots`、TextDocument 変更リスナーを更新して編集を継続すること。新 URI を別ビューアが所有している場合は重複を避けるため旧 URI 側を閉じること。対象ファイルが削除された場合はビューアを閉じること。
 
@@ -380,3 +380,15 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
 - ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+
+### R-31 未保存インジケータ #unsaved
+
+> **理由：** `WebviewPanel` は `CustomTextEditor` ではないためパネル自体に dirty バッジが表示されない（R-03-08 の既知の制約）。ソースタブを閉じて Live Preview だけで編集している場合、未保存であることを確認する手段がなくなるため、ビューア内に視認可能なインジケータを設けて補う。
+
+> **説明：** 未保存判定は host（`TextDocument.isDirty`）を正とし、Webview は独自に dirty を推定しない。host（`src/livePreviewViewerManager.ts` `postDirtyState`）は `workspace.openTextDocument(binding.uri)` で取得した `document.isDirty` を `{ type: 'dirty', dirty, binding: binding.generation }` として Webview へ送る。送信タイミングは編集適用成功後（`applyEdit`）、明示保存・flush 保存成功後（`performSave`）、初期表示（`postInit`）、外部変更・自己エコー後（`onDidChangeTextDocument` 経路）、および保存ライフサイクル（既存 `onDidSaveTextDocument`）。破棄済み Webview・バインド世代不一致（`shouldPostDirtyState`）には送らない。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外（`#editor` の兄弟要素）に固定配置のオーバーレイ `cm-lp-unsaved-indicator` を生成し、`dirty` メッセージ（現在の binding 一致時のみ）で表示/非表示クラス（`is-visible`）を切り替える。色は `var(--vscode-editorWarning-foreground)` 追従（フォールバック値あり、R-28-04）。
+
+###### ＜インジケータ表示＞
+
+- ■■□ R-31-01 host は `TextDocument.isDirty` を正として、編集適用後・保存後・初期表示・外部変更後・保存ライフサイクルで `{ type: 'dirty', dirty, binding }` を Webview へ送ること。破棄済み Webview・世代不一致には送らないこと。
+- ■■□ R-31-02 Webview はビューア内（CodeMirror DOM 外のオーバーレイ）に未保存インジケータを表示し、dirty=true のときのみ視認でき、dirty=false で消えること。色は `var(--vscode-*)` 追従。
+- ■■□ R-31-03 インジケータ要素は CodeMirror の装飾・高さ計測・クリック位置に干渉しないこと。
