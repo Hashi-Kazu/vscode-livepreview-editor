@@ -37,6 +37,16 @@ export interface DecorationOptions {
    * window are decorated. Used by the Webview to limit work to the viewport.
    */
   lineRange?: { startLine: number; endLine: number };
+  /**
+   * Set of 0-based start-line indices of `<details>` accordion blocks that the
+   * user has opted into raw-source ("Markdownコードを直接編集") editing for. When
+   * a block's start line is in this set AND the caret is inside the block, the
+   * accordion widget is suppressed and the raw `<details><summary>…` HTML is
+   * shown as editable lines. Absent/empty → accordions always render as widgets
+   * (R-27-03). Table blocks do not need this: their raw view is driven purely by
+   * caret position (R-22-02 / R-22-09).
+   */
+  detailsDirectEditStartLines?: Set<number>;
 }
 
 export interface LineInfo {
@@ -680,9 +690,15 @@ export function computeDecorations(
   const detailsBlocks = detectDetailsBlocks(lines, code);
   const detailsStartAt = new Map<number, DetailsBlock>();
   const detailsMember: boolean[] = new Array(lines.length).fill(false);
+  // Line → owning accordion block (any inner line, not just the start), so a
+  // direct-edit block's inner lines can fall through to per-line raw rendering.
+  const detailsBlockOf: (DetailsBlock | null)[] = new Array(lines.length).fill(null);
   for (const db of detailsBlocks) {
     detailsStartAt.set(db.start, db);
-    for (let j = db.start; j <= db.end; j++) detailsMember[j] = true;
+    for (let j = db.start; j <= db.end; j++) {
+      detailsMember[j] = true;
+      detailsBlockOf[j] = db;
+    }
   }
   const mathBlocks = detectMathBlocks(lines, code);
   const mathStartAt = new Map<number, MathBlock>();
@@ -749,21 +765,36 @@ export function computeDecorations(
 
     // --- HTML <details> accordion ---------------------------------------
     if (detailsMember[i]) {
-      const block = detailsStartAt.get(i);
-      if (!block) continue; // inner lines handled by the start
-      // Viewer-only: ALWAYS replace the whole block with one accordion widget
-      // (closed by default), even when the caret is inside the block (R-27-03).
-      // Clicking the summary opens/closes it natively; the body is not editable
-      // in-place (edit via the standard source editor).
-      specs.push({
-        from: lines[block.start].from,
-        to: lines[block.end].to,
-        type: 'replaceWidget',
-        tag: 'details-block',
-        attrs: { summary: block.summary, body: JSON.stringify(block.body) },
-      });
-      i = block.end;
-      continue;
+      const owner = detailsBlockOf[i]!;
+      // R-27-07: the user may opt a specific accordion into raw-source editing
+      // via the "Markdownコードを直接編集" context-menu item. While the caret is
+      // inside such a block, suppress the widget and let every line (start and
+      // inner) fall through to per-line handling so the raw `<details><summary>…`
+      // HTML is shown and editable — the accordion re-forms once the caret leaves
+      // the block (same UX as active tables, R-22-02). Default (no opt-in) keeps
+      // the viewer-only widget always, even with the caret inside (R-27-03).
+      const directEdit =
+        !!options.detailsDirectEditStartLines?.has(owner.start) && blockHasCursor(owner.start, owner.end);
+      if (!directEdit) {
+        const block = detailsStartAt.get(i);
+        if (!block) continue; // inner lines handled by the start
+        // Viewer-only: replace the whole block with one accordion widget (closed
+        // by default). Clicking the summary opens/closes it natively.
+        specs.push({
+          from: lines[block.start].from,
+          to: lines[block.end].to,
+          type: 'replaceWidget',
+          tag: 'details-block',
+          attrs: {
+            summary: block.summary,
+            body: JSON.stringify(block.body),
+            startLine: String(block.start),
+          },
+        });
+        i = block.end;
+        continue;
+      }
+      // directEdit → fall through so this raw line renders as an editable line.
     }
 
     // --- Block math ($$…$$) ---------------------------------------------

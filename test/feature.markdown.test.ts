@@ -360,6 +360,27 @@ describe('R-27 <details> アコーディオン', () => {
     expect(byTag(specs, 'details-tag')).toHaveLength(0);
   });
 
+  it('R-27-07: detailsDirectEditStartLines にブロック開始行を渡しカーソルがブロック内のとき details-block ウィジェットを出さず生行を描画する', () => {
+    const doc = ['<details><summary>Q</summary>', '', '**ワークパッケージ**。', '', '</details>'].join('\n');
+    // カーソルがブロック内 & 開始行を直接編集集合に含める → ウィジェット抑止、生記法へフォールスルー。
+    const specs = computeDecorations(doc, new Set([2]), { detailsDirectEditStartLines: new Set([0]) });
+    expect(byTag(specs, 'details-block')).toHaveLength(0);
+    expect(specs.some((s) => s.type === 'replaceWidget' && s.tag === 'details-block')).toBe(false);
+    // 内側の生行がインライン装飾（強調）として描画される＝生ソースが編集可能に見えている。
+    expect(byTag(specs, 'strong')).toHaveLength(1);
+  });
+
+  it('R-27-07: 既定（集合なし）では従来どおり details-block ウィジェットのまま', () => {
+    const doc = ['<details><summary>Q</summary>', '', '**ワークパッケージ**。', '', '</details>'].join('\n');
+    // オプション未指定 → カーソルがブロック内でもウィジェット 1 個（R-27-03 と一致）。
+    const specs = computeDecorations(doc, new Set([2]));
+    expect(byTag(specs, 'details-block')).toHaveLength(1);
+    expect(byTag(specs, 'strong')).toHaveLength(0);
+    // 集合を渡してもカーソルがブロック外なら（対象 0・カーソル無し）ウィジェットのまま。
+    const outside = computeDecorations(doc, new Set(), { detailsDirectEditStartLines: new Set([0]) });
+    expect(byTag(outside, 'details-block')).toHaveLength(1);
+  });
+
   it('コードブロック内の <details> は折りたたまない', () => {
     const fenced = ['```html', '<details><summary>x</summary>', 'y', '</details>', '```'].join('\n');
     expect(byTag(computeDecorations(fenced, new Set()), 'details-block')).toHaveLength(0);
