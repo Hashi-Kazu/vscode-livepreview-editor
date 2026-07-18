@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  decideAutoOpenedTabsToClose,
   decideFileEventAction,
   decideFollow,
   findViewerForUri,
@@ -103,27 +102,5 @@ describe('R-31-01: unsaved indicator send guard', () => {
     expect(shouldPostDirtyState(true, 4, 4)).toBe(false);
     expect(shouldPostDirtyState(undefined, 4, 4)).toBe(true);
     expect(shouldPostDirtyState(false, 3, 4)).toBe(false);
-  });
-});
-
-describe('R-03-11: suppressing auto-opened source tabs', () => {
-  const target = 'file:///workspace/one.md';
-
-  it('closes the source tab when it newly appears as an edit/save side effect', () => {
-    expect(decideAutoOpenedTabsToClose(target, [], [target])).toBe(true);
-    expect(
-      decideAutoOpenedTabsToClose(target, ['file:///workspace/two.md'], [
-        'file:///workspace/two.md',
-        target,
-      ]),
-    ).toBe(true);
-  });
-
-  it('never closes a tab that was already visible before the operation (user-opened)', () => {
-    expect(decideAutoOpenedTabsToClose(target, [target], [target])).toBe(false);
-  });
-
-  it('does nothing when the tab never appears after the operation', () => {
-    expect(decideAutoOpenedTabsToClose(target, [], [])).toBe(false);
   });
 });

@@ -16,7 +16,6 @@ import {
   toLF,
 } from './core/sync';
 import {
-  decideAutoOpenedTabsToClose,
   decideFileEventAction,
   decideFollow,
   FileEventAction,
@@ -331,10 +330,8 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       documentVersion: document.version + 1,
       text: toLF(target),
     });
-    const tabUrisBeforeApply = this.tabUrisSnapshot();
     const applied = await vscode.workspace.applyEdit(edit);
     if (viewer.binding !== binding) return;
-    await this.closeAutoOpenedSourceTab(binding.key, tabUrisBeforeApply);
     if (!applied) {
       binding.expectedWorkspaceChanges.delete(version);
       binding.webviewText = toLF(document.getText());
@@ -363,8 +360,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     // The WorkspaceEdit above applies the buffered edit as a minimal diff
     // (R-04-01). Persistence is driven by the caller (`flushPendingEdit`),
     // which saves immediately after the batch apply so the document does not
-    // linger dirty (R-03-08); this is what stops VS Code from re-revealing a
-    // closed source tab at the source (R-03-11 remains as a backstop).
+    // remain dirty between editing operations (R-03-08).
   }
 
   /**
@@ -374,7 +370,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
    * (debounce fire, blur, disposal, binding switch, explicit save, and before
    * reconciling an external change) so no buffered keystroke is ever dropped.
    * Applying and then saving collapses the dirty window to the moment between
-   * the two, which keeps a closed source tab from being re-revealed.
+   * the two.
    */
   private async flushPendingEdit(viewer: Viewer): Promise<void> {
     const binding = viewer.binding;
@@ -445,9 +441,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     try {
       const document = await vscode.workspace.openTextDocument(binding.uri);
       if (!document.isDirty) return true;
-      const tabUrisBeforeSave = this.tabUrisSnapshot();
       const saved = await document.save();
-      await this.closeAutoOpenedSourceTab(binding.key, tabUrisBeforeSave);
       if (!saved) {
         vscode.window.showWarningMessage('Live Preview の編集をドキュメントへ保存できませんでした。');
       } else if (viewer) {
@@ -1027,46 +1021,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
     return vscode.workspace
       .getConfiguration('livePreview')
       .get<boolean>('followActiveEditor', true);
-  }
-
-  private suppressSourceAutoOpenEnabled(): boolean {
-    return vscode.workspace
-      .getConfiguration('livePreview')
-      .get<boolean>('suppressSourceAutoOpen', true);
-  }
-
-  /** Snapshot every visible tab's underlying document URI (as a string). */
-  private tabUrisSnapshot(): string[] {
-    const uris: string[] = [];
-    for (const group of vscode.window.tabGroups.all) {
-      for (const tab of group.tabs) {
-        const input = tab.input as { uri?: vscode.Uri } | undefined;
-        if (input?.uri) uris.push(input.uri.toString());
-      }
-    }
-    return uris;
-  }
-
-  /**
-   * Close a source editor tab for `uriKey` if — and only if — it newly
-   * appeared as a side effect of the edit/save operation just performed
-   * (R-03-08 / R-03-11). A tab already visible before the operation, which may
-   * have been opened deliberately by the user, is never touched.
-   */
-  private async closeAutoOpenedSourceTab(uriKey: string, tabUrisBefore: string[]): Promise<void> {
-    if (!this.suppressSourceAutoOpenEnabled()) return;
-    const tabUrisAfter = this.tabUrisSnapshot();
-    if (!decideAutoOpenedTabsToClose(uriKey, tabUrisBefore, tabUrisAfter)) return;
-    const tabsToClose: vscode.Tab[] = [];
-    for (const group of vscode.window.tabGroups.all) {
-      for (const tab of group.tabs) {
-        const input = tab.input as { uri?: vscode.Uri } | undefined;
-        if (input?.uri?.toString() === uriKey) tabsToClose.push(tab);
-      }
-    }
-    if (tabsToClose.length > 0) {
-      await vscode.window.tabGroups.close(tabsToClose);
-    }
   }
 
   private currentFontSize(): number {

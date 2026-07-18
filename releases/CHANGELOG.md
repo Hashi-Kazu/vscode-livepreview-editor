@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.34.0 — ソースエディタータブの自動クローズ処理を削除
+
+### 変更
+
+- Live Preview の編集・保存時に、表示された Markdown ソースエディタータブを `vscode.window.tabGroups.close()` で自動的に閉じる処理を削除。
+- `livePreview.suppressSourceAutoOpen` 設定を削除。
+- `decideAutoOpenedTabsToClose` と関連テストを削除。
+- ソースタブ再表示への対策を、デバウンス apply 直後の即時保存による dirty 滞留防止へ一本化。
+- ユーザーが自分で開いたソースエディタータブを拡張機能が閉じない設計へ変更。
+
 ## v1.33.0 — 明示クリップボードリンクコマンドの削除と見出し折り畳み UI の調整
 
 ### 変更
