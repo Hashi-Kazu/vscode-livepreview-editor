@@ -126,6 +126,31 @@ export function isSaveParticipantNormalization(webviewText: string, documentText
   return normalizeForSaveParticipants(webviewText) === normalizeForSaveParticipants(documentText);
 }
 
+/**
+ * True when two LF-normalised texts are identical except for the number of
+ * trailing newlines at the very end of the document.
+ *
+ * This isolates the one save-participant transform that cannot be reflected
+ * into CodeMirror as a history-preserving change without corrupting undo:
+ * `files.insertFinalNewline` / `files.trimFinalNewlines`. Such a transform
+ * *adds or removes a character at the document boundary*, outside any of the
+ * user's undoable edit ranges. Applying it out-of-history (see
+ * {@link computeRemotePatch} + `Transaction.addToHistory.of(false)`) leaves the
+ * inserted newline stranded when the user later undoes an earlier edit: the
+ * inverse change maps around the boundary newline instead of removing it,
+ * inserting a blank line and breaking monotonic undo. Trailing-*whitespace*
+ * trimming does not have this problem because it edits *within* the range the
+ * user just typed, so undoing that edit cleans it up.
+ *
+ * Callers use this to reconcile host bookkeeping for a final-newline-only save
+ * echo without pushing it into CodeMirror, keeping the Webview the sole owner
+ * of user content while the final newline stays a save-time concern.
+ */
+export function isTrailingNewlineOnlyDifference(a: string, b: string): boolean {
+  if (a === b) return false;
+  return a.replace(/\n+$/, '') === b.replace(/\n+$/, '');
+}
+
 /** A line/character position (0-based), mirroring vscode.Position. */
 export interface Pos {
   line: number;

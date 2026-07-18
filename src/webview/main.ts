@@ -20,7 +20,7 @@ import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
-import { headingFoldRange, scanHeadings, HeadingInfo } from '../core/model';
+import { headingFoldRange } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize } from '../core/viewport';
 
 interface VsCodeApi {
@@ -208,42 +208,6 @@ class SelectionLayerHeightSync {
 }
 
 const selectionLayerHeightPlugin = ViewPlugin.fromClass(SelectionLayerHeightSync);
-
-/**
- * Recompute the floating outline panel (R-33) whenever the document changes.
- * `scanHeadings` is a full-document pure scanner (not viewport-limited, unlike
- * `computeDecorations` — R-05-05), so the outline stays complete regardless of
- * scroll position. Recomputation is deferred to a microtask so a burst of
- * keystrokes collapses into a single re-render (lightweight debounce).
- */
-class OutlineSync {
-  private scheduled = false;
-  private destroyed = false;
-
-  constructor(private readonly view: EditorView) {
-    this.schedule();
-  }
-
-  private schedule() {
-    if (this.scheduled || this.destroyed) return;
-    this.scheduled = true;
-    queueMicrotask(() => {
-      this.scheduled = false;
-      if (this.destroyed) return;
-      renderOutline(scanHeadings(this.view.state.doc.toString()));
-    });
-  }
-
-  update(update: ViewUpdate) {
-    if (update.docChanged) this.schedule();
-  }
-
-  destroy() {
-    this.destroyed = true;
-  }
-}
-
-const outlinePlugin = ViewPlugin.fromClass(OutlineSync);
 
 function postEdit(text: string) {
   editVersion++;
@@ -476,7 +440,6 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       foldGutter({ openText: '▼', closedText: '▶' }),
       livePreviewField(),
       viewportDecorationPlugin,
-      outlinePlugin,
       syncPlugin,
       EditorView.lineWrapping,
       // Draw CodeMirror's own cursor/selection elements so we can style the
@@ -502,63 +465,6 @@ const unsavedIndicator = document.createElement('div');
 unsavedIndicator.className = 'cm-lp-unsaved-indicator';
 unsavedIndicator.title = '未保存の変更があります';
 document.body.appendChild(unsavedIndicator);
-
-// --- R-33: outline / table-of-contents panel ---------------------------------
-// A floating overlay outside the CodeMirror DOM (like the R-31 unsaved
-// indicator) so it never interferes with decoration/measure/click-position
-// handling inside `.cm-editor` (R-28-13 / R-28-15). Content is display-only;
-// the user's Markdown source is never modified by this panel (R-01-02).
-const outlinePanel = document.createElement('div');
-outlinePanel.className = 'cm-lp-outline-panel';
-
-const outlineToggle = document.createElement('button');
-outlineToggle.type = 'button';
-outlineToggle.className = 'cm-lp-outline-toggle';
-outlineToggle.title = '目次を表示/非表示';
-outlineToggle.textContent = '目次';
-outlinePanel.appendChild(outlineToggle);
-
-const outlineList = document.createElement('div');
-outlineList.className = 'cm-lp-outline-list';
-outlinePanel.appendChild(outlineList);
-
-let outlineExpanded = false;
-function setOutlineExpanded(expanded: boolean) {
-  outlineExpanded = expanded;
-  outlinePanel.classList.toggle('is-expanded', expanded);
-}
-outlineToggle.addEventListener('click', () => setOutlineExpanded(!outlineExpanded));
-setOutlineExpanded(false);
-
-document.body.appendChild(outlinePanel);
-
-/** Re-render the outline list from a freshly scanned heading array. */
-function renderOutline(headings: HeadingInfo[]) {
-  outlineList.textContent = '';
-  for (const heading of headings) {
-    const item = document.createElement('div');
-    item.className = 'cm-lp-outline-item';
-    item.style.paddingLeft = `${(heading.level - 1) * 12}px`;
-    item.textContent = heading.text || '(見出し)';
-    item.dataset.line = String(heading.line);
-    outlineList.appendChild(item);
-  }
-}
-
-// Clicking an outline item moves the caret to the heading line and scrolls it
-// into view, without editing the document (R-01-02 / R-33-03).
-outlineList.addEventListener('click', (event) => {
-  const item = (event.target as HTMLElement).closest<HTMLElement>('.cm-lp-outline-item');
-  if (!item?.dataset.line) return;
-  const line = Number(item.dataset.line);
-  try {
-    const anchor = view.state.doc.line(line + 1).from; // doc.line is 1-based
-    view.dispatch({ selection: { anchor }, scrollIntoView: true });
-    view.focus();
-  } catch {
-    /* stale line number if the document changed just before the click */
-  }
-});
 
 /** Send a composition's final full document exactly once, after it is settled. */
 function flushPendingComposition(): boolean {

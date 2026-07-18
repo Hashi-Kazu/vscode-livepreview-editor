@@ -11,6 +11,7 @@ import {
   failedEditBaseVersion,
   fromLFPreserving,
   isSaveParticipantNormalization,
+  isTrailingNewlineOnlyDifference,
   toLF,
 } from './core/sync';
 import {
@@ -674,6 +675,20 @@ export class LivePreviewViewerManager implements vscode.Disposable {
           isSaveNormalization: isSaveParticipantNormalization(binding.webviewText, documentText),
         });
         if (!resync) return;
+        // A save participant that only changed the document's trailing final
+        // newline (`files.insertFinalNewline` / `files.trimFinalNewlines`) must
+        // not be reflected into CodeMirror. Applying it out-of-history strands
+        // the boundary newline when the user later undoes an earlier edit,
+        // inserting a blank line and making undo non-monotonic (undo appearing
+        // to add lines). The Webview owns user content; the final newline is a
+        // save-time concern re-applied on each save, so reconcile only the
+        // host's dirty state and leave `binding.webviewText` as the content the
+        // Webview actually holds (without the boundary newline).
+        if (preserveHistory && isTrailingNewlineOnlyDifference(binding.webviewText, documentText)) {
+          if (viewer.disposed) return;
+          await this.postDirtyState(viewer);
+          return;
+        }
         binding.webviewText = documentText;
         if (viewer.disposed) return;
         await panel.webview.postMessage({

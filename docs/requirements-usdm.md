@@ -7,7 +7,7 @@
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-18 時点 / v1.27.0）**: レイアウト・操作性の強化として、見出しセクション折りたたみ（R-30）、未保存インジケータ（R-31）、数式レンダリング（KaTeX、R-32）、アウトライン/目次ウィジェット（R-33）、テーブルの行・列操作コンテキストメニュー（R-22-05/06）、見出し下余白の拡大（R-28-05 改訂）を追加した。
+> ▶️ **開発継続中（2026-07-18 時点 / v1.28.1）**: v1.28.1 で Live Preview の連続 Undo が空行挿入・行数増加を起こす不整合（`files.insertFinalNewline` の最終改行エコーを out-of-history で CodeMirror へ適用していたため）を修正した（R-04-02、`isTrailingNewlineOnlyDifference`）。v1.28.0 ではレイアウト・操作性の強化として、見出しセクション折りたたみ（R-30）、未保存インジケータ（R-31）、数式レンダリング（KaTeX、R-32）、テーブルの行・列操作コンテキストメニュー（R-22-05/06）、見出し下余白の拡大（R-28-05 改訂）を追加した。アウトライン/目次ウィジェット（旧 R-33）は削除した。
 >
 > （v1.26.0 時点） 毎打鍵アイドル自動保存（`SaveDebouncer`）を廃止し、標準エディタと同じ明示保存（Webview の Ctrl+S→host `performSave`）＋失焦・破棄・バインド切替時の flush 保存へ変更した。編集は従来どおり最小 `WorkspaceEdit` で即時反映する。Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
@@ -140,7 +140,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜双方向同期＞
 
 - ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用し、Undo 粒度を維持する。Live Preview の Undo/Redo は CodeMirror `history()` だけが所有し、ローカル transaction を履歴へ入れる。自己保存由来（保存参加者・own-save 窓中の format-on-save）の書き換えは `computeRemotePatch` の最小差分を `addToHistory.of(false)` で適用し、履歴を保持したままレコンサイルする（`preserveHistory`）。真の外部変更または apply 失敗 rollback だけが、選択を再マップした新しい EditorState に置換して履歴を破棄する。
-- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`WorkspaceEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed ledger へ記録し、その組だけを自己エコーとして消費する。ledger に一致しない変更は `classifyDocumentChange` で分類し、自己保存由来（`SelfSaveGuard.isActive` の own-save 窓、または `isSaveParticipantNormalization` が説明できる EOL・末尾改行・行末空白だけの差分）は `preserveHistory` 付きで履歴を保持して再同期し、真の外部変更のみ authoritative update として履歴を破棄する。ack は apply 成功または差分なし確認後だけ送る。
+- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`WorkspaceEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed ledger へ記録し、その組だけを自己エコーとして消費する。ledger に一致しない変更は `classifyDocumentChange` で分類し、自己保存由来（`SelfSaveGuard.isActive` の own-save 窓、または `isSaveParticipantNormalization` が説明できる EOL・末尾改行・行末空白だけの差分）は `preserveHistory` 付きで履歴を保持して再同期し、真の外部変更のみ authoritative update として履歴を破棄する。ただし文書末尾の最終改行だけが増減した保存正規化（`isTrailingNewlineOnlyDifference`、例：`files.insertFinalNewline`／`files.trimFinalNewlines`）は CodeMirror へ反映せず host 側の記録のみ整合させる。境界の改行を out-of-history で適用すると、後続の Undo が先行編集を戻す際に改行が取り残されて空行が挿入され、行数が単調減少しなくなる（Undo なのに行数が増える）ため。最終改行はユーザ本文には属さない保存時の関心事とし、保存ごとに再付与する。ack は apply 成功または差分なし確認後だけ送る。
 - ■■□ R-04-03 Webview は edit version と ack version を別管理し、external update を `baseVersion === editVersion === ackVersion` のときだけ適用する。未 ack local edit、IME、または保留 local change 中は最新1件を保留して ack 後に再判定し、古い base は破棄する。旧形式（baseVersion なし）は未 ack local edit がない場合だけ適用する。`workspace.applyEdit` false の rollback は失敗 edit version を基準にして、より新しい local edit を上書きしない。
 
 ---
@@ -399,7 +399,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-30-01 純粋関数 `scanHeadings` はフェンスコードブロック内の `#` を除外して全見出しを行番号・レベル・テキスト・オフセット付きで返すこと。
 - ■■□ R-30-02 純粋関数 `headingFoldRange` は見出し行に対し、次の同レベル以下の見出し直前までを折りたたみ範囲として返し、配下が無い場合は `null` を返すこと。コードブロックを跨いでも正しく範囲を返すこと。
 - ■■□ R-30-03 Webview は `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldKeymap` で見出し配下を折りたたみ／展開できること。既定は全展開。
-- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。
+- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。見出し行は上下パディングで行ブロックが縦に伸びるため、ガターの `▶`/`▼` マーカーは行ブロック内で縦中央寄せ（`display: flex; align-items: center`）にし、見出し文字と縦位置を揃えること。
 
 ### R-31 未保存インジケータ #unsaved
 
@@ -426,14 +426,3 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-32-03 Webview は KaTeX を JS バンドル同梱・CSS/フォントを `media/katex/` から配信して数式を DOM 描画し、レンダリング失敗時も Webview を落とさず生 tex をフォールバック表示すること。CSP（nonce／font-src cspSource）を維持すること。
 - ■■□ R-32-04 block 数式ウィジェットは `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶこと（R-28-10 / R-28-11）。
 
-### R-33 アウトライン/目次 #outline
-
-> **理由：** 長い文書内で見出し間を素早く移動できるよう、ビューア内にナビゲーション用の目次を設ける。
-
-> **説明：** 見出し抽出は R-30 で追加した全文走査の純粋関数 `scanHeadings`（`src/core/model.ts`）を再利用する（フェンスコードブロック内の `#` は除外。ビューポート限定の `computeDecorations`（R-05-05）には依存しない）。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外にフローティングの目次パネル `cm-lp-outline-panel` を生成し、トグルボタンで表示/非表示を切り替える。ドキュメント変更時（`OutlineSync` ViewPlugin、マイクロタスクで軽くデバウンス）に `scanHeadings(view.state.doc.toString())` を再計算し、見出しレベルに応じてインデントした一覧を描画する。項目クリックで `view.dispatch({ selection: { anchor: doc.line(line + 1).from }, scrollIntoView: true })` により該当見出し行へキャレット移動・スクロールする（`line` は 0-based、`doc.line` は 1-based）。本文は一切書き換えない（R-01-02）。色は `var(--vscode-*)` 追従（R-28-04）。
-
-###### ＜アウトライン/目次＞
-
-- ■■□ R-33-01 純粋関数 `scanHeadings` により全文書の見出し（レベル・テキスト・行番号）を取得すること（コードブロック内 `#` は除外）。ビューポート限定装飾（R-05-05）に依存しないこと。
-- ■■□ R-33-02 Webview はビューア内フローティングパネルに見出しをレベル別インデントで一覧表示し、表示/非表示をトグルできること。色は `var(--vscode-*)` 追従。
-- ■■□ R-33-03 目次項目クリックで該当見出し行へキャレット移動・スクロールすること。本文は変更しないこと（R-01-02）。パネルは CodeMirror の装飾・計測・クリック位置に干渉しないこと。
