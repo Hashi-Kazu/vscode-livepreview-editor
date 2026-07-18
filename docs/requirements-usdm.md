@@ -351,7 +351,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-28-04 本文・見出し・各記法の文字色を VS Code 標準テーマの色変数（`var(--vscode-...)`）に追従させ、独自のハードコード色を用いないこと。
 - ■■□ R-28-05 本文体裁を GitHub / VS Code 標準 Markdown プレビュー（github-markdown-css 風）に寄せること。具体的には次を満たすこと（描画エンジンと装飾ロジックは変更せず CSS の体裁のみで実現する）:
   - 本文フォントは UI/サンセリフ（`var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, sans-serif))`）とし、コード（`.cm-lp-code`/`.cm-lp-codeblock`）のみ monospace を維持。行間は 1.6 前後。
-  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.4em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`、境界線上の空きを含め `padding-bottom: 0.6em`）を付与する。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
+  - 見出し `.cm-lp-h1`〜`h6` を MPE（Markdown Preview Enhanced）/GitHub 風に強化したサイズ（h1≈2em / h2≈1.6em / h3≈1.3em / h4≈1.15em / h5≈1em / h6≈0.9em 目安）にし、太さは基本 `font-weight: 600`、h1/h2 は `font-weight: 700` とする。見出しと本文の間に十分な余白を設けるため、見出し行の上下余白は `padding-top: 1.2em`／`padding-bottom: 0.6em`（h1 は `padding-top: 1.4em`）とし、h1/h2 行に下境界線（`border-bottom: 1px solid var(--vscode-panel-border)`、境界線下の空きを含め `padding-bottom: 0.75em`）を付与する。h5/h6 は `var(--vscode-descriptionForeground)` で減色し本文との差別化を強める。
   - インラインコードは淡背景＋角丸の小ピル、ブロックコード `.cm-lp-codeblock` は全幅背景＋十分なパディング（例 `12px 16px`）にする。
   - 引用 `.cm-lp-quote`・表 `table.cm-lp-table`（ボーダー・ヘッダ背景・任意のゼブラ）・水平線 `.cm-lp-hr-line` を GitHub プレビュー風にする。
   - すべての色は `var(--vscode-*)` 変数でテーマ追従を維持し（ハードコード色禁止・フォールバックのみ可）、`.cm-lp-table-row` の `font-variant-numeric: tabular-nums` を維持する。カーソル行で生記法が見えても体裁が崩れないこと（カーソル行表示ロジックは変更しない）。

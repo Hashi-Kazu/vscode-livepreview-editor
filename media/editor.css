@@ -134,7 +134,7 @@ body {
      含まないため、margin を使うと CodeMirror の height oracle が見出し行の実寸を
      過小評価しスクロール量に比例したクリック位置ずれが累積する (R-28-14)。 */
   padding-top: 1.2em;
-  padding-bottom: 0.4em;
+  padding-bottom: 0.6em;
 }
 /* h1 gets extra top padding to separate it further from preceding content. */
 .cm-line.cm-lp-h1 {
@@ -155,8 +155,8 @@ body {
 .cm-line.cm-lp-h1,
 .cm-line.cm-lp-h2 {
   border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3)));
-  /* 0.4em 下余白 + 0.2em border 上の空き = 0.6em（padding-bottom を上書き）*/
-  padding-bottom: 0.6em;
+  /* 0.6em 下余白 + 0.15em border 上の空き = 0.75em（padding-bottom を上書き）*/
+  padding-bottom: 0.75em;
 }
 
 .cm-lp-quote {
