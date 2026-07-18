@@ -198,19 +198,123 @@ export interface MediaSnippet {
  * `alt text` as the selectable placeholder; other files use `[text](target)`
  * with `text` as the placeholder. `target` must already be passed through
  * {@link formatMarkdownLinkTarget}.
+ *
+ * `label`, when provided for a non-image link, is used verbatim as the visible
+ * link text (the caller has already resolved it via {@link linkLabel}). When
+ * `label` is absent the existing `selectedText`/basename behavior applies, so
+ * the drag/drop and paste paths stay byte-for-byte unchanged. Images always use
+ * the `alt text` placeholder and ignore `label`.
  */
 export function buildMediaSnippet(opts: {
   isImage: boolean;
   target: string;
   /** Selected text wins for non-image links; empty selections use the basename. */
   selectedText?: string;
+  /** Explicit visible label for non-image links (overrides `selectedText`/basename). */
+  label?: string;
 }): MediaSnippet {
-  const placeholder = opts.isImage ? 'alt text' : mediaLinkText(opts.target, opts.selectedText);
+  const placeholder = opts.isImage
+    ? 'alt text'
+    : typeof opts.label === 'string' && opts.label.length > 0
+      ? opts.label
+      : mediaLinkText(opts.target, opts.selectedText);
   const prefix = opts.isImage ? '![' : '[';
   const from = prefix.length;
   const to = from + placeholder.length;
   const text = `${prefix}${placeholder}](${opts.target})`;
   return { text, placeholderFrom: from, placeholderTo: to };
+}
+
+/**
+ * Parse the stdout of the PowerShell `ConvertTo-Json` clipboard file-drop-list
+ * reader into absolute path strings. Defensive against the several shapes
+ * `ConvertTo-Json` can emit: an array of strings, a single bare string (one
+ * element), or empty/`null`/malformed output (no files). Node/host-free so it is
+ * unit-testable in the Webview-safe module.
+ */
+export function parseClipboardFileListJson(stdout: string): string[] {
+  const trimmed = typeof stdout === 'string' ? stdout.trim() : '';
+  if (!trimmed) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return [];
+  }
+  if (parsed === null) return [];
+  if (typeof parsed === 'string') {
+    const single = parsed.trim();
+    return single ? [single] : [];
+  }
+  if (Array.isArray(parsed)) {
+    return parsed
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+  return [];
+}
+
+/**
+ * Resolve the visible label for a clipboard file/folder link. A non-empty
+ * selection always wins. Folders always use their name (never the trailing
+ * `/`). Otherwise the configured `mode` decides: `fileName` keeps the full
+ * basename, `fileNameWithoutExtension` strips the final extension, and
+ * `relativePath` uses the document-relative path.
+ */
+export function linkLabel(opts: {
+  name: string;
+  relative: string;
+  isDirectory: boolean;
+  selectedText?: string;
+  mode: 'fileName' | 'fileNameWithoutExtension' | 'relativePath';
+}): string {
+  if (typeof opts.selectedText === 'string' && opts.selectedText.length > 0) {
+    return opts.selectedText;
+  }
+  if (opts.isDirectory) return opts.name;
+  switch (opts.mode) {
+    case 'fileName':
+      return opts.name;
+    case 'relativePath':
+      return opts.relative;
+    case 'fileNameWithoutExtension':
+    default: {
+      const dot = opts.name.lastIndexOf('.');
+      return dot > 0 ? opts.name.slice(0, dot) : opts.name;
+    }
+  }
+}
+
+/** Append a single trailing `/` to a folder's relative path (idempotent). */
+export function folderLinkTarget(relative: string): string {
+  return relative.endsWith('/') ? relative : `${relative}/`;
+}
+
+/**
+ * Combine several media snippets into one. `lines` joins with newlines; `list`
+ * prefixes each with `- ` and joins with newlines. The returned placeholder
+ * range points at the first link's label (shifted by the `- ` prefix in list
+ * mode) so the Webview selects it after insertion. A single snippet is returned
+ * unchanged.
+ */
+export function combineLinks(snippets: MediaSnippet[], format: 'lines' | 'list'): MediaSnippet {
+  if (snippets.length === 0) return { text: '', placeholderFrom: 0, placeholderTo: 0 };
+  if (snippets.length === 1) return snippets[0];
+  const first = snippets[0];
+  if (format === 'list') {
+    const offset = 2; // length of '- '
+    return {
+      text: snippets.map((snippet) => `- ${snippet.text}`).join('\n'),
+      placeholderFrom: first.placeholderFrom + offset,
+      placeholderTo: first.placeholderTo + offset,
+    };
+  }
+  return {
+    text: snippets.map((snippet) => snippet.text).join('\n'),
+    placeholderFrom: first.placeholderFrom,
+    placeholderTo: first.placeholderTo,
+  };
 }
 
 /** Derive the visible label for a non-image Markdown link. */
