@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeDecorations, DecoSpec, splitLines, detectCodeBlocks, detectTableBlocks, detectDetailsBlocks, detailsTagRanges, parseTable, parseTableRow, tableRowSourceLine, scanHeadings, headingFoldRange } from '../src/core/model';
-import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn } from '../src/core/tableEdit';
+import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../src/core/tableEdit';
 
 const byTag = (specs: DecoSpec[], tag: string) => specs.filter((s) => s.tag === tag);
 const slice = (doc: string, s: DecoSpec) => doc.slice(s.from, s.to);
@@ -89,6 +89,14 @@ describe('R-22 表のレンダリング', () => {
   it('parseTableRow はセルを分割する', () => {
     expect(parseTableRow('| a | b |')).toEqual(['a', 'b']);
     expect(parseTableRow('a | b')).toEqual(['a', 'b']);
+  });
+
+  it('parseTableRow: \\| をセル内文字として扱う', () => {
+    // Escaped pipe stays inside the cell (unescaped to a bare `|`) instead of
+    // splitting the row into an extra column.
+    expect(parseTableRow('| a\\|b | c |')).toEqual(['a|b', 'c']);
+    expect(parseTableRow('| x | y\\|z |')).toEqual(['x', 'y|z']);
+    expect(parseTableRow('a\\|b | c')).toEqual(['a|b', 'c']);
   });
 
   it('parseTable はヘッダ・整列・行を返す', () => {
@@ -217,6 +225,86 @@ describe('R-22-05 テーブル行列操作（純粋ロジック）', () => {
     insertTableColumn(input, 0, 'right');
     deleteTableColumn(input, 0);
     expect(input).toEqual(snapshot);
+  });
+});
+
+// R-22-05: セル直接編集（純粋ロジック）
+describe('R-22-05 セル直接編集（純粋ロジック）', () => {
+  const table = () => ['| a | b |', '| :-- | --: |', '| 1 | 2 |', '| 3 | 4 |'];
+
+  it('updateTableCell: ヘッダーセル更新', () => {
+    expect(updateTableCell(table(), { type: 'header' }, 0, 'X')).toEqual([
+      '| X | b |',
+      '| :-- | --: |',
+      '| 1 | 2 |',
+      '| 3 | 4 |',
+    ]);
+  });
+
+  it('updateTableCell: ボディセル更新', () => {
+    expect(updateTableCell(table(), { type: 'body', index: 1 }, 1, 'Z')).toEqual([
+      '| a | b |',
+      '| :-- | --: |',
+      '| 1 | 2 |',
+      '| 3 | Z |',
+    ]);
+  });
+
+  it('updateTableCell: 存在しない行は無変更', () => {
+    expect(updateTableCell(table(), { type: 'body', index: 5 }, 0, 'X')).toEqual(table());
+  });
+
+  it('updateTableCell: 存在しない列は無変更', () => {
+    expect(updateTableCell(table(), { type: 'header' }, 5, 'X')).toEqual(table());
+  });
+
+  it('updateTableCell: 入力配列を破壊しない', () => {
+    const input = table();
+    const snapshot = input.slice();
+    updateTableCell(input, { type: 'header' }, 0, 'X');
+    updateTableCell(input, { type: 'body', index: 0 }, 1, 'Y');
+    expect(input).toEqual(snapshot);
+  });
+
+  it('updateTableCell: パイプを \\| にエスケープして保存', () => {
+    const result = updateTableCell(table(), { type: 'body', index: 0 }, 0, 'a|b');
+    expect(result[2]).toBe('| a\\|b | 2 |');
+    // Round-trips back to the literal value with a bare pipe.
+    expect(parseTableRow(result[2])).toEqual(['a|b', '2']);
+  });
+
+  it('updateTableCell: 区切り行は更新しない', () => {
+    // The delimiter row (body index -1 → source line 1) is never editable.
+    expect(updateTableCell(table(), { type: 'body', index: -1 }, 0, 'X')).toEqual(table());
+  });
+
+  it('updateTableCell: 左寄せ・中央寄せ・右寄せを保持', () => {
+    const aligned = ['| a | b | c |', '| :-- | :-: | --: |', '| 1 | 2 | 3 |'];
+    const result = updateTableCell(aligned, { type: 'body', index: 0 }, 1, 'X');
+    expect(result).toEqual(['| a | b | c |', '| :-- | :-: | --: |', '| 1 | X | 3 |']);
+    // Delimiter alignment markers survive verbatim.
+    expect(result[1]).toBe('| :-- | :-: | --: |');
+  });
+
+  it('updateTableCell: 空文字セル', () => {
+    expect(updateTableCell(table(), { type: 'header' }, 0, '')).toEqual([
+      '|   | b |',
+      '| :-- | --: |',
+      '| 1 | 2 |',
+      '| 3 | 4 |',
+    ]);
+  });
+
+  it('updateTableCell: 列数が不揃いな表', () => {
+    const ragged = ['| a | b |', '| -- | -- |', '| 1 |'];
+    // Update the only existing cell of the short row.
+    expect(updateTableCell(ragged, { type: 'body', index: 0 }, 0, 'X')).toEqual([
+      '| a | b |',
+      '| -- | -- |',
+      '| X |',
+    ]);
+    // A column absent from that short row is treated as non-existent → no change.
+    expect(updateTableCell(ragged, { type: 'body', index: 0 }, 1, 'Y')).toEqual(ragged);
   });
 });
 

@@ -168,6 +168,9 @@ class TableWidget extends WidgetType {
       const th = document.createElement('th');
       // data-col lets the right-click table menu target a specific column (R-22-06).
       th.setAttribute('data-col', String(idx));
+      // Cell-edit metadata (double-click / "セルを編集"): row kind + table origin.
+      th.setAttribute('data-row-type', 'header');
+      th.setAttribute('data-table-start-line', String(this.startLine));
       appendInlineCell(th, cell);
       if (data.align[idx] && data.align[idx] !== 'none') th.style.textAlign = data.align[idx];
       htr.appendChild(th);
@@ -183,6 +186,11 @@ class TableWidget extends WidgetType {
         const td = document.createElement('td');
         // data-col lets the right-click table menu target a specific column (R-22-06).
         td.setAttribute('data-col', String(idx));
+        // Cell-edit metadata (double-click / "セルを編集"): row kind, 0-based body
+        // row index, and the table's source start line.
+        td.setAttribute('data-row-type', 'body');
+        td.setAttribute('data-row-index', String(k));
+        td.setAttribute('data-table-start-line', String(this.startLine));
         appendInlineCell(td, row[idx] ?? '');
         if (data.align[idx] && data.align[idx] !== 'none') td.style.textAlign = data.align[idx];
         tr.appendChild(td);
@@ -206,13 +214,16 @@ class TableWidget extends WidgetType {
     wrapper.appendChild(table);
     return wrapper;
   }
-  /** Called when the widget DOM already exists in the tree (update path).
-   *  Reuse existing DOM (return true) and schedule a re-measure so CodeMirror
-   *  reconciles block heights against the real painted DOM, keeping
-   *  `posAtCoords` accurate for lines below the table (R-28-10). */
+  /** Called when this widget replaces an existing, non-equal widget of the same
+   *  type (row/column edit or cell edit → the parsed `json` changed). Returning
+   *  `false` makes CodeMirror discard the stale DOM and call `toDOM()` to rebuild
+   *  the table from the new data — reusing the old DOM (returning `true`) left the
+   *  previous table painted until the next unrelated update. We still schedule a
+   *  re-measure (outside `toDOM`, honouring R-28-10/R-28-11) so block heights are
+   *  reconciled against the freshly painted DOM. */
   updateDOM(_dom: HTMLElement, view: EditorView): boolean {
     view.requestMeasure();
-    return true;
+    return false;
   }
   ignoreEvent() {
     return false;
