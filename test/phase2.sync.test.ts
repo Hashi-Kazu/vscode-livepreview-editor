@@ -9,6 +9,7 @@ import {
   fromLF,
   fromLFPreserving,
   isSaveParticipantNormalization,
+  planDocumentChangeSync,
   appliedEditVersion,
   acceptsWebviewEditVersion,
   consumeExpectedWorkspaceEditChange,
@@ -163,6 +164,60 @@ describe('save-participant changes remain authoritative (R-04-02)', () => {
         isSaveNormalization,
       }),
     ).toBe(true);
+  });
+});
+
+describe('pending-edit document-change planning (R-04-02)', () => {
+  it('save-normalization is reclassified after pending-edit flush', () => {
+    expect(
+      planDocumentChangeSync({
+        hasPendingEdit: true,
+        isDuringOwnSave: false,
+        webviewText: 'abc',
+        documentText: 'abc\n',
+      }),
+    ).toEqual({
+      flushPendingEdit: true,
+      isSaveNormalization: true,
+      snapshotSource: 'document-after-flush',
+    });
+
+    // format-on-save can change real content, so the synchronous own-save
+    // origin must survive even when content-only normalization cannot detect it.
+    expect(
+      planDocumentChangeSync({
+        hasPendingEdit: true,
+        isDuringOwnSave: true,
+        webviewText: 'abc',
+        documentText: 'ABC',
+      }),
+    ).toEqual({
+      flushPendingEdit: true,
+      isSaveNormalization: true,
+      snapshotSource: 'document-after-flush',
+    });
+  });
+
+  it('retains a genuine external snapshot across pending-edit flush', () => {
+    expect(
+      planDocumentChangeSync({
+        hasPendingEdit: true,
+        isDuringOwnSave: false,
+        webviewText: 'abc',
+        documentText: 'external content',
+      }),
+    ).toEqual({ flushPendingEdit: true, isSaveNormalization: false, snapshotSource: 'event' });
+  });
+
+  it('uses the event snapshot when no pending edit needs flushing', () => {
+    expect(
+      planDocumentChangeSync({
+        hasPendingEdit: false,
+        isDuringOwnSave: true,
+        webviewText: 'abc',
+        documentText: 'ABC',
+      }),
+    ).toEqual({ flushPendingEdit: false, isSaveNormalization: true, snapshotSource: 'event' });
   });
 });
 

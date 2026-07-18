@@ -12,6 +12,7 @@ import {
   fromLFPreserving,
   isSaveParticipantNormalization,
   isTrailingNewlineOnlyDifference,
+  planDocumentChangeSync,
   toLF,
 } from './core/sync';
 import {
@@ -64,6 +65,10 @@ interface ViewerBinding {
   lastAckVersion: number;
   /** Expected self echoes, keyed by source Webview version. */
   expectedWorkspaceChanges: Map<number, ExpectedWorkspaceEditChange>;
+  /** Exact echo expected while restoring an authoritative external snapshot. */
+  expectedAuthoritativeChange?: { documentVersion: number; text: string };
+  /** Event-time origins retained until their queued reconciliation completes. */
+  documentChangeOrigins: Map<number, { isSaveNormalization: boolean; text: string }>;
   changeSubscription: vscode.Disposable;
   /**
    * Suppresses echoes of any save of this binding's document — including
@@ -436,10 +441,10 @@ export class LivePreviewViewerManager implements vscode.Disposable {
    * clears without waiting for `onDidSaveTextDocument` to route through the
    * operation queue.
    */
-  private async performSave(binding: ViewerBinding, viewer?: Viewer): Promise<void> {
+  private async performSave(binding: ViewerBinding, viewer?: Viewer): Promise<boolean> {
     try {
       const document = await vscode.workspace.openTextDocument(binding.uri);
-      if (!document.isDirty) return;
+      if (!document.isDirty) return true;
       const tabUrisBeforeSave = this.tabUrisSnapshot();
       const saved = await document.save();
       await this.closeAutoOpenedSourceTab(binding.key, tabUrisBeforeSave);
@@ -448,8 +453,68 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       } else if (viewer) {
         await this.postDirtyState(viewer);
       }
+      return saved;
     } catch (error) {
       console.error('Live Preview deferred save failed', error);
+      return false;
+    }
+  }
+
+  /**
+   * Restore an event-time external snapshot after a pending local flush has
+   * temporarily overwritten the TextDocument. The exact apply echo is guarded
+   * separately from the Webview-edit ledger, then the restored document is
+   * saved immediately so TextDocument, disk, binding, and Webview can converge.
+   */
+  private async restoreAuthoritativeDocumentSnapshot(
+    viewer: Viewer,
+    binding: ViewerBinding,
+    targetLF: string,
+  ): Promise<string | undefined> {
+    let document: vscode.TextDocument;
+    try {
+      document = await vscode.workspace.openTextDocument(binding.uri);
+    } catch {
+      return undefined;
+    }
+    if (viewer.binding !== binding) return undefined;
+
+    const current = document.getText();
+    const eol = document.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+    const target = fromLFPreserving(targetLF, current, eol);
+    const diff = diffRange(current, target);
+    if (!diff) return toLF(current);
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(
+      binding.uri,
+      new vscode.Range(
+        diff.range.start.line,
+        diff.range.start.character,
+        diff.range.end.line,
+        diff.range.end.character,
+      ),
+      diff.newText,
+    );
+    binding.expectedAuthoritativeChange = {
+      documentVersion: document.version + 1,
+      text: toLF(target),
+    };
+    const applied = await vscode.workspace.applyEdit(edit);
+    if (viewer.binding !== binding) return undefined;
+    if (!applied) {
+      binding.expectedAuthoritativeChange = undefined;
+      vscode.window.showWarningMessage('外部変更を Live Preview の文書へ復元できませんでした。');
+      return undefined;
+    }
+
+    if (!(await this.performSave(binding, viewer))) return undefined;
+    try {
+      const finalDocument = await vscode.workspace.openTextDocument(binding.uri);
+      if (viewer.binding !== binding) return undefined;
+      return toLF(finalDocument.getText());
+    } catch {
+      return undefined;
     }
   }
 
@@ -724,6 +789,18 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       if (event.document.uri.toString() !== binding.key) return;
       const eventDocumentVersion = event.document.version;
       const documentText = toLF(event.document.getText());
+      const expectedAuthoritativeChange = binding.expectedAuthoritativeChange;
+      if (
+        expectedAuthoritativeChange?.documentVersion === eventDocumentVersion &&
+        expectedAuthoritativeChange.text === documentText
+      ) {
+        binding.expectedAuthoritativeChange = undefined;
+        const echoViewer = getViewer();
+        if (echoViewer && !echoViewer.disposed) {
+          this.enqueue(echoViewer, async () => this.postDirtyState(echoViewer));
+        }
+        return;
+      }
       const selfVersion = consumeExpectedWorkspaceEditChange({
         ledger: binding.expectedWorkspaceChanges,
         documentVersion: eventDocumentVersion,
@@ -739,63 +816,108 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         return;
       }
 
-      // A non-self-echo change is an external edit. If a Webview keystroke is
-      // still buffered (debounce in flight), flush it first so the buffered
-      // local text is committed before the external change is reconciled and
-      // no keystroke is silently dropped (item 5). A genuine conflict still
-      // resolves in favor of the external change via `classifyDocumentChange`
-      // below (R-04-02).
-      if (binding.pendingEdit) {
-        const flushViewer = getViewer();
-        if (flushViewer && !flushViewer.disposed) {
-          this.enqueue(flushViewer, async () => this.flushPendingEdit(flushViewer));
-        }
-      }
-
-      // A listener is deliberately queued behind the edit that created it.
-      // This serializes external document snapshots with host acknowledgements.
-      // Whether we resync at all is unchanged, but a self-save echo (our own
-      // save window's save participants / format-on-save) is reconciled while
-      // preserving CodeMirror history; only a genuine external change resets it.
-      // The save-guard window is sampled synchronously here — before the queue
-      // drains — so it still reflects the save in flight.
       const isDuringOwnSave = binding.saveGuard.isActive;
+      const syncPlan = planDocumentChangeSync({
+        hasPendingEdit: binding.pendingEdit !== undefined,
+        isDuringOwnSave,
+        webviewText: binding.webviewText,
+        documentText,
+      });
       const viewer = getViewer();
       if (!viewer || viewer.disposed) return;
+      binding.documentChangeOrigins.set(eventDocumentVersion, {
+        isSaveNormalization: syncPlan.isSaveNormalization,
+        text: documentText,
+      });
       this.enqueue(viewer, async () => {
-        if (viewer.binding !== binding) return;
-        const { resync, preserveHistory } = classifyDocumentChange({
-          isFromWebview: false,
-          webviewText: binding.webviewText,
-          documentText,
-          isDuringOwnSave,
-          isSaveNormalization: isSaveParticipantNormalization(binding.webviewText, documentText),
-        });
-        if (!resync) return;
-        // A save participant that only changed the document's trailing final
-        // newline (`files.insertFinalNewline` / `files.trimFinalNewlines`) must
-        // not be reflected into CodeMirror. Applying it out-of-history strands
-        // the boundary newline when the user later undoes an earlier edit,
-        // inserting a blank line and making undo non-monotonic (undo appearing
-        // to add lines). The Webview owns user content; the final newline is a
-        // save-time concern re-applied on each save, so reconcile only the
-        // host's dirty state and leave `binding.webviewText` as the content the
-        // Webview actually holds (without the boundary newline).
-        if (preserveHistory && isTrailingNewlineOnlyDifference(binding.webviewText, documentText)) {
+        try {
+          if (viewer.binding !== binding) return;
+
+          // Classify the event origin before entering the queue, then flush the
+          // latest coalesced Webview edit in this same queued operation. For a
+          // save-normalization event, its captured text is stale after the flush:
+          // re-read the bound document and classify the final text instead. A
+          // genuine external event keeps its captured authoritative snapshot.
+          if (syncPlan.flushPendingEdit && binding.pendingEdit) await this.flushPendingEdit(viewer);
+          if (viewer.binding !== binding) return;
+
+          let syncDocumentText = documentText;
+          let syncIsSaveNormalization = syncPlan.isSaveNormalization;
+          if (syncPlan.snapshotSource === 'document-after-flush') {
+            let currentDocument: vscode.TextDocument;
+            try {
+              currentDocument = await vscode.workspace.openTextDocument(binding.uri);
+            } catch {
+              return;
+            }
+            if (viewer.binding !== binding) return;
+            syncDocumentText = toLF(currentDocument.getText());
+
+            // A later non-ledger event can land while the pending flush or the
+            // re-read is awaiting VS Code. Use its event-time origin as a
+            // version fence. A later true external event owns its snapshot and
+            // will reconcile in its own queued callback; the older save event
+            // must not consume it as a history-preserving update.
+            const currentOrigin = binding.documentChangeOrigins.get(currentDocument.version);
+            if (
+              currentDocument.version !== eventDocumentVersion &&
+              currentOrigin?.text === syncDocumentText
+            ) {
+              if (!currentOrigin.isSaveNormalization) return;
+              syncIsSaveNormalization = true;
+            } else if (currentDocument.version !== eventDocumentVersion) {
+              syncIsSaveNormalization = isSaveParticipantNormalization(
+                binding.webviewText,
+                syncDocumentText,
+              );
+            }
+          }
+
+          const { resync, preserveHistory } = classifyDocumentChange({
+            isFromWebview: false,
+            webviewText: binding.webviewText,
+            documentText: syncDocumentText,
+            isSaveNormalization: syncIsSaveNormalization,
+          });
+          if (!resync) return;
+          // A save participant that only changed the document's trailing final
+          // newline (`files.insertFinalNewline` / `files.trimFinalNewlines`) must
+          // not be reflected into CodeMirror. Applying it out-of-history strands
+          // the boundary newline when the user later undoes an earlier edit,
+          // inserting a blank line and making undo non-monotonic (undo appearing
+          // to add lines). The Webview owns user content; the final newline is a
+          // save-time concern re-applied on each save, so reconcile only the
+          // host's dirty state and leave `binding.webviewText` as the content the
+          // Webview actually holds (without the boundary newline).
+          if (preserveHistory && isTrailingNewlineOnlyDifference(binding.webviewText, syncDocumentText)) {
+            if (viewer.disposed) return;
+            await this.postDirtyState(viewer);
+            return;
+          }
+
+          if (!preserveHistory) {
+            const restoredText = await this.restoreAuthoritativeDocumentSnapshot(
+              viewer,
+              binding,
+              syncDocumentText,
+            );
+            if (restoredText === undefined) return;
+            syncDocumentText = restoredText;
+          }
+
+          binding.webviewText = syncDocumentText;
           if (viewer.disposed) return;
+          await panel.webview.postMessage({
+            type: 'update',
+            text: syncDocumentText,
+            binding: binding.generation,
+            baseVersion: binding.lastAckVersion,
+            ...(preserveHistory ? { preserveHistory: true } : {}),
+          });
           await this.postDirtyState(viewer);
-          return;
+        } finally {
+          binding.documentChangeOrigins.delete(eventDocumentVersion);
         }
-        binding.webviewText = documentText;
-        if (viewer.disposed) return;
-        await panel.webview.postMessage({
-          type: 'update',
-          text: documentText,
-          binding: binding.generation,
-          baseVersion: binding.lastAckVersion,
-          ...(preserveHistory ? { preserveHistory: true } : {}),
-        });
-        await this.postDirtyState(viewer);
       });
     });
     const willSaveSubscription = vscode.workspace.onWillSaveTextDocument((event) => {
@@ -817,6 +939,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       lastReceivedVersion: 0,
       lastAckVersion: 0,
       expectedWorkspaceChanges: new Map(),
+      documentChangeOrigins: new Map(),
       changeSubscription,
       saveGuard: new SelfSaveGuard(),
       saveToken: 0,

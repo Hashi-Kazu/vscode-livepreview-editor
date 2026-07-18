@@ -126,6 +126,50 @@ export function isSaveParticipantNormalization(webviewText: string, documentText
   return normalizeForSaveParticipants(webviewText) === normalizeForSaveParticipants(documentText);
 }
 
+/** Which document snapshot a queued change listener must reconcile. */
+export type DocumentChangeSnapshotSource = 'event' | 'document-after-flush';
+
+export interface DocumentChangeSyncPlan {
+  /** Whether a pending edit existed when the document event was observed. */
+  flushPendingEdit: boolean;
+  /** Preserve the event-time distinction between save normalization and a true external edit. */
+  isSaveNormalization: boolean;
+  /**
+   * Save-normalization event text becomes stale when a pending Webview edit is
+   * flushed ahead of it, so that path must re-read the bound TextDocument.
+   * A true external edit remains authoritative and must retain its event-time
+   * snapshot even after the local pending edit has been flushed.
+   */
+  snapshotSource: DocumentChangeSnapshotSource;
+}
+
+/**
+ * Plan how a non-ledger document-change event is reconciled with a pending
+ * Webview edit.
+ *
+ * The event's origin is classified synchronously, before the operation queue
+ * can drain and `SelfSaveGuard` can close. Save-normalization snapshots are
+ * re-read after the pending edit's apply/save flush; otherwise their stale
+ * event text could be sent with the newly advanced acknowledgement version and
+ * roll CodeMirror back. Genuine external snapshots are retained because they
+ * are authoritative even when the local pending edit is flushed first.
+ */
+export function planDocumentChangeSync(params: {
+  hasPendingEdit: boolean;
+  isDuringOwnSave: boolean;
+  webviewText: string;
+  documentText: string;
+}): DocumentChangeSyncPlan {
+  const isSaveNormalization =
+    params.isDuringOwnSave || isSaveParticipantNormalization(params.webviewText, params.documentText);
+  return {
+    flushPendingEdit: params.hasPendingEdit,
+    isSaveNormalization,
+    snapshotSource:
+      params.hasPendingEdit && isSaveNormalization ? 'document-after-flush' : 'event',
+  };
+}
+
 /**
  * True when two LF-normalised texts are identical except for the number of
  * trailing newlines at the very end of the document.

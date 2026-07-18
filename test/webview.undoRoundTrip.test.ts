@@ -11,6 +11,7 @@ import {
   fromLFPreserving,
   isSaveParticipantNormalization,
   isTrailingNewlineOnlyDifference,
+  planDocumentChangeSync,
   shouldApplyRemoteUpdate,
   toLF,
   type ExpectedWorkspaceEditChange,
@@ -42,6 +43,10 @@ interface Combo {
   eol: Eol;
 }
 
+interface HostEndpoint {
+  applyEdit(newLF: string, receivedVersion: number): void;
+}
+
 class Host {
   version = 1;
   text = '';
@@ -50,11 +55,15 @@ class Host {
   lastAckVersion = 0;
   ledger = new Map<number, ExpectedWorkspaceEditChange>();
   saveActive = false;
+  pendingEdit: { text: string; version: number } | undefined;
   webview!: Webview;
   /** True if any host update ever pushed a setText into the Webview. */
   sentWebviewUpdate = false;
 
-  constructor(private readonly combo: Combo) {}
+  constructor(
+    private readonly combo: Combo,
+    private readonly debounceEdits = false,
+  ) {}
 
   private fireDidChange() {
     const eventDocumentVersion = this.version;
@@ -69,25 +78,42 @@ class Host {
       this.webviewText = documentText;
       return;
     }
+
+    const syncPlan = planDocumentChangeSync({
+      hasPendingEdit: this.pendingEdit !== undefined,
+      isDuringOwnSave: this.saveActive,
+      webviewText: this.webviewText,
+      documentText,
+    });
+    if (syncPlan.flushPendingEdit && this.pendingEdit) this.flushPendingEdit();
+    const syncDocumentText =
+      syncPlan.snapshotSource === 'document-after-flush' ? toLF(this.text) : documentText;
     const { resync, preserveHistory } = classifyDocumentChange({
       isFromWebview: false,
       webviewText: this.webviewText,
-      documentText,
-      isDuringOwnSave: this.saveActive,
-      isSaveNormalization: isSaveParticipantNormalization(this.webviewText, documentText),
+      documentText: syncDocumentText,
+      isSaveNormalization: syncPlan.isSaveNormalization,
     });
     if (!resync) return;
     // The fix under test: a final-newline-only save normalization reconciles
     // host bookkeeping without pushing an update into CodeMirror.
-    if (preserveHistory && isTrailingNewlineOnlyDifference(this.webviewText, documentText)) {
+    if (preserveHistory && isTrailingNewlineOnlyDifference(this.webviewText, syncDocumentText)) {
       return;
     }
-    this.webviewText = documentText;
+    this.webviewText = syncDocumentText;
     this.sentWebviewUpdate = true;
-    this.webview.onUpdate(documentText, this.lastAckVersion, false, preserveHistory);
+    this.webview.onUpdate(syncDocumentText, this.lastAckVersion, false, preserveHistory);
   }
 
   applyEdit(newLF: string, receivedVersion: number) {
+    if (this.debounceEdits) {
+      this.pendingEdit = { text: newLF, version: receivedVersion };
+      return;
+    }
+    this.applyEditNow(newLF, receivedVersion);
+  }
+
+  private applyEditNow(newLF: string, receivedVersion: number) {
     if (!acceptsWebviewEditVersion({ lastReceivedVersion: this.lastReceivedVersion, receivedVersion })) return;
     const version = receivedVersion;
     this.lastReceivedVersion = version;
@@ -108,7 +134,17 @@ class Host {
     this.webview.onAck(version);
   }
 
+  flushPendingEdit() {
+    const pending = this.pendingEdit;
+    if (pending) {
+      this.pendingEdit = undefined;
+      this.applyEditNow(pending.text, pending.version);
+    }
+    this.save();
+  }
+
   save() {
+    const wasSaveActive = this.saveActive;
     this.saveActive = true;
     let normalized = toLF(this.text);
     if (this.combo.trimTrailingWhitespace) {
@@ -123,7 +159,227 @@ class Host {
       this.version += 1;
       this.fireDidChange();
     }
-    this.saveActive = false;
+    this.saveActive = wasSaveActive;
+  }
+
+  fireSaveParticipantEvent(transform: (text: string) => string) {
+    const normalized = transform(toLF(this.text));
+    const nextText = this.combo.eol === '\r\n' ? normalized.replace(/\n/g, '\r\n') : normalized;
+    if (nextText === this.text) return;
+    const wasSaveActive = this.saveActive;
+    this.saveActive = true;
+    this.text = nextText;
+    this.version += 1;
+    this.fireDidChange();
+    this.saveActive = wasSaveActive;
+  }
+}
+
+/**
+ * Promise-queued host harness for pending-edit/document-event races. Unlike the
+ * legacy synchronous harness above, listener callbacks are captured now and
+ * reconciled later, matching the extension host's operationQueue ordering.
+ */
+class QueuedHost implements HostEndpoint {
+  version = 1;
+  documentText = '';
+  diskText = '';
+  webviewText = '';
+  lastReceivedVersion = 0;
+  lastAckVersion = 0;
+  pendingEdit: { text: string; version: number } | undefined;
+  ledger = new Map<number, ExpectedWorkspaceEditChange>();
+  expectedAuthoritativeChange: { documentVersion: number; text: string } | undefined;
+  origins = new Map<number, { isSaveNormalization: boolean; text: string }>();
+  saveActive = false;
+  saveParticipant: ((text: string) => string) | undefined;
+  beforeNormalizationReread: (() => void | Promise<void>) | undefined;
+  updates: { text: string; preserveHistory: boolean }[] = [];
+  webview!: Webview;
+  private operationQueue: Promise<void> = Promise.resolve();
+
+  applyEdit(newLF: string, receivedVersion: number): void {
+    this.pendingEdit = { text: newLF, version: receivedVersion };
+  }
+
+  requestFlush(): void {
+    this.enqueue(async () => this.flushPendingEdit());
+  }
+
+  emitExternal(text: string): void {
+    this.documentText = text;
+    this.diskText = text;
+    this.version += 1;
+    this.fireDidChange();
+  }
+
+  emitSaveNormalization(transform: (text: string) => string): void {
+    const next = transform(this.documentText);
+    if (next === this.documentText) return;
+    const wasSaveActive = this.saveActive;
+    this.saveActive = true;
+    this.documentText = next;
+    this.diskText = next;
+    this.version += 1;
+    this.fireDidChange();
+    this.saveActive = wasSaveActive;
+  }
+
+  async drain(): Promise<void> {
+    for (;;) {
+      const queued = this.operationQueue;
+      await queued;
+      if (queued === this.operationQueue) return;
+    }
+  }
+
+  private enqueue(operation: () => void | Promise<void>): void {
+    this.operationQueue = this.operationQueue.then(async () => {
+      await operation();
+    });
+  }
+
+  private applyPendingEdit(): void {
+    const pending = this.pendingEdit;
+    if (!pending) return;
+    this.pendingEdit = undefined;
+    if (
+      !acceptsWebviewEditVersion({
+        lastReceivedVersion: this.lastReceivedVersion,
+        receivedVersion: pending.version,
+      })
+    ) {
+      return;
+    }
+    this.lastReceivedVersion = pending.version;
+    this.webviewText = pending.text;
+    if (this.documentText === pending.text) {
+      this.lastAckVersion = pending.version;
+      this.webview.onAck(pending.version);
+      return;
+    }
+    this.ledger.set(pending.version, {
+      editVersion: pending.version,
+      documentVersion: this.version + 1,
+      text: pending.text,
+    });
+    this.documentText = pending.text;
+    this.version += 1;
+    this.fireDidChange();
+    this.lastAckVersion = pending.version;
+    this.webview.onAck(pending.version);
+  }
+
+  private async flushPendingEdit(): Promise<void> {
+    this.applyPendingEdit();
+    await this.save();
+  }
+
+  private async save(): Promise<void> {
+    const wasSaveActive = this.saveActive;
+    this.saveActive = true;
+    const normalized = this.saveParticipant?.(this.documentText) ?? this.documentText;
+    if (normalized !== this.documentText) {
+      this.documentText = normalized;
+      this.version += 1;
+      this.fireDidChange();
+    }
+    await Promise.resolve();
+    this.diskText = this.documentText;
+    this.saveActive = wasSaveActive;
+  }
+
+  private async restoreAuthoritativeSnapshot(target: string): Promise<string> {
+    if (this.documentText === target) return target;
+    this.expectedAuthoritativeChange = {
+      documentVersion: this.version + 1,
+      text: target,
+    };
+    this.documentText = target;
+    this.version += 1;
+    this.fireDidChange();
+    await this.save();
+    return this.documentText;
+  }
+
+  private fireDidChange(): void {
+    const eventDocumentVersion = this.version;
+    const documentText = this.documentText;
+    const expectedAuthoritativeChange = this.expectedAuthoritativeChange;
+    if (
+      expectedAuthoritativeChange?.documentVersion === eventDocumentVersion &&
+      expectedAuthoritativeChange.text === documentText
+    ) {
+      this.expectedAuthoritativeChange = undefined;
+      return;
+    }
+    const selfVersion = consumeExpectedWorkspaceEditChange({
+      ledger: this.ledger,
+      documentVersion: eventDocumentVersion,
+      documentText,
+    });
+    if (selfVersion !== undefined) {
+      this.ledger.delete(selfVersion);
+      this.webviewText = documentText;
+      return;
+    }
+
+    const syncPlan = planDocumentChangeSync({
+      hasPendingEdit: this.pendingEdit !== undefined,
+      isDuringOwnSave: this.saveActive,
+      webviewText: this.webviewText,
+      documentText,
+    });
+    this.origins.set(eventDocumentVersion, {
+      isSaveNormalization: syncPlan.isSaveNormalization,
+      text: documentText,
+    });
+    this.enqueue(async () => {
+      try {
+        if (syncPlan.flushPendingEdit && this.pendingEdit) await this.flushPendingEdit();
+
+        let syncDocumentText = documentText;
+        let syncIsSaveNormalization = syncPlan.isSaveNormalization;
+        if (syncPlan.snapshotSource === 'document-after-flush') {
+          await Promise.resolve();
+          const hook = this.beforeNormalizationReread;
+          this.beforeNormalizationReread = undefined;
+          if (hook) await hook();
+
+          const currentVersion = this.version;
+          syncDocumentText = this.documentText;
+          const currentOrigin = this.origins.get(currentVersion);
+          if (currentVersion !== eventDocumentVersion && currentOrigin?.text === syncDocumentText) {
+            if (!currentOrigin.isSaveNormalization) return;
+            syncIsSaveNormalization = true;
+          } else if (currentVersion !== eventDocumentVersion) {
+            syncIsSaveNormalization = isSaveParticipantNormalization(
+              this.webviewText,
+              syncDocumentText,
+            );
+          }
+        }
+
+        const { resync, preserveHistory } = classifyDocumentChange({
+          isFromWebview: false,
+          webviewText: this.webviewText,
+          documentText: syncDocumentText,
+          isSaveNormalization: syncIsSaveNormalization,
+        });
+        if (!resync) return;
+        if (preserveHistory && isTrailingNewlineOnlyDifference(this.webviewText, syncDocumentText)) {
+          return;
+        }
+        if (!preserveHistory) {
+          syncDocumentText = await this.restoreAuthoritativeSnapshot(syncDocumentText);
+        }
+        this.webviewText = syncDocumentText;
+        this.updates.push({ text: syncDocumentText, preserveHistory });
+        this.webview.onUpdate(syncDocumentText, this.lastAckVersion, false, preserveHistory);
+      } finally {
+        this.origins.delete(eventDocumentVersion);
+      }
+    });
   }
 }
 
@@ -133,7 +389,7 @@ class Webview {
   ackVersion = 0;
   applyingRemote = false;
   pendingRemote: { text: string; baseVersion: number; rollback: boolean; preserveHistory: boolean } | undefined;
-  host!: Host;
+  host!: HostEndpoint;
 
   private postEdit(text: string) {
     this.editVersion++;
@@ -268,6 +524,172 @@ describe('Live Preview undo round trip (R-04-01/R-04-02/R-04-03/R-03-04)', () =>
     };
     const { sentWebviewUpdate } = run(combo, true);
     expect(sentWebviewUpdate).toBe(false);
+  });
+
+  it('pending English input is not rolled back by an intervening save-normalization event', () => {
+    const scenarios = [
+      {
+        name: 'insert final newline',
+        initial: 'a',
+        normalize: (text: string) => (text.endsWith('\n') ? text : `${text}\n`),
+      },
+      {
+        name: 'trim trailing whitespace',
+        initial: 'a  ',
+        normalize: (text: string) => text.replace(/[ \t]+(?=\n|$)/g, ''),
+      },
+      {
+        name: 'format on save',
+        initial: 'a',
+        normalize: (text: string) => text.toUpperCase(),
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const combo: Combo = {
+        insertFinalNewline: false,
+        trimTrailingWhitespace: false,
+        saveDuringUndo: false,
+        trailingNewlineInput: false,
+        eol: '\n',
+      };
+      const host = new Host(combo, true);
+      const wv = new Webview();
+      host.webview = wv;
+      wv.host = host;
+
+      const append = (text: string) => {
+        const from = wv.state.doc.length;
+        wv.localEdit({
+          changes: { from, insert: text },
+          selection: { anchor: from + text.length },
+          annotations: isolateHistory.of('full'),
+        });
+      };
+
+      append(scenario.initial);
+      host.flushPendingEdit(); // Confirm `a` before the next debounce batch.
+      append('\nb');
+      append('\nc');
+
+      const latestText = wv.state.doc.toString();
+      const caretBeforeNormalization = wv.state.selection.main.head;
+      host.fireSaveParticipantEvent(scenario.normalize);
+
+      expect(wv.state.doc.toString(), scenario.name).toBe(latestText);
+      expect(wv.state.doc.toString(), scenario.name).toContain('\nb\nc');
+      expect(wv.state.selection.main.head, scenario.name).toBeGreaterThanOrEqual(caretBeforeNormalization);
+      expect(host.sentWebviewUpdate, scenario.name).toBe(false);
+
+      const counts = [contentLineCount(wv.state.doc.toString())];
+      for (let i = 0; i < 3; i++) {
+        wv.undo();
+        host.flushPendingEdit();
+        counts.push(contentLineCount(wv.state.doc.toString()));
+      }
+      expect(counts, scenario.name).toEqual([3, 2, 1, 0]);
+    }
+  });
+
+  it('restores a true external snapshot to document, disk, binding, and Webview after pending flush', async () => {
+    const host = new QueuedHost();
+    const wv = new Webview();
+    host.webview = wv;
+    wv.host = host;
+
+    wv.localEdit({ changes: { from: 0, insert: 'a' }, selection: { anchor: 1 } });
+    host.requestFlush();
+    await host.drain();
+
+    wv.localEdit({ changes: { from: 1, insert: 'b' }, selection: { anchor: 2 } });
+    host.emitExternal('X');
+    await host.drain();
+
+    expect(host.documentText).toBe('X');
+    expect(host.diskText).toBe('X');
+    expect(host.webviewText).toBe('X');
+    expect(wv.state.doc.toString()).toBe('X');
+    expect(host.updates).toEqual([{ text: 'X', preserveHistory: false }]);
+  });
+
+  it('defers to a later authoritative external event that lands during normalization re-read', async () => {
+    const host = new QueuedHost();
+    const wv = new Webview();
+    host.webview = wv;
+    wv.host = host;
+
+    wv.localEdit({ changes: { from: 0, insert: 'a' }, selection: { anchor: 1 } });
+    host.requestFlush();
+    await host.drain();
+    wv.localEdit({ changes: { from: 1, insert: 'b' }, selection: { anchor: 2 } });
+
+    host.beforeNormalizationReread = () => host.emitExternal('X');
+    host.emitSaveNormalization((text) => `${text}\n`);
+    await host.drain();
+
+    expect(host.documentText).toBe('X');
+    expect(host.diskText).toBe('X');
+    expect(host.webviewText).toBe('X');
+    expect(wv.state.doc.toString()).toBe('X');
+    expect(host.updates).toEqual([{ text: 'X', preserveHistory: false }]);
+  });
+
+  it('uses the latest post-flush format result without stale rollback and preserves caret and undo', async () => {
+    const host = new QueuedHost();
+    const wv = new Webview();
+    host.webview = wv;
+    wv.host = host;
+    const baseline = 'prefix  ';
+    host.documentText = baseline;
+    host.diskText = baseline;
+    host.webviewText = baseline;
+    wv.state = EditorState.create({
+      doc: baseline,
+      selection: { anchor: baseline.length },
+      extensions: [history()],
+    });
+
+    const append = (text: string) => {
+      const from = wv.state.doc.length;
+      wv.localEdit({
+        changes: { from, insert: text },
+        selection: { anchor: from + text.length },
+        annotations: isolateHistory.of('full'),
+      });
+    };
+
+    append('\na');
+    host.requestFlush();
+    await host.drain();
+
+    host.saveParticipant = (text) => text.replace(/[ \t]+(?=\n|$)/g, '');
+    append('\nb');
+    append('\nc');
+    const caretBeforeNormalization = wv.state.selection.main.head;
+
+    // This stale event starts the queued flush. The flush's own save then
+    // formats the latest a/b/c snapshot before the original callback re-reads.
+    host.emitSaveNormalization((text) => (text.endsWith('\n') ? text : `${text}\n`));
+    await host.drain();
+
+    expect(wv.state.doc.toString()).toBe('prefix\na\nb\nc');
+    expect(wv.state.selection.main.head).toBe(wv.state.doc.length);
+    expect(wv.state.selection.main.head).toBeGreaterThanOrEqual(caretBeforeNormalization - 2);
+    expect(host.documentText).toBe('prefix\na\nb\nc');
+    expect(host.diskText).toBe('prefix\na\nb\nc');
+    expect(host.updates).toEqual([{ text: 'prefix\na\nb\nc', preserveHistory: true }]);
+
+    const typedLineCount = (text: string) => Math.max(0, text.split('\n').length - 1);
+    const counts = [typedLineCount(wv.state.doc.toString())];
+    for (let i = 0; i < 3; i++) {
+      wv.undo();
+      host.requestFlush();
+      await host.drain();
+      counts.push(typedLineCount(wv.state.doc.toString()));
+    }
+    expect(counts).toEqual([3, 2, 1, 0]);
+    expect(host.documentText).toBe('prefix');
+    expect(host.diskText).toBe('prefix');
   });
 
   it('undo stays clean and monotonic across every save/EOL/trailing-newline combination', () => {
