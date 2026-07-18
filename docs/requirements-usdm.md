@@ -1,7 +1,7 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.29.0
+**バージョン**: 1.30.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-18
 **ステータス**: 承認済み  
@@ -388,6 +388,14 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
 - ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+
+###### ＜明示コマンドによるクリップボードファイルリンク（Windows 限定）＞
+
+> **理由：** Explorer で Ctrl+C したファイル/フォルダーを Live Preview へ Markdown リンクとして挿入したいが、Webview は OS のファイルクリップボード（`text/uri-list` を持たない）を読めないため、ホスト側で OS クリップボードを読む明示コマンドが必要である。
+
+> **説明：** コマンド `livePreview.pasteFileAsMarkdownLink`（既定キー `ctrl+alt+v`／mac `cmd+alt+v`、`when: activeWebviewPanelId == livePreview.viewer`）は、最後に操作したビューア（`lastInteractedViewerId`）を対象とする。ホスト（`src/livePreviewViewerManager.ts` `pasteFileAsMarkdownLink`）は Windows でのみ動作し、`src/clipboard/readClipboardFiles.ts`（host 専用）が `powershell.exe` を `execFile`（`-NoProfile -STA -EncodedCommand <UTF-16LE Base64>`、`windowsHide`・`timeout 5000`）で起動し、`System.Windows.Forms.Clipboard.GetFileDropList()` を UTF-8 出力の compact JSON として取得する。JSON 解釈は VS Code 非依存の純粋関数 `parseClipboardFileListJson`（`src/core/pasteLink.ts`）が担い、PowerShell 不在・タイムアウト・非ゼロ終了・解釈失敗はいずれも空配列＋情報/警告メッセージで no-op する。各絶対パスは `resolveClipboardPath` で存在確認（`workspace.fs.stat`）とワークスペース所属判定を行い、`relativizeUri` と異なりディレクトリも許容する。挿入は既存 `insertMedia` 経路を再利用する：ホストは解決済みターゲットを token で退避し `{ type: 'requestClipboardLinkInsertion', binding, token }` を送る→Webview が現在 selection を `pendingMediaRequests` へ登録し `{ type: 'clipboardLinkInsertionContext', binding, token, requestId, selectedText }` を返す→ホストが `linkLabel`／`folderLinkTarget`／`buildMediaSnippet`／`combineLinks` でスニペットを生成し `{ type: 'insertMedia', … }` で返信する。往復は `enqueue` で直列化する。純粋関数は `linkLabel`（選択テキスト優先、`fileName`／`fileNameWithoutExtension`／`relativePath` の 3 モード、フォルダーは常に名前ベース）、`folderLinkTarget`（末尾 `/` を冪等付与）、`buildMediaSnippet` の `label` 引数（非画像は label をラベルに、画像は従来どおり `alt text`）、`combineLinks`（`lines`＝改行区切り／`list`＝各行 `- ` 前置、先頭リンクのプレースホルダ範囲を返す）。設定は 3 種：`livePreview.pasteFileLink.linkText`（既定 `fileNameWithoutExtension`）、`livePreview.pasteFileLink.multipleFilesFormat`（既定 `lines`）、`livePreview.pasteFileLink.outsideWorkspace`（既定 `skip`）。
+
+- ■■□ R-29-06 明示コマンド `livePreview.pasteFileAsMarkdownLink`（既定キー `ctrl+alt+v`／mac `cmd+alt+v`）は Windows でのみ動作し、非 Windows では外部プロセスを起動せず情報メッセージで no-op すること。対象は最後に操作したビューアとし、ビューア不在時は情報メッセージで no-op する。OS ファイルクリップボードは host 専用 `readClipboardFiles`（`powershell.exe` を `-STA -EncodedCommand`＋UTF-8 出力で `execFile`）で読み、JSON は純粋関数 `parseClipboardFileListJson`（配列 JSON→配列、単一文字列 JSON→1 要素、空/`null`/不正→空、前後空白トリム）で解釈する。PowerShell 不在・タイムアウト・非ゼロ終了・空クリップボードは空配列＋情報/警告で no-op する。各絶対パスは `resolveClipboardPath` で `workspace.fs.stat` 存在確認・ワークスペース所属判定を行い（`relativizeUri` と異なりディレクトリも許容）、相対パスは `\`→`/` 変換する。フォルダーはリンク先を `folderLinkTarget` で末尾 `/` とし、ラベルは常に名前ベース（末尾 `/` を含めない）。画像は既存 R-29-02 と一貫して `![alt text](...)`（プレースホルダ `alt text`）とし、ファイル名を alt にしない。表示ラベルは `linkLabel` が決定し、非空選択テキストを最優先、無ければ `livePreview.pasteFileLink.linkText`（`fileName`／`fileNameWithoutExtension`／`relativePath`、既定 `fileNameWithoutExtension`）に従う。複数ファイルは `livePreview.pasteFileLink.multipleFilesFormat`（`lines`／`list`、既定 `lines`）で結合し、`combineLinks` が先頭リンクのプレースホルダ範囲（`list` 時は `- ` 分オフセット）を返す。ワークスペース外・別ドライブで相対化不能なパスは `livePreview.pasteFileLink.outsideWorkspace`（既定 `skip`＝スキップして警告／`absolute`＝絶対パスを `\`→`/` 変換して `formatMarkdownLinkTarget` 経由でリンク先に使用）に従い、存在しないパスは常にスキップ＋警告する。挿入は既存 `insertMedia` 経路を再利用し（`requestClipboardLinkInsertion`→`clipboardLinkInsertionContext`→`insertMedia` の 1 往復）、開始時 selection を `pendingMediaRequests` で追従し、既存 R-29-01〜05 の D&D/paste 出力（複数はスペース結合）は変更しないこと。
 
 ### R-30 見出しセクション折りたたみ #headingfold
 

@@ -3,8 +3,12 @@ import {
   isImageFile,
   formatMarkdownLinkTarget,
   buildMediaSnippet,
+  combineLinks,
   dedupeFilesAgainstUris,
+  folderLinkTarget,
   hasMediaPayload,
+  linkLabel,
+  parseClipboardFileListJson,
   parseDataTransferUris,
   parsePlainFilePaths,
   parsePlainFileUriList,
@@ -101,6 +105,122 @@ describe('R-29-05 URI clipboard media', () => {
       .toBe('[test](ガントチャート.md)');
     expect(buildMediaSnippet({ isImage: false, target: 'ガントチャート.md' }).text)
       .toBe('[ガントチャート](ガントチャート.md)');
+  });
+});
+
+describe('R-29-06 clipboard file link command helpers', () => {
+  describe('parseClipboardFileListJson', () => {
+    it('array JSON は配列を返す', () => {
+      expect(parseClipboardFileListJson('["C:\\\\a\\\\b.md","C:\\\\a\\\\c.png"]')).toEqual([
+        'C:\\a\\b.md',
+        'C:\\a\\c.png',
+      ]);
+    });
+
+    it('単一文字列 JSON は 1 要素配列を返す', () => {
+      expect(parseClipboardFileListJson('"C:\\\\a\\\\b.md"')).toEqual(['C:\\a\\b.md']);
+    });
+
+    it('空文字・null・不正 JSON は空配列を返す', () => {
+      expect(parseClipboardFileListJson('')).toEqual([]);
+      expect(parseClipboardFileListJson('   ')).toEqual([]);
+      expect(parseClipboardFileListJson('null')).toEqual([]);
+      expect(parseClipboardFileListJson('not json')).toEqual([]);
+    });
+
+    it('前後空白をトリムし空要素を除外する', () => {
+      expect(parseClipboardFileListJson('  ["  C:\\\\a.md  ", "", "C:\\\\b.md"]  ')).toEqual([
+        'C:\\a.md',
+        'C:\\b.md',
+      ]);
+    });
+  });
+
+  describe('linkLabel', () => {
+    it('非空の選択テキストを最優先する', () => {
+      expect(
+        linkLabel({ name: 'a.md', relative: 'docs/a.md', isDirectory: false, selectedText: 'sel', mode: 'fileName' }),
+      ).toBe('sel');
+    });
+
+    it('fileName モードは拡張子付き名を返す', () => {
+      expect(linkLabel({ name: 'a.md', relative: 'docs/a.md', isDirectory: false, mode: 'fileName' })).toBe('a.md');
+    });
+
+    it('fileNameWithoutExtension モードは最終拡張子を除去する', () => {
+      expect(
+        linkLabel({ name: 'a.tar.gz', relative: 'docs/a.tar.gz', isDirectory: false, mode: 'fileNameWithoutExtension' }),
+      ).toBe('a.tar');
+    });
+
+    it('relativePath モードは相対パスを返す', () => {
+      expect(linkLabel({ name: 'a.md', relative: 'docs/a.md', isDirectory: false, mode: 'relativePath' })).toBe(
+        'docs/a.md',
+      );
+    });
+
+    it('日本語・空白名を保持する', () => {
+      expect(
+        linkLabel({ name: '新規 ファイル.md', relative: 'docs/新規 ファイル.md', isDirectory: false, mode: 'fileNameWithoutExtension' }),
+      ).toBe('新規 ファイル');
+    });
+
+    it('フォルダーは常に名前ベース（末尾スラッシュなし）で mode を無視する', () => {
+      expect(linkLabel({ name: 'assets', relative: 'sub/assets', isDirectory: true, mode: 'relativePath' })).toBe(
+        'assets',
+      );
+    });
+  });
+
+  describe('folderLinkTarget', () => {
+    it('末尾に / を付与する', () => {
+      expect(folderLinkTarget('sub/assets')).toBe('sub/assets/');
+    });
+
+    it('既に / があれば重複させない', () => {
+      expect(folderLinkTarget('sub/assets/')).toBe('sub/assets/');
+    });
+  });
+
+  describe('buildMediaSnippet label 引数', () => {
+    it('非画像は label を表示テキストに使いプレースホルダ範囲が一致する', () => {
+      const r = buildMediaSnippet({ isImage: false, target: 'docs/a.md', label: 'My Label' });
+      expect(r.text).toBe('[My Label](docs/a.md)');
+      expect(r.text.slice(r.placeholderFrom, r.placeholderTo)).toBe('My Label');
+    });
+
+    it('画像は label を無視し alt text を使う', () => {
+      const r = buildMediaSnippet({ isImage: true, target: 'docs/a.png', label: 'ignored' });
+      expect(r.text).toBe('![alt text](docs/a.png)');
+      expect(r.text.slice(r.placeholderFrom, r.placeholderTo)).toBe('alt text');
+    });
+
+    it('label 未指定時は従来どおり basename ラベル', () => {
+      const r = buildMediaSnippet({ isImage: false, target: 'マークダウン.md' });
+      expect(r.text).toBe('[マークダウン](マークダウン.md)');
+    });
+  });
+
+  describe('combineLinks', () => {
+    const a = buildMediaSnippet({ isImage: false, target: 'a.md', label: 'A' });
+    const b = buildMediaSnippet({ isImage: false, target: 'b.md', label: 'B' });
+
+    it('単一要素はそのまま返す', () => {
+      expect(combineLinks([a], 'lines')).toEqual(a);
+      expect(combineLinks([a], 'list')).toEqual(a);
+    });
+
+    it('lines は改行区切りで先頭プレースホルダを指す', () => {
+      const r = combineLinks([a, b], 'lines');
+      expect(r.text).toBe('[A](a.md)\n[B](b.md)');
+      expect(r.text.slice(r.placeholderFrom, r.placeholderTo)).toBe('A');
+    });
+
+    it('list は各行に "- " を前置し先頭プレースホルダをオフセットする', () => {
+      const r = combineLinks([a, b], 'list');
+      expect(r.text).toBe('- [A](a.md)\n- [B](b.md)');
+      expect(r.text.slice(r.placeholderFrom, r.placeholderTo)).toBe('A');
+    });
   });
 });
 

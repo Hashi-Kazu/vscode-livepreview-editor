@@ -28,6 +28,7 @@
 | [0017](0017-codemirror-history-and-ack-sync.md) | CodeMirror history and acknowledgement sync | CodeMirror 単独 Undo、host ack、WorkspaceEdit self-echo ledger、外部更新時の履歴リセット | 採用 |
 | [0018](0018-explicit-save-over-idle-autosave.md) | 明示保存＋ライフサイクル flush（アイドル自動保存廃止） | `SaveDebouncer` を廃止し、Webview Ctrl+S→host `performSave` と失焦・破棄・バインド切替の flush 保存へ変更。Undo 安全機構は据え置き（ADR-0019 で supersede） | 採用 |
 | [0019](0019-debounced-apply-immediate-save.md) | デバウンスバッチ apply＋即時保存 | 毎打鍵 apply をタイピング停止後のデバウンス（既定 200ms）バッチ apply へ変更し、apply 直後に即時保存して dirty 滞留を無くし再表示発生源を断つ。R-03-11 は backstop 残置 | 採用 |
+| [0020](0020-powershell-clipboard-file-link.md) | PowerShell によるクリップボードファイルリンク挿入 | Explorer で Ctrl+C したファイルを、Windows 限定・host 専用の PowerShell 外部プロセスで OS ファイルクリップボードから読み、既存 `insertMedia` 経路で挿入。純粋関数隔離で Webview バンドルの純粋性を維持（R-29-06） | 採用 |
 
 ---
 

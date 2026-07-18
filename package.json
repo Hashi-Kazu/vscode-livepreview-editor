@@ -2,7 +2,7 @@
   "name": "vscode-livepreview-editor",
   "displayName": "Markdown ライブプレビューエディタ",
   "description": "Obsidian ライクな Markdown ライブプレビュー編集エディタ (CodeMirror 6)",
-  "version": "1.29.0",
+  "version": "1.30.0",
   "publisher": "Hashi-Kazu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -66,6 +66,11 @@
         "command": "livePreview.format.code",
         "title": "インラインコード (Code)",
         "category": "Live Preview"
+      },
+      {
+        "command": "livePreview.pasteFileAsMarkdownLink",
+        "title": "Paste File as Markdown Link",
+        "category": "Live Preview"
       }
     ],
     "keybindings": [
@@ -97,6 +102,12 @@
         "command": "livePreview.format.code",
         "key": "ctrl+e",
         "mac": "cmd+e",
+        "when": "activeWebviewPanelId == livePreview.viewer"
+      },
+      {
+        "command": "livePreview.pasteFileAsMarkdownLink",
+        "key": "ctrl+alt+v",
+        "mac": "cmd+alt+v",
         "when": "activeWebviewPanelId == livePreview.viewer"
       }
     ],
@@ -135,6 +146,34 @@
           "type": "boolean",
           "default": true,
           "description": "Live Preview での編集・保存の副作用として、閉じていた Markdown ソースエディタタブが自動的に再表示された場合、そのタブを直ちに閉じます。"
+        },
+        "livePreview.pasteFileLink.linkText": {
+          "type": "string",
+          "enum": [
+            "fileName",
+            "fileNameWithoutExtension",
+            "relativePath"
+          ],
+          "default": "fileNameWithoutExtension",
+          "description": "「Paste File as Markdown Link」コマンドで挿入するリンクの表示テキスト。選択テキストがある場合は常にそれが優先されます。"
+        },
+        "livePreview.pasteFileLink.multipleFilesFormat": {
+          "type": "string",
+          "enum": [
+            "lines",
+            "list"
+          ],
+          "default": "lines",
+          "description": "「Paste File as Markdown Link」コマンドで複数ファイルを挿入する際の形式。lines は改行区切り、list は各行に \"- \" を付けた箇条書きです。"
+        },
+        "livePreview.pasteFileLink.outsideWorkspace": {
+          "type": "string",
+          "enum": [
+            "skip",
+            "absolute"
+          ],
+          "default": "skip",
+          "description": "「Paste File as Markdown Link」コマンドで、ワークスペース外または別ドライブのファイルを扱う方法。skip はスキップして警告、absolute は絶対パスをそのままリンク先に使います。"
         }
       }
     }
