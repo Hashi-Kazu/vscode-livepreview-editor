@@ -7,7 +7,7 @@
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
-> ▶️ **開発継続中（2026-07-18 時点 / v1.27.0）**: レイアウト・操作性の強化として、見出しセクション折りたたみ（R-30）、未保存インジケータ（R-31）、数式レンダリング（KaTeX、R-32）、アウトライン/目次ウィジェット（R-33）、テーブルの行・列操作コンテキストメニュー（R-22-05/06）、見出し下余白の拡大（R-28-05 改訂）を追加した。
+> ▶️ **開発継続中（2026-07-18 時点 / v1.28.0）**: レイアウト・操作性の強化として、見出しセクション折りたたみ（R-30）、未保存インジケータ（R-31）、数式レンダリング（KaTeX、R-32）、テーブルの行・列操作コンテキストメニュー（R-22-05/06）、見出し下余白の拡大（R-28-05 改訂）を追加した。アウトライン/目次ウィジェット（旧 R-33）は削除した。
 >
 > （v1.26.0 時点） 毎打鍵アイドル自動保存（`SaveDebouncer`）を廃止し、標準エディタと同じ明示保存（Webview の Ctrl+S→host `performSave`）＋失焦・破棄・バインド切替時の flush 保存へ変更した。編集は従来どおり最小 `WorkspaceEdit` で即時反映する。Live Preview の Undo/Redo は CodeMirror が単独で所有する。host は単調 version の edit を apply 成功または差分なし確認後だけ ack し、期待 TextDocument version と LF 本文の ledger で `WorkspaceEdit` 自己エコーを識別する。ledger に一致しない文書変更は `classifyDocumentChange` で分類し、自己保存由来（保存参加者・own-save 窓中の format-on-save）は履歴を保持したままレコンサイルし、真の外部変更のみ履歴を破棄して再同期する。IME、末尾 LF、Explorer の URI/File ペーストは ack と request ID で整合させる。
 
@@ -426,14 +426,3 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-32-03 Webview は KaTeX を JS バンドル同梱・CSS/フォントを `media/katex/` から配信して数式を DOM 描画し、レンダリング失敗時も Webview を落とさず生 tex をフォールバック表示すること。CSP（nonce／font-src cspSource）を維持すること。
 - ■■□ R-32-04 block 数式ウィジェットは `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶこと（R-28-10 / R-28-11）。
 
-### R-33 アウトライン/目次 #outline
-
-> **理由：** 長い文書内で見出し間を素早く移動できるよう、ビューア内にナビゲーション用の目次を設ける。
-
-> **説明：** 見出し抽出は R-30 で追加した全文走査の純粋関数 `scanHeadings`（`src/core/model.ts`）を再利用する（フェンスコードブロック内の `#` は除外。ビューポート限定の `computeDecorations`（R-05-05）には依存しない）。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外にフローティングの目次パネル `cm-lp-outline-panel` を生成し、トグルボタンで表示/非表示を切り替える。ドキュメント変更時（`OutlineSync` ViewPlugin、マイクロタスクで軽くデバウンス）に `scanHeadings(view.state.doc.toString())` を再計算し、見出しレベルに応じてインデントした一覧を描画する。項目クリックで `view.dispatch({ selection: { anchor: doc.line(line + 1).from }, scrollIntoView: true })` により該当見出し行へキャレット移動・スクロールする（`line` は 0-based、`doc.line` は 1-based）。本文は一切書き換えない（R-01-02）。色は `var(--vscode-*)` 追従（R-28-04）。
-
-###### ＜アウトライン/目次＞
-
-- ■■□ R-33-01 純粋関数 `scanHeadings` により全文書の見出し（レベル・テキスト・行番号）を取得すること（コードブロック内 `#` は除外）。ビューポート限定装飾（R-05-05）に依存しないこと。
-- ■■□ R-33-02 Webview はビューア内フローティングパネルに見出しをレベル別インデントで一覧表示し、表示/非表示をトグルできること。色は `var(--vscode-*)` 追従。
-- ■■□ R-33-03 目次項目クリックで該当見出し行へキャレット移動・スクロールすること。本文は変更しないこと（R-01-02）。パネルは CodeMirror の装飾・計測・クリック位置に干渉しないこと。
