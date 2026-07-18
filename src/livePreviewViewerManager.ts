@@ -27,17 +27,13 @@ import {
 import { resolveSettings } from './core/viewport';
 import {
   buildMediaSnippet,
-  combineLinks,
   dedupeFilesAgainstUris,
-  folderLinkTarget,
   formatMarkdownLinkTarget,
   isImageFile,
-  linkLabel,
   MediaSnippet,
   parseUriList,
   uniqueMediaName,
 } from './core/pasteLink';
-import { readClipboardFiles } from './clipboard/readClipboardFiles';
 
 /**
  * How long to wait after the last Webview keystroke before applying the
@@ -84,16 +80,6 @@ interface ViewerBinding {
   saveLifecycleSubscriptions: vscode.Disposable[];
 }
 
-/** A clipboard file/folder resolved to a document-relative Markdown link. */
-interface ClipboardLinkTarget {
-  /** Basename of the file/folder (no trailing slash for folders). */
-  name: string;
-  /** Document-relative forward-slash path (folders keep no trailing slash here). */
-  relative: string;
-  isDirectory: boolean;
-  isImage: boolean;
-}
-
 interface Viewer {
   id: string;
   panel: vscode.WebviewPanel;
@@ -121,14 +107,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
   private readonly subscriptions: vscode.Disposable[] = [];
   private lastInteractedViewerId: string | undefined;
   private nextViewerId = 1;
-  private nextClipboardToken = 1;
-  /**
-   * Resolved clipboard link targets awaiting the Webview's selection reply
-   * (R-29-06), keyed by the host-issued token. Consumed and deleted when the
-   * `clipboardLinkInsertionContext` reply arrives.
-   */
-  private readonly pendingClipboardTargets = new Map<number, ClipboardLinkTarget[]>();
-
   constructor(private readonly context: vscode.ExtensionContext) {
     this.subscriptions.push(
       vscode.window.onDidChangeActiveTextEditor((editor) => {
@@ -275,12 +253,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         this.enqueue(viewer, async () => {
           if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
           await this.handlePasteMedia(viewer, message);
-        });
-        break;
-      case 'clipboardLinkInsertionContext':
-        this.enqueue(viewer, async () => {
-          if (!isCurrentBinding(message.binding, viewer.binding.generation)) return;
-          await this.handleClipboardLinkInsertionContext(viewer, message);
         });
         break;
       case 'openLink':
@@ -556,8 +528,7 @@ export class LivePreviewViewerManager implements vscode.Disposable {
 
     const selectedText = typeof message.selectedText === 'string' ? message.selectedText : undefined;
     // The drag/drop and paste path keeps its historical multiple-file join
-    // (a single space between links); only the explicit command honors the
-    // `multipleFilesFormat` setting.
+    // (a single space between links).
     await this.postInsertMediaSnippets(
       viewer,
       binding,
@@ -567,34 +538,28 @@ export class LivePreviewViewerManager implements vscode.Disposable {
         target: formatMarkdownLinkTarget(target.relative),
       })),
       selectedText,
-      'space',
     );
   }
 
-  /**
-   * Build a snippet for each resolved target and post the combined
-   * `insertMedia` message (R-29). Shared by the drag/drop-paste path (`space`
-   * join, unchanged) and the explicit clipboard-link command (`lines`/`list`).
-   */
+  /** Build snippets for resolved DataTransfer targets and insert them together. */
   private async postInsertMediaSnippets(
     viewer: Viewer,
     binding: ViewerBinding,
     requestId: number,
-    targets: { isImage: boolean; target: string; label?: string }[],
+    targets: { isImage: boolean; target: string }[],
     selectedText: string | undefined,
-    format: 'space' | 'lines' | 'list',
   ): Promise<void> {
     if (targets.length === 0) return;
     if (viewer.disposed || viewer.binding !== binding) return;
-    const snippets = targets.map((target) =>
-      buildMediaSnippet({
-        isImage: target.isImage,
-        target: target.target,
-        selectedText,
-        label: target.label,
-      }),
+    const combined = combineWithSpace(
+      targets.map((target) =>
+        buildMediaSnippet({
+          isImage: target.isImage,
+          target: target.target,
+          selectedText,
+        }),
+      ),
     );
-    const combined = format === 'space' ? combineWithSpace(snippets) : combineLinks(snippets, format);
     await viewer.panel.webview.postMessage({
       type: 'insertMedia',
       binding: binding.generation,
@@ -603,180 +568,6 @@ export class LivePreviewViewerManager implements vscode.Disposable {
       placeholderFrom: combined.placeholderFrom,
       placeholderTo: combined.placeholderTo,
     });
-  }
-
-  /**
-   * Explicit "Paste File as Markdown Link" command (R-29-06). Reads the Windows
-   * OS file clipboard through PowerShell, resolves each entry to a
-   * document-relative (or, per setting, absolute) target, then asks the active
-   * viewer's Webview for its current selection so the snippet is inserted via
-   * the existing `insertMedia` path. Webviews cannot read the OS file
-   * clipboard, hence the host-side PowerShell read.
-   */
-  public async pasteFileAsMarkdownLink(): Promise<void> {
-    const viewer = this.lastInteractedViewerId
-      ? this.viewers.get(this.lastInteractedViewerId)
-      : undefined;
-    if (!viewer || viewer.disposed) {
-      vscode.window.showInformationMessage('Live Preview ビューアがアクティブではありません。');
-      return;
-    }
-    if (process.platform !== 'win32') {
-      vscode.window.showInformationMessage('このコマンドは Windows でのみ利用できます。');
-      return;
-    }
-    const absolutePaths = await readClipboardFiles();
-    if (absolutePaths.length === 0) {
-      vscode.window.showInformationMessage('クリップボードにファイルがありません。');
-      return;
-    }
-    if (viewer.disposed) return;
-    const binding = viewer.binding;
-    const documentFolder = vscode.Uri.joinPath(binding.uri, '..');
-    const targets: ClipboardLinkTarget[] = [];
-    const outside: string[] = [];
-    const missing: string[] = [];
-    for (const absPath of absolutePaths) {
-      const resolved = await this.resolveClipboardPath(absPath, documentFolder);
-      if (resolved.kind === 'target') targets.push(resolved.target);
-      else if (resolved.kind === 'skip-outside') outside.push(absPath);
-      else missing.push(absPath);
-    }
-    if (viewer.disposed || viewer.binding !== binding) return;
-    if (missing.length > 0) {
-      vscode.window.showWarningMessage(
-        `存在しない、または読み取れないファイルはスキップしました: ${missing.join(', ')}`,
-      );
-    }
-    if (outside.length > 0) {
-      vscode.window.showWarningMessage(
-        `ワークスペース外/別ドライブのファイルはスキップしました: ${outside.join(', ')}`,
-      );
-    }
-    if (targets.length === 0) return;
-
-    // Stash the resolved targets under a token, then ask the Webview for its
-    // selection. The reply (`clipboardLinkInsertionContext`) carries the token
-    // and the selected text; the host then builds and posts the snippet.
-    const token = this.nextClipboardToken++;
-    this.pendingClipboardTargets.set(token, targets);
-    this.enqueue(viewer, async () => {
-      if (viewer.disposed || viewer.binding !== binding) {
-        this.pendingClipboardTargets.delete(token);
-        return;
-      }
-      await viewer.panel.webview.postMessage({
-        type: 'requestClipboardLinkInsertion',
-        binding: binding.generation,
-        token,
-      });
-    });
-  }
-
-  /**
-   * Handle the Webview's selection reply for a clipboard-link command. Consumes
-   * the stashed targets, resolves each label/target per the configured settings,
-   * and posts the combined `insertMedia` snippet (R-29-06).
-   */
-  private async handleClipboardLinkInsertionContext(
-    viewer: Viewer,
-    message: { binding: number; token?: unknown; requestId?: unknown; selectedText?: unknown },
-  ): Promise<void> {
-    if (typeof message.token !== 'number') return;
-    const targets = this.pendingClipboardTargets.get(message.token);
-    this.pendingClipboardTargets.delete(message.token);
-    if (!targets || targets.length === 0) return;
-    if (typeof message.requestId !== 'number' || !Number.isSafeInteger(message.requestId)) return;
-    const binding = viewer.binding;
-    const selectedText =
-      typeof message.selectedText === 'string' && message.selectedText.length > 0
-        ? message.selectedText
-        : undefined;
-    const mode = this.pasteFileLinkTextMode();
-    const insertTargets = targets.map((target) => ({
-      isImage: target.isImage,
-      target: formatMarkdownLinkTarget(
-        target.isDirectory ? folderLinkTarget(target.relative) : target.relative,
-      ),
-      label: linkLabel({
-        name: target.name,
-        relative: target.relative,
-        isDirectory: target.isDirectory,
-        selectedText,
-        mode,
-      }),
-    }));
-    await this.postInsertMediaSnippets(
-      viewer,
-      binding,
-      message.requestId,
-      insertTargets,
-      selectedText,
-      this.pasteFileLinkMultipleFormat(),
-    );
-  }
-
-  /**
-   * Resolve a clipboard absolute path to a link target. Unlike
-   * {@link relativizeUri} (files only), this accepts directories. Missing paths
-   * are always skipped; outside-workspace / cross-drive paths follow the
-   * `livePreview.pasteFileLink.outsideWorkspace` setting.
-   */
-  private async resolveClipboardPath(
-    absPath: string,
-    documentFolder: vscode.Uri,
-  ): Promise<
-    | { kind: 'target'; target: ClipboardLinkTarget }
-    | { kind: 'skip-outside' }
-    | { kind: 'skip-missing' }
-  > {
-    const uri = vscode.Uri.file(absPath);
-    let stat: vscode.FileStat;
-    try {
-      stat = await vscode.workspace.fs.stat(uri);
-    } catch {
-      return { kind: 'skip-missing' };
-    }
-    const isDirectory = (stat.type & vscode.FileType.Directory) !== 0;
-    const name = path.basename(uri.fsPath);
-    const isImage = !isDirectory && isImageFile(name);
-    const inWorkspace = (vscode.workspace.workspaceFolders ?? []).some((folder) => {
-      const rel = path.relative(folder.uri.fsPath, uri.fsPath);
-      return rel !== '' && !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel);
-    });
-    const relativeRaw = path.relative(documentFolder.fsPath, uri.fsPath);
-    const canRelativize = inWorkspace && relativeRaw !== '' && !path.isAbsolute(relativeRaw);
-    if (!canRelativize) {
-      if (this.pasteFileLinkOutsideWorkspace() !== 'absolute') return { kind: 'skip-outside' };
-      const absolute = uri.fsPath.split(path.sep).join('/');
-      return { kind: 'target', target: { name, relative: absolute, isDirectory, isImage } };
-    }
-    const relative = relativeRaw.split(path.sep).join('/');
-    return { kind: 'target', target: { name, relative, isDirectory, isImage } };
-  }
-
-  private pasteFileLinkTextMode(): 'fileName' | 'fileNameWithoutExtension' | 'relativePath' {
-    const value = vscode.workspace
-      .getConfiguration('livePreview')
-      .get<string>('pasteFileLink.linkText');
-    if (value === 'fileName' || value === 'relativePath') return value;
-    return 'fileNameWithoutExtension';
-  }
-
-  private pasteFileLinkMultipleFormat(): 'lines' | 'list' {
-    return vscode.workspace
-      .getConfiguration('livePreview')
-      .get<string>('pasteFileLink.multipleFilesFormat') === 'list'
-      ? 'list'
-      : 'lines';
-  }
-
-  private pasteFileLinkOutsideWorkspace(): 'skip' | 'absolute' {
-    return vscode.workspace
-      .getConfiguration('livePreview')
-      .get<string>('pasteFileLink.outsideWorkspace') === 'absolute'
-      ? 'absolute'
-      : 'skip';
   }
 
   /**

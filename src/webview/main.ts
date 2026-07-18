@@ -482,11 +482,11 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       markdown(),
       // R-30 heading-section folding. `codeFolding()` supplies fold state +
       // placeholder; `headingFoldService` provides heading ranges; `foldGutter`
-      // renders the ▼/▶ toggles. The gutter is width-compensated in CSS so the
+      // renders VS Code-style chevron toggles. The gutter is width-compensated in CSS so the
       // heading/body left edge stays aligned (R-28-07). Sections start expanded.
       codeFolding(),
       headingFoldService,
-      foldGutter({ openText: '▼', closedText: '▶' }),
+      foldGutter({ openText: '⌄', closedText: '›' }),
       livePreviewField(),
       viewportDecorationPlugin,
       syncPlugin,
@@ -1265,32 +1265,6 @@ window.addEventListener('message', (event) => {
       if (msg.binding !== binding) break;
       unsavedIndicator.classList.toggle('is-visible', msg.dirty === true);
       break;
-    case 'requestClipboardLinkInsertion': {
-      // The explicit "Paste File as Markdown Link" command (R-29-06). Capture
-      // the current selection into a pending media request (so its position is
-      // mapped through later edits, like the drop/paste path) and hand the host
-      // the requestId + selected text. The host builds the snippet and replies
-      // with the existing `insertMedia` message.
-      if (msg.binding !== binding) break;
-      const selection = view.state.selection.main;
-      const requestId = nextMediaRequestId++;
-      const selectedText =
-        selection.from === selection.to ? '' : view.state.sliceDoc(selection.from, selection.to);
-      pendingMediaRequests.set(requestId, {
-        binding,
-        from: selection.from,
-        to: selection.to,
-        selectedText,
-      });
-      vscode.postMessage({
-        type: 'clipboardLinkInsertionContext',
-        binding,
-        token: msg.token,
-        requestId,
-        selectedText,
-      });
-      break;
-    }
     case 'insertMedia':
       if (msg.binding !== binding) break;
       if (

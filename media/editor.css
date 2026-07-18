@@ -456,14 +456,19 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 }
 .cm-editor .cm-foldGutter .cm-gutterElement {
   /* CodeMirror sizes each gutter element to its line-block height. Heading lines
-     are tall (large font + asymmetric padding-top/bottom) and push their glyph
-     downward, so an inline (top-aligned) marker floats above the heading text.
-     Flex-center the ▶/▼ glyph vertically so it lines up with the heading text,
-     and flush it right against the 48px heading/body left edge (R-30). */
+     use more top than bottom padding, so their text's visual center sits below
+     the block center. Nudge the compact chevron down by the measured 3px at the
+     default size rather than relying on geometric centering alone. The em-based
+     adjustment scales with configured font-size and stays aligned from H1 through
+     H6, including wrapped headings. */
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding: 0 2px 0 0;
+  font-family: var(--vscode-editor-font-family, sans-serif);
+  font-size: 0.9em;
+  line-height: 1;
+  transform: translateY(0.2em);
   cursor: pointer;
   color: var(--vscode-descriptionForeground);
   opacity: 0.7;
