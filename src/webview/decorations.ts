@@ -481,8 +481,19 @@ function sideOf(s: DecoSpec): number {
 
 function toDecoration(s: DecoSpec): Decoration | null {
   switch (s.type) {
-    case 'line':
-      return Decoration.line({ class: s.className ?? '' });
+    case 'line': {
+      // List/task lines: widen the hierarchy indent beyond the raw leading
+      // whitespace so nested levels read clearly, matching standard Markdown
+      // preview spacing (R-28-06). Additive to the existing whitespace — never
+      // mutates the source text (R-01-02).
+      let attributes: Record<string, string> | undefined;
+      if (s.tag === 'list' || s.tag === 'task') {
+        const indent = Number(s.attrs?.indent ?? '0') || 0;
+        const level = Math.floor(indent / 2);
+        if (level > 0) attributes = { style: `padding-left: ${level * 1.5}em;` };
+      }
+      return Decoration.line({ class: s.className ?? '', attributes });
+    }
     case 'mark':
       return Decoration.mark({ class: s.className ?? '', attributes: markAttrs(s) });
     case 'hide':
