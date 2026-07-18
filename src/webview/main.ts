@@ -3,9 +3,9 @@
  * decoration plugin, and bridges document changes to/from the extension host
  * over `postMessage`.
  */
-import { EditorState, Prec, StateEffect, StateField, Transaction } from '@codemirror/state';
+import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
 import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
-import { history, historyKeymap, defaultKeymap, isolateHistory } from '@codemirror/commands';
+import { defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/language';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
@@ -20,7 +20,7 @@ import {
 import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
-import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../core/editing';
+import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey } from '../core/editing';
 import { headingFoldRange, parseTableRow } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize, displayFontSize } from '../core/viewport';
 
@@ -41,7 +41,7 @@ let editVersion = 0;
 let ackVersion = 0;
 let pendingCompositionChange = false;
 let pendingRemote:
-  | { text: string; baseVersion: number | undefined; rollback?: boolean; preserveHistory?: boolean }
+  | { text: string; baseVersion: number | undefined; rollback?: boolean }
   | undefined;
 let nextMediaRequestId = 1;
 
@@ -473,12 +473,13 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
     doc: text,
     selection,
     extensions: [
-      history(),
+      // Undo/Redo is delegated to VS Code via the Custom Text Editor host, so
+      // CodeMirror keeps no undo stack of its own and no undo keymap is bound.
       formatKeymap,
       arrowKeymap,
       editingKeymap,
       mediaDomHandlers,
-      keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap]),
+      keymap.of([...defaultKeymap, ...foldKeymap]),
       markdown(),
       // R-30 heading-section folding. `codeFolding()` supplies fold state +
       // placeholder; `headingFoldService` provides heading ranges; `foldGutter`
@@ -522,9 +523,6 @@ function flushPendingComposition(): boolean {
   }
   pendingCompositionChange = false;
   postEdit(view.state.doc.toString());
-  // A completed composition is one deliberate editing operation. Isolate it
-  // from the next composition so repeated IME lines undo monotonically.
-  view.dispatch({ annotations: isolateHistory.of('after') });
   return true;
 }
 
@@ -544,7 +542,7 @@ function applyPendingRemote(): void {
     // An external host update wins over an in-progress cell edit: cancel it so a
     // stale input/closure cannot fight the incoming document (R-08 sync).
     finishActiveCellEdit(false);
-    if (remote.text !== view.state.doc.toString()) setText(remote.text, remote.rollback, remote.preserveHistory);
+    if (remote.text !== view.state.doc.toString()) setText(remote.text, remote.rollback);
     else if (remote.rollback) ackVersion = editVersion;
   }
 }
@@ -599,7 +597,6 @@ view.dom.addEventListener(
         });
         view.dispatch({
           changes: { from: patch.from, to: patch.to, insert: patch.insert },
-          annotations: isolateHistory.of('full'),
         });
       } catch {
         /* widget not currently mapped (mid-render); ignore this click */
@@ -653,9 +650,9 @@ view.dom.addEventListener(
 // Right-clicking a rendered table cell opens a custom overlay menu (built in
 // plain DOM outside the CodeMirror tree) to add/remove rows and columns. The
 // body change goes through the SAME path as the checkbox toggle
-// (`computeRemotePatch` → `view.dispatch` with `isolateHistory.of('full')`), so
-// the existing `syncPlugin` → host `applyEdit` pipeline reflects it as a minimal
-// `WorkspaceEdit`. Right-click never moves the caret or activates the block.
+// (`computeRemotePatch` → `view.dispatch`), so the existing `syncPlugin` → host
+// `applyEdit` pipeline reflects it as a minimal `WorkspaceEdit`. Right-click
+// never moves the caret or activates the block.
 let tableMenuEl: HTMLElement | null = null;
 
 function closeTableMenu(): void {
@@ -710,7 +707,6 @@ function applyTableEdit(startLine: number, transform: (lines: string[]) => strin
   const patch = computeRemotePatch(current, nextDoc, { anchor: sel.anchor, head: sel.head });
   view.dispatch({
     changes: { from: patch.from, to: patch.to, insert: patch.insert },
-    annotations: isolateHistory.of('full'),
   });
 }
 
@@ -720,8 +716,8 @@ function applyTableEdit(startLine: number, transform: (lines: string[]) => strin
 // menu) opens a one-line <input> inside that cell so its raw Markdown text can be
 // edited in place while the table stays rendered. Enter / blur / starting another
 // cell edit commit the change through the SAME path as the row/column menu
-// (`updateTableCell` → `applyTableEdit` → `computeRemotePatch` → `view.dispatch`
-// with `isolateHistory.of('full')`); Escape cancels without touching the doc.
+// (`updateTableCell` → `applyTableEdit` → `computeRemotePatch` → `view.dispatch`);
+// Escape cancels without touching the doc.
 // A literal `|` typed into a cell is escaped (`\|`) by `updateTableCell`/`buildRow`
 // so it never breaks the table structure.
 
@@ -1093,7 +1089,6 @@ function insertMedia(text: string, placeholderFrom: number, placeholderTo: numbe
   view.dispatch({
     changes: { from, to, insert: text },
     selection: { anchor: from + placeholderFrom, head: from + placeholderTo },
-    annotations: isolateHistory.of('full'),
   });
   view.focus();
 }
@@ -1166,41 +1161,31 @@ view.dom.addEventListener(
   { passive: false },
 );
 
-function setText(text: string, rollback = false, preserveHistory = false) {
+function setText(text: string, rollback = false) {
   const doc = view.state.doc.toString();
   if (doc === text) return;
 
   // Apply only the minimal changed range (common prefix/suffix trimmed) so the
   // dispatch does not touch — and thus does not scroll to — unrelated lines
-  // (R-08-07). The primary selection is remapped through the patch so that a
-  // resync whose replaced range covers the typing line keeps the caret at its
-  // equivalent logical position instead of collapsing it to the range start
-  // (which would roll the caret back before the typing position).
+  // (R-08-07). The primary selection is remapped through the patch so a resync
+  // whose replaced range covers the typing line keeps the caret at its
+  // equivalent logical position instead of collapsing it to the range start.
+  //
+  // CodeMirror holds no undo history of its own (Undo/Redo is VS Code's, driven
+  // through the Custom Text Editor host), so every host update — whether a
+  // failed-edit rollback or a genuine external change — is reflected as one
+  // minimal patch under the `applyingRemote` guard. The guard keeps the
+  // `syncPlugin` from echoing this change back to the host as a local edit.
   const sel = view.state.selection.main;
   const patch = computeRemotePatch(doc, text, { anchor: sel.anchor, head: sel.head });
 
   applyingRemote = true;
   try {
     pendingMediaRequests.clear();
-    if (preserveHistory) {
-      // A self-save echo (save participant / format-on-save inside our own save
-      // window) must reconcile the document without destroying the undo stack
-      // the user is still typing against. Apply the minimal patch and keep it
-      // out of the history so the just-typed edits remain undoable, while the
-      // `applyingRemote` guard prevents echoing it back as a local edit.
-      view.dispatch({
-        changes: { from: patch.from, to: patch.to, insert: patch.insert },
-        selection: { anchor: patch.anchor, head: patch.head },
-        annotations: Transaction.addToHistory.of(false),
-      });
-    } else {
-      // An authoritative external document state invalidates every inverse
-      // transaction based on the previous text. Replacing EditorState (rather
-      // than merely annotating a transaction out of history) makes CodeMirror
-      // history the sole owner and prevents old text from reappearing through
-      // Undo.
-      view.setState(makeState(text, { anchor: patch.anchor, head: patch.head }));
-    }
+    view.dispatch({
+      changes: { from: patch.from, to: patch.to, insert: patch.insert },
+      selection: { anchor: patch.anchor, head: patch.head },
+    });
     if (rollback) ackVersion = editVersion;
   } finally {
     applyingRemote = false;
@@ -1253,11 +1238,10 @@ window.addEventListener('message', (event) => {
           text: msg.text,
           baseVersion: msg.baseVersion,
           rollback: msg.rollback === true,
-          preserveHistory: msg.preserveHistory === true,
         };
         break;
       }
-      if (msg.text !== view.state.doc.toString()) setText(msg.text, msg.rollback === true, msg.preserveHistory === true);
+      if (msg.text !== view.state.doc.toString()) setText(msg.text, msg.rollback === true);
       else if (msg.rollback === true) ackVersion = editVersion;
       break;
     case 'settings':
@@ -1287,16 +1271,30 @@ window.addEventListener('message', (event) => {
   }
 });
 
-// Explicit save (Ctrl+S / Cmd+S). A WebviewPanel is not a CustomTextEditor, so
-// VS Code's own Ctrl+S never reaches the bound TextDocument. Capture the
-// keystroke, suppress the browser "save page" default, and ask the host to
-// persist the document (R-03-08).
-window.addEventListener('keydown', (event) => {
-  if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === 's' || event.key === 'S')) {
+// Undo / Redo / Save are forwarded to the extension host, which delegates
+// Undo/Redo to VS Code (`executeCommand('undo'|'redo')`, so history is unified
+// with the standard editor) and persists on save. Registered on the capture
+// phase so it runs before CodeMirror and any table-cell <input> handler, and
+// works regardless of which element holds focus. IME conversion (`isComposing`)
+// is never intercepted. (R-04 / R-17 / R-18 / R-19)
+window.addEventListener(
+  'keydown',
+  (event) => {
+    const action = classifyUndoRedoKey({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      isComposing: event.isComposing,
+    });
+    if (!action) return;
     event.preventDefault();
-    vscode.postMessage({ type: 'save', binding });
-  }
-});
+    event.stopPropagation();
+    vscode.postMessage({ type: action, binding });
+  },
+  true,
+);
 
 // Tell the host we are ready to receive the initial document.
 vscode.postMessage({ type: 'ready' });

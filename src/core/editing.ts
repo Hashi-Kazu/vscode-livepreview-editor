@@ -15,6 +15,48 @@ export function shouldOpenLinkOnMouseDown(button: number): boolean {
   return button === 0;
 }
 
+/** The minimal, DOM-independent view of a KeyboardEvent this module needs. */
+export interface UndoRedoKeyEventLike {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  /** True while an IME composition is in progress. */
+  isComposing: boolean;
+}
+
+/**
+ * Classify a keyboard event into the host command it should trigger inside the
+ * Custom Text Editor's Webview: `undo` / `redo` / `save`, or `undefined` when it
+ * is an ordinary keystroke the editor should keep handling itself.
+ *
+ * The Webview forwards these to the extension host, which delegates Undo/Redo to
+ * VS Code (`vscode.commands.executeCommand('undo'|'redo')`) so history stays
+ * unified with the standard editor, and persists on save. Keys are only claimed
+ * for a Ctrl/Cmd combination without Alt, and never while an IME composition is
+ * active (`isComposing`), so Japanese conversion is not disturbed.
+ *
+ * - Ctrl/Cmd + Z            → undo
+ * - Ctrl/Cmd + Shift + Z    → redo
+ * - Ctrl + Y (not Cmd+Y)    → redo   (Windows/Linux redo)
+ * - Ctrl/Cmd + S            → save
+ */
+export function classifyUndoRedoKey(
+  event: UndoRedoKeyEventLike,
+): 'undo' | 'redo' | 'save' | undefined {
+  if (event.isComposing) return undefined;
+  if (event.altKey) return undefined;
+  const modifier = event.ctrlKey || event.metaKey;
+  if (!modifier) return undefined;
+  const key = event.key.toLowerCase();
+  if (key === 's') return 'save';
+  if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
+  // Ctrl+Y is redo on Windows/Linux; Cmd+Y is not a macOS redo shortcut.
+  if (key === 'y' && !event.metaKey) return 'redo';
+  return undefined;
+}
+
 export interface ListContinuation {
   /** Whether the line is a list item at all. */
   isList: boolean;
