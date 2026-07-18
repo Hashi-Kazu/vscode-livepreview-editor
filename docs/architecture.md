@@ -42,12 +42,14 @@
 
 各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` と保存の完了後に実行される。失焦・dispose の flush 保存も同じキューへ追加するため、dispose 前に受信した edit はパネル破棄後でも TextDocument への適用と保存を完走する（Webview 返信だけを抑止する）。
 
-保存モデルは標準エディタと同じ明示保存＋ライフサイクル flush である（ADR-0018）。毎打鍵アイドル自動保存（`SaveDebouncer`）は廃止した。編集は最小 `WorkspaceEdit` で即時反映するが保存は発火せず、保存は次の 2 経路でのみ `performSave`（dirty のときだけ `document.save()`）を実行する。
+保存モデルはデバウンスバッチ apply＋即時保存である（ADR-0019、ADR-0018 を supersede）。毎打鍵アイドル自動保存（`SaveDebouncer`、ADR-0018 で廃止）には戻さない。Webview の `edit` は即 apply せず binding の `pendingEdit` に最新 version で coalesce し、タイピング停止後のデバウンス（既定 200ms、`EDIT_APPLY_DEBOUNCE_MS`）でバッチ apply する。apply とその直後の保存は単一の `flushPendingEdit` 操作として `operationQueue` 内で直列実行し（apply が save に先行）、apply 直後に必ず `performSave`（dirty のときだけ `document.save()`）して TextDocument の dirty 滞留を無くす。dirty 滞留を断つことがコア側のソースタブ再表示（R-03-11）の発生源対策であり、R-03-11 の抑制処理は backstop として残す。
 
-- 明示保存: WebviewPanel は `CustomTextEditor` ではないため VS Code の Ctrl+S は下層 TextDocument に届かない。Webview 側で `Ctrl+S`/`Cmd+S` を捕捉し `preventDefault` して host へ `save` メッセージを送り、host が `operationQueue` 上で `performSave` を実行する。
-- flush 保存: 失焦（パネル非 active 化）・dispose・バインド切替の各時点で `performSave` を直接呼び、受信済み edit の後ろに直列化してデータ喪失を防ぐ。
+flush 点はすべて `flushPendingEdit` に統一する（取りこぼしゼロ）。
 
-保存参加者・format-on-save のエコーは明示保存・失焦保存でも発生するため、`SelfSaveGuard` の own-save 窓、`isSaveParticipantNormalization`、`preserveHistory` レコンサイルは Undo 安全機構として据え置く。
+- 明示保存: WebviewPanel は `CustomTextEditor` ではないため VS Code の Ctrl+S は下層 TextDocument に届かない。Webview 側で `Ctrl+S`/`Cmd+S` を捕捉し `preventDefault` して host へ `save` メッセージを送り、host が `operationQueue` 上で `flushPendingEdit`（pending apply→save）を実行する。
+- flush 保存: 失焦（パネル非 active 化）・dispose・バインド切替、および外部変更処理の入口の各時点で `flushPendingEdit` を呼び、受信済み edit の後ろに直列化してデータ喪失を防ぐ。
+
+Live Preview の Undo/Redo は CodeMirror が単独所有のままで不変（デバウンス化の影響を受けない）。保存参加者・format-on-save のエコーは即時保存でも発生するため、`SelfSaveGuard` の own-save 窓、`isSaveParticipantNormalization`、`preserveHistory` レコンサイルは Undo 安全機構として据え置く。
 
 各文書バインドには単調増加する `generation` を付ける。Webview は `edit`、`pasteMedia`、`openLink`、`renderError` に現在の generation を付与し、ホストは現在値と異なる遅延メッセージを拒否する。切り替え時は次を一括して更新する。
 

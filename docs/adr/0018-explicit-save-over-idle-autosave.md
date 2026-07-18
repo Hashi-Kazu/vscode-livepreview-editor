@@ -7,6 +7,8 @@ metadata:
 
 # ADR-0018: Explicit save plus lifecycle flush over idle autosave
 
+> **ステータス**: ADR-0019（2026-07-18）により supersede。v1.29.0 で反映モデルを「タイピング停止後のデバウンスでのバッチ apply＋apply 直後の即時保存」へ変更し、TextDocument が dirty のまま滞留しないようにした。本 ADR が確立した「明示保存＋ライフサイクル flush」および Undo 安全機構は ADR-0019 に引き継がれる（明示保存・flush 点はいずれも即時保存を伴う `flushPendingEdit` 経由に統一）。本文は経緯として残す。
+
 ## Context
 
 Until v1.25.x every Webview edit re-armed a 400ms idle timer (`SaveDebouncer`)
