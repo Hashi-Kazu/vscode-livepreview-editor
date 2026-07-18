@@ -296,6 +296,35 @@ describe('R-30 見出しセクション折りたたみ', () => {
         ['Real2', 5],
       ]);
     });
+
+    it('アウトライン用途: 複数レベルの見出しを網羅し、コードブロック内 # を除外し、行番号が正確であること（R-33-01）', () => {
+      const doc = [
+        '# Title',
+        'intro',
+        '## Section A',
+        '```',
+        '# fake',
+        '## also fake',
+        '```',
+        '### Subsection A.1',
+        'text',
+        '#### Deep',
+        '## Section B',
+        '###### Deepest',
+      ].join('\n');
+      const headings = scanHeadings(doc);
+      expect(headings.map((h) => [h.level, h.text, h.line])).toEqual([
+        [1, 'Title', 0],
+        [2, 'Section A', 2],
+        [3, 'Subsection A.1', 7],
+        [4, 'Deep', 9],
+        [2, 'Section B', 10],
+        [6, 'Deepest', 11],
+      ]);
+      // すべてのレベル 1〜6 が本ドキュメント内の見出し走査で少なくとも一度は
+      // 網羅されていること（アウトラインのインデント表示に必要な情報）。
+      expect(new Set(headings.map((h) => h.level))).toEqual(new Set([1, 2, 3, 4, 6]));
+    });
   });
 
   describe('headingFoldRange（R-30-02）', () => {

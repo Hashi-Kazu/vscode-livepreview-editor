@@ -405,3 +405,15 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-31-01 host は `TextDocument.isDirty` を正として、編集適用後・保存後・初期表示・外部変更後・保存ライフサイクルで `{ type: 'dirty', dirty, binding }` を Webview へ送ること。破棄済み Webview・世代不一致には送らないこと。
 - ■■□ R-31-02 Webview はビューア内（CodeMirror DOM 外のオーバーレイ）に未保存インジケータを表示し、dirty=true のときのみ視認でき、dirty=false で消えること。色は `var(--vscode-*)` 追従。
 - ■■□ R-31-03 インジケータ要素は CodeMirror の装飾・高さ計測・クリック位置に干渉しないこと。
+
+### R-33 アウトライン/目次 #outline
+
+> **理由：** 長い文書内で見出し間を素早く移動できるよう、ビューア内にナビゲーション用の目次を設ける。
+
+> **説明：** 見出し抽出は R-30 で追加した全文走査の純粋関数 `scanHeadings`（`src/core/model.ts`）を再利用する（フェンスコードブロック内の `#` は除外。ビューポート限定の `computeDecorations`（R-05-05）には依存しない）。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外にフローティングの目次パネル `cm-lp-outline-panel` を生成し、トグルボタンで表示/非表示を切り替える。ドキュメント変更時（`OutlineSync` ViewPlugin、マイクロタスクで軽くデバウンス）に `scanHeadings(view.state.doc.toString())` を再計算し、見出しレベルに応じてインデントした一覧を描画する。項目クリックで `view.dispatch({ selection: { anchor: doc.line(line + 1).from }, scrollIntoView: true })` により該当見出し行へキャレット移動・スクロールする（`line` は 0-based、`doc.line` は 1-based）。本文は一切書き換えない（R-01-02）。色は `var(--vscode-*)` 追従（R-28-04）。
+
+###### ＜アウトライン/目次＞
+
+- ■■□ R-33-01 純粋関数 `scanHeadings` により全文書の見出し（レベル・テキスト・行番号）を取得すること（コードブロック内 `#` は除外）。ビューポート限定装飾（R-05-05）に依存しないこと。
+- ■■□ R-33-02 Webview はビューア内フローティングパネルに見出しをレベル別インデントで一覧表示し、表示/非表示をトグルできること。色は `var(--vscode-*)` 追従。
+- ■■□ R-33-03 目次項目クリックで該当見出し行へキャレット移動・スクロールすること。本文は変更しないこと（R-01-02）。パネルは CodeMirror の装飾・計測・クリック位置に干渉しないこと。
