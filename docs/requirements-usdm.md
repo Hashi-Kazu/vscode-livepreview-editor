@@ -1,12 +1,14 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.36.0
+**バージョン**: 1.37.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-19
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-19 時点 / v1.37.0）**: v1.37.0 で、標準 Markdown プレビュー相当の表示へ寄せる 8 項目（GitHub Issue #21）を実装した。(1) インラインコード `.cm-lp-code` の背景コントラスト強化・左右パディング拡大（R-02-02／R-28-06）、(2) Live Preview タブへ識別アイコン付与（`webviewPanel.iconPath`）と `editor/title` メニュー `livePreview.openWith` の `when` に `activeCustomEditorId != livePreview.editor` を追加して Live Preview アクティブ時のボタンを抑止（R-03-13 新設）、(3) 箇条書きマーカー `•/○/▪` のグリフ字幅差を CSS で吸収しサイズ統一（R-01-05／#3、形状差別化は維持）、(4)(5) コードフェンス開始行の情報文字列（例 `markdown`）を非カーソル行で hide し言語名を line spec 属性 `lang`＋CSS `data-lang` ラベルへ整理、コードブロック内容へ言語別構文ハイライトを適用（`syntaxHighlighting`＋`HighlightStyle`、`markdown({ codeLanguages })`、色は `--vscode-symbolIcon-*` 追従。R-02-06 改訂／R-34 新設）、(6) 入れ子引用 `cm-lp-quote-l1〜l6` を階層ごとの独立ボーダー＋背景＋左マージンへ改訂（R-02-05）、(7) GitHub Alerts `> [!NOTE|TIP|IMPORTANT|WARNING|CAUTION]` を純粋関数 `detectAlertBlocks` で検知し種別別アイコン・タイトル色・背景バンドで描画（生ラベル非表示。R-02-08 新設）、(8) 見出し折り畳みシェブロンの拡大と縦中心合わせ（R-30-04）。純粋関数（`src/core/model.ts`）の spec は `test/feature.issue21.decorations.test.ts` で検証。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。構文ハイライト方式・新規依存（`@codemirror/lang-*`／`@lezer/highlight`）は ADR-0021 に記録。
+>
 > ▶️ **開発継続中（2026-07-19 時点 / v1.36.0）**: v1.36.0 で、Live Preview を editable WebviewPanel＋active editor follow 方式から **CustomTextEditorProvider（viewType `livePreview.editor`）の再採用**へ設計変更した（ADR-0020、ADR-0005 復活・ADR-0015 廃止）。各エディタは VS Code が渡す単一 TextDocument に生涯バインドし、URI 所有者マップ・active editor follow・`workspace.openTextDocument` 再取得・binding generation は持たない（VS Code が単一 TextDocument バインドとリネーム/削除を管理する。R-03-05／R-03-09／R-03-10 は廃止、R-03-12 を新設）。**Undo/Redo は VS Code へ委譲**し、Webview（CodeMirror）は history を持たず、`classifyUndoRedoKey` で Undo/Redo/Save キーを host へ転送、host が pending edit を flush してから `executeCommand('undo'|'redo')`／`document.save()` を実行する（R-33 新設、R-04-01／R-04-02 改訂、ADR-0017 の「CodeMirror 単独 Undo」を supersede）。デバウンス apply（`EDIT_APPLY_DEBOUNCE_MS`=200ms）＋即時保存の保存モデル（R-03-08、ADR-0019）と最小差分 `WorkspaceEdit`・self-echo ledger（`consumeExpectedWorkspaceEditChange`）・外部変更の一方向反映（`reconcileExternalChange`）は維持する。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
 >
 > ▶️ **開発継続中（2026-07-18 時点 / v1.35.0）**: v1.35.0 で、Live Preview の装飾・レイアウトの見た目を標準 Markdown プレビュー相当に近づける 10 項目の修正を行った。箇条書きは階層別マーカー（`•`/`○`/`▪`）＋本文色追従（R-01-05 改訂）、番号付きリストは 1 段目ローマ数字・2 段目アルファベットの階層別 numeral（R-01-07 新設）、太字＋斜体の複合記法 `***text***`/`___text___` を strong＋em で同時装飾（R-01-08 新設）、入れ子引用（`>>`）を階層クラスで表示（R-02-05 改訂）を純粋関数（`src/core/model.ts`）に実装した。CSS/Webview 側では、見出し下の区切り線・水平線単体の余白縮小、インラインコードの強調、フェンスコードブロックの行別 role クラスによる枠の一体化、折りたたみアイコンの拡大、リスト階層インデントの拡大（R-28-05／R-28-06 改訂）を行った。初期表示フォントサイズはズーム基準値の 1.1 倍で描画するようにした（`displayFontSize`、R-28-17 新設）。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
@@ -114,8 +116,9 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜ブロック＞
 
 - ■■□ R-02-05 引用 `> quote` を装飾し、`>` マーカーを非カーソル行で隠す。入れ子引用（`>>`・`>>>` … 最大 6 段）は `>` の連続数を階層深度として検知し、行クラスに `cm-lp-quote-l{1〜6}`（7 段以降は `l6` に丸める）を付与して段数に応じた左インデント・境界線幅を CSS で表現すること（純粋関数は深度算出のみを担い、色は引き続き `var(--vscode-*)` テーマ変数に追従、R-28-04）。マーカー非表示範囲は従来通り全 `>` とその直後の空白を覆うこと。
-- ■■■ R-02-06 フェンスコードブロック（```` ``` ````）を検知し、ブロック内の Markdown を一切装飾しない。
+- ■■□ R-02-06 フェンスコードブロック（```` ``` ````）を検知し、ブロック内の Markdown を一切装飾しない。開始行の情報文字列（言語名。例 ```` ```markdown ````）は非カーソル行で hide し（`fence-info`）、標準プレビュー同様に生の言語ワードを表示しないこと。言語名は開始行 codeblock line spec の属性 `lang`（`role === 'open'` かつ非カーソル行のみ）として持ち、Webview 側は `Decoration.line` の `data-lang` 属性へ橋渡しし、CSS の `.cm-lp-codeblock-open[data-lang]::after` でブロック枠上に整理された言語ラベルを描く。カーソル行では情報文字列を hide せず言語ラベルも付けない（生記法維持、R-01-01）。フェンス検知ロジック（`detectCodeBlocks`）自体は不変（R-02-06 改訂・#4/#5）。ブロック内容の言語別構文ハイライトは R-34 で規定する。
 - ■■■ R-02-07 表（ヘッダ＋区切り行）を検知し、区切り行を非カーソル行で隠す。
+- ■■□ R-02-08 GitHub Alerts（`> [!NOTE]` / `> [!TIP]` / `> [!IMPORTANT]` / `> [!WARNING]` / `> [!CAUTION]` の 5 種）を純粋関数 `detectAlertBlocks(lines, code)` で検知すること。開始行は `[!TYPE]` マーカーのみを内容に持つ引用行で、以降の連続する引用行を本文とする。フェンスコードブロック内の `> [!NOTE]` は素通し（リテラル文字列として扱い alert としない）。非カーソル行では、各行に行クラス `cm-lp-alert cm-lp-alert-{kind}`（開始行 `cm-lp-alert-open`／終了行 `cm-lp-alert-close`）を付与し、`>` マーカーを hide、開始行の `[!TYPE]` ラベルは種別アイコン＋タイトル名を描く `alert-title` replaceWidget へ置換して生ラベルを可視テキストとして残さないこと。種別ごとのアクセント色（アイコン・タイトル・左ボーダー・背景バンド）は `--vscode-*` テーマ変数に追従（フォールバックのみ、R-28-04）。カーソル行では生記法（`> [!NOTE]`）を維持しウィジェットを出さない（R-01-01）。装飾は表示のみで入力文字列を変更しない（R-01-02）。行装飾ベースのため block widget を用いず、ブロック高さ会計（R-28-10/11）に影響しない（R-02-08 新設・#7）。
 
 ---
 
@@ -144,6 +147,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - 廃止 R-03-10（今回 version）: 対象ファイルのリネーム時のビューア再バインド・削除時のクローズは、CustomTextEditor 化により VS Code が単一 TextDocument バインドとリネーム/削除を管理するため、拡張側の再バインド処理は不要となり廃止した。
 - ■■□ R-03-11 Live Preview の編集・保存処理は、ユーザーが開いたソースエディタータブを自動的に閉じないこと。ソースタブ再表示への対策は、デバウンス apply 直後の即時保存によって TextDocument の dirty 滞留を防止する方式とし、`vscode.window.tabGroups.close()` による補完処理は使用しない。
 - ■■■ R-03-12 `customEditors` contribution（viewType `livePreview.editor`、`priority: option`、`filenamePattern: *.md`）を登録し、`registerCustomEditorProvider` の `supportsMultipleEditorsPerDocument: false`／`retainContextWhenHidden: true` で解決すること。`livePreview.openWith` は `vscode.openWith` でソース横（`ViewColumn.Beside`）に開き、既存エディタがあれば複製せず reveal すること。
+- ■■□ R-03-13 Live Preview タブを標準 Markdown ソースエディタタブと視覚的に区別できるようにすること。(1) `resolveCustomTextEditor` で `webviewPanel.iconPath` に拡張機能同梱アイコン（`media/icon.png`）を設定し、Live Preview タブへ識別アイコンを付与する。(2) `editor/title` メニューの `livePreview.openWith` の `when` を `resourceExtname == .md && activeCustomEditorId != livePreview.editor` とし、Live Preview エディタがアクティブなタブでは「Live Preview エディタで開く」ボタンを表示しないこと（`explorer/context` の同コマンドは現状維持）（R-03-13 新設・#2）。
 
 ### R-04 ドキュメント同期 #sync
 
@@ -424,7 +428,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-30-01 純粋関数 `scanHeadings` はフェンスコードブロック内の `#` を除外して全見出しを行番号・レベル・テキスト・オフセット付きで返すこと。
 - ■■□ R-30-02 純粋関数 `headingFoldRange` は見出し行に対し、次の同レベル以下の見出し直前までを折りたたみ範囲として返し、配下が無い場合は `null` を返すこと。コードブロックを跨いでも正しく範囲を返すこと。
 - ■■□ R-30-03 Webview は `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldKeymap` で見出し配下を折りたたみ／展開できること。既定は全展開。
-- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。開状態は下向き、閉状態は右向きの VS Code 標準風の細いシェブロンとし、塗りつぶし三角形を用いないこと。ガター要素の高さは CodeMirror の行ブロックに追従させたまま、見出しのフォントサイズ・上下パディング・折り返しにかかわらずシェブロンの視覚中心を見出し文字の視覚中心へ揃えること。クリック領域、`foldKeymap`、fold placeholder は維持すること。
+- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。開状態は下向き、閉状態は右向きの VS Code 標準風の細いシェブロンとし、塗りつぶし三角形を用いないこと。シェブロンは視認性のためさらに拡大する（`font-size: 1.5em` 目安）。ガター要素の高さは CodeMirror の行ブロックに追従させたまま、見出しのフォントサイズ・上下パディング・折り返しにかかわらずシェブロンの視覚中心を見出し文字の視覚中心へ揃えること。見出し行は上パディングが下パディングより大きく本文中心がブロック中心より下にあるため、`align-items: flex-start` でシェブロンをブロック上端に置き、`(padding-top − padding-bottom)/2` 相当の下方向ナッジ（ガター要素自身のスケール済みフォント単位の `translateY`、目安 `0.55em`）で見出し文字中心へ寄せる（大きい見出しほど上パディングも大きくナッジも比例して増える）。クリック領域、`foldKeymap`、fold placeholder は維持すること（#8）。
 
 ### R-31 未保存インジケータ #unsaved
 
@@ -463,3 +467,13 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-33-02 host は undo/redo/save の実行前に必ず pending edit を `flushPendingEdit`（apply）で反映し、その後 `executeCommand('undo'|'redo')`／`document.save()`（dirty のときだけ）を実行すること。undo/redo は保存しないこと。
 - ■■■ R-33-03 Webview（CodeMirror）は Undo/Redo history を持たず（`@codemirror/commands` の `history()`／`historyKeymap`／`isolateHistory` を import・登録しない）、Undo/Redo キーは host へ転送すること。
 - ■■■ R-33-04 host は自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）を消費し Webview へ反映せず、外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）は `reconcileExternalChange` で一度だけ一方向反映すること。dispose 時は pending edit を flush するが保存はしないこと。
+
+### R-34 コードブロック言語別構文ハイライト #codehighlight
+
+> **理由：** フェンスコードブロックの内容を標準 Markdown プレビュー相当に読みやすくするため、言語別のトークン色分けを適用する。
+
+> **説明：** Webview（`src/webview/main.ts`）は `markdown({ codeLanguages })` に同期リゾルバ `codeLanguageFor`（`src/webview/highlight.ts`）を渡し、フェンス情報文字列（言語名）から対応する `Language` を返して埋め込みコードを言語解析させる。リゾルバは動的 `import()` を用いず個別 `@codemirror/lang-*` パッケージを同期に解決するため、Webview は単一 esbuild バンドルのまま保たれる。トークン色は `HighlightStyle`（`lpHighlightStyle`）＋`syntaxHighlighting()` で適用し、色は `--vscode-symbolIcon-*`（keyword/function/class/variable/number/string/constant/operator 等）＋フォールバックのみで VS Code テーマに追従する（ハードコード色禁止、R-28-04）。プログラミング言語向けタグのみを対象にし、Markdown 本文のタグ（見出し・強調・リンク・引用/リスト/コードのマーカー等）は写像しない（既存 `.cm-lp-*` 装飾が本文体裁を所有し、実質的に色分けはコードブロック内容にスコープされる）。CodeMirror の Undo/Redo 委譲（R-33-03、`history()` 不使用）を壊さないこと。方式・新規依存は ADR-0021 に記録。
+
+- ■■□ R-34-01 フェンスコードブロックの内容を言語別に構文ハイライトすること。`markdown({ codeLanguages: codeLanguageFor })` で言語パーサを供給し、`syntaxHighlighting(lpHighlightStyle)` でトークンを色分けする。対応言語は主要言語（js/ts/jsx/tsx/python/html/css/json/c/cpp/rust/java/sql/xml/yaml/php 等）とし、未対応言語はハイライトせず素の等幅表示にフォールバックすること。
+- ■■□ R-34-02 トークン色は `--vscode-symbolIcon-*` を中心とした `var(--vscode-*)` テーマ変数に追従させ、独自ハードコード色を用いない（フォールバックのみ可、R-28-04）。プログラミング言語タグのみを写像し、Markdown 本文の装飾（`.cm-lp-*`）と衝突させないこと。
+- ■■□ R-34-03 言語リゾルバ `codeLanguageFor` は `Language`（`LanguageSupport.language`）を同期に返し、動的 `import()` を用いないこと（Webview 単一バンドル維持）。Undo/Redo 委譲（R-33、`@codemirror/commands` の `history()` を import・登録しない）を壊さないこと。

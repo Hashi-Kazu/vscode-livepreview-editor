@@ -55,6 +55,9 @@ export class LivePreviewCustomEditorProvider implements vscode.CustomTextEditorP
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken,
   ): void {
+    // R-03-13: give the Live Preview tab a distinct icon so it is visually
+    // distinguishable from the standard Markdown source editor tab.
+    webviewPanel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'icon.png');
     const session = new LivePreviewEditorSession(this.context, this.output, document, webviewPanel, {
       onActive: (active) => {
         this.lastActive = active;

@@ -94,10 +94,12 @@ body {
 }
 .cm-lp-code {
   /* Inline code: tinted pill with a visible border so it reads clearly against
-     the surrounding prose (GitHub-style, strengthened per R-28-06). */
-  padding: 0.15em 0.4em;
-  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.22));
-  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.3));
+     the surrounding prose (GitHub-style, strengthened per R-28-06 / R-02-02).
+     Wider horizontal padding and a stronger tint bring the contrast closer to
+     the standard Markdown preview so short spans stand out from body text. */
+  padding: 0.2em 0.5em;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.32));
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.35));
 }
 .cm-lp-codeblock {
   /* Block code: full-width background band, matching the GitHub / MAIO fenced-
@@ -125,6 +127,30 @@ body {
 }
 .cm-lp-codeblock-inside {
   /* Middle lines: side borders + background only (inherited above). */
+}
+/* Language label on the opening fence line (#4/#5): the raw info string (e.g.
+   `markdown`) is hidden by the model off-cursor; this renders a compact,
+   right-aligned language tag on the block frame instead. Positioned so it does
+   not push the code content. Colours follow the theme (R-28-04). */
+.cm-line.cm-lp-codeblock-open[data-lang] {
+  position: relative;
+}
+.cm-line.cm-lp-codeblock-open[data-lang]::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 4px;
+  right: 10px;
+  padding: 0 6px;
+  font-family: var(--vscode-markdown-font-family, var(--vscode-font-family, system-ui, sans-serif));
+  font-size: 0.75em;
+  line-height: 1.6;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-editorWidget-background, rgba(127, 127, 127, 0.12));
+  border-radius: 4px;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* --- Headings (GitHub-preview sizing, MPE-style strengthened hierarchy) --- */
@@ -182,37 +208,27 @@ body {
 }
 
 .cm-lp-quote {
-  border-left: 0.25em solid var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888));
+  /* Each blockquote line carries a single, consistent-width left border at its
+     own left edge plus a faint tinted band (GitHub/MAIO look). Nesting depth is
+     expressed by stepping the whole line inward with `margin-left` (below), so
+     the border for each level sits at the correct indented position instead of a
+     single shared box whose inner borders drift (R-02-05 revision). */
+  border-left: 3px solid var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888));
   padding-left: 12px;
-  /* GitHub/MAIO render quotes in a muted color over a faint tinted band. */
   background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
   color: var(--vscode-textBlockQuote-foreground, var(--vscode-descriptionForeground, inherit));
 }
-/* Nested blockquotes (`>>`, `>>>`, …): each additional level adds its own
-   left border + indent so nesting depth reads visually (R-02-05), matching
-   standard Markdown-preview behaviour. Deeper levels reuse the same themed
-   border/background colors (no hard-coded color, R-28-04). */
-.cm-lp-quote-l1 { padding-left: 12px; }
-.cm-lp-quote-l2 {
-  padding-left: 24px;
-  border-left-width: 0.4em;
-}
-.cm-lp-quote-l3 {
-  padding-left: 36px;
-  border-left-width: 0.55em;
-}
-.cm-lp-quote-l4 {
-  padding-left: 48px;
-  border-left-width: 0.7em;
-}
-.cm-lp-quote-l5 {
-  padding-left: 60px;
-  border-left-width: 0.85em;
-}
-.cm-lp-quote-l6 {
-  padding-left: 72px;
-  border-left-width: 1em;
-}
+/* Nested blockquotes (`>>`, `>>>`, …): step the line inward one indent per
+   level so each level's independent border + background band is offset from the
+   previous, matching standard Markdown-preview nesting. `margin-left` is
+   horizontal only, so it does not affect the height oracle (R-28-14). Deeper
+   levels reuse the same themed colors (no hard-coded color, R-28-04). */
+.cm-lp-quote-l1 { margin-left: 0; }
+.cm-lp-quote-l2 { margin-left: 1.4em; }
+.cm-lp-quote-l3 { margin-left: 2.8em; }
+.cm-lp-quote-l4 { margin-left: 4.2em; }
+.cm-lp-quote-l5 { margin-left: 5.6em; }
+.cm-lp-quote-l6 { margin-left: 7em; }
 
 .cm-lp-link {
   color: var(--vscode-textLink-foreground);
@@ -228,6 +244,15 @@ body {
      not the link color (R-01-05). */
   color: var(--vscode-editor-foreground);
   padding-right: 8px;
+  /* The three hierarchy glyphs (•/○/▪) have different intrinsic advance widths,
+     which made deeper levels look larger/smaller than shallower ones. Normalise
+     the rendered glyph to a fixed box + font-size so every level reads at the
+     same marker size (only the shape differs, #3 / R-01-05). */
+  display: inline-block;
+  min-width: 1em;
+  text-align: center;
+  font-size: 0.9em;
+  line-height: inherit;
 }
 
 .cm-lp-list-number {
@@ -515,18 +540,20 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 .cm-editor .cm-foldGutter .cm-gutterElement {
   /* CodeMirror sizes each gutter element to its line-block height. Heading lines
      use more top than bottom padding, so their text's visual center sits below
-     the block center. Nudge the compact chevron down by the measured 3px at the
-     default size rather than relying on geometric centering alone. The em-based
-     adjustment scales with configured font-size and stays aligned from H1 through
-     H6, including wrapped headings. */
+     the block center by roughly (padding-top − padding-bottom)/2. Align the
+     chevron to the TOP of the block and nudge it down by that offset so its
+     visual center tracks the heading text center across H1–H6 (larger headings
+     have a larger asymmetric top padding, so the em-based nudge — measured in the
+     gutter element's own scaled font — grows with them). The chevron is enlarged
+     for visibility while keeping the gutter width (R-30-04 / R-28-06). */
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
   padding: 0 2px 0 0;
   font-family: var(--vscode-editor-font-family, sans-serif);
-  font-size: 1.3em;
+  font-size: 1.5em;
   line-height: 1;
-  transform: translateY(0.15em);
+  transform: translateY(0.55em);
   cursor: pointer;
   color: var(--vscode-descriptionForeground);
   opacity: 0.7;
@@ -600,4 +627,46 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
   text-align: center;
   color: var(--vscode-editor-foreground);
   overflow-x: auto;
+}
+
+/* --- GitHub alerts (`> [!NOTE]` …) #7 ------------------------------------- */
+/* Each alert kind sets its own accent color via a custom property, which the
+   line band, left border, and title (icon + name) all reference. Colors follow
+   VS Code theme variables with GitHub-like fallbacks only (R-28-04). */
+.cm-lp-alert-note { --lp-alert-color: var(--vscode-editorInfo-foreground, #1f6feb); }
+.cm-lp-alert-tip { --lp-alert-color: var(--vscode-charts-green, var(--vscode-terminal-ansiGreen, #1a7f37)); }
+.cm-lp-alert-important { --lp-alert-color: var(--vscode-charts-purple, var(--vscode-terminal-ansiMagenta, #8250df)); }
+.cm-lp-alert-warning { --lp-alert-color: var(--vscode-editorWarning-foreground, #9a6700); }
+.cm-lp-alert-caution { --lp-alert-color: var(--vscode-editorError-foreground, #cf222e); }
+
+.cm-line.cm-lp-alert {
+  border-left: 3px solid var(--lp-alert-color, var(--vscode-panel-border, #888));
+  padding-left: 16px;
+  /* Faint per-kind tinted band; falls back to the neutral quote band on engines
+     without color-mix (modern VS Code Chromium supports color-mix). */
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
+  background: color-mix(in srgb, var(--lp-alert-color) 8%, transparent);
+}
+.cm-line.cm-lp-alert-open {
+  padding-top: 8px;
+  border-top-left-radius: 6px;
+}
+.cm-line.cm-lp-alert-close {
+  padding-bottom: 8px;
+  border-bottom-left-radius: 6px;
+}
+/* Alert title (icon + kind name) that replaces the raw `[!TYPE]` label. */
+.cm-lp-alert-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-weight: 600;
+  color: var(--lp-alert-color, var(--vscode-editor-foreground));
+}
+.cm-lp-alert-icon {
+  flex: 0 0 auto;
+  vertical-align: -0.15em;
+}
+.cm-lp-alert-title-text {
+  line-height: 1.6;
 }

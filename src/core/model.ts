@@ -265,6 +265,63 @@ export function detectDetailsBlocks(lines: LineInfo[], code: CodeBlockInfo): Det
   return blocks;
 }
 
+/** The five GitHub "alert" (admonition) kinds. */
+export type AlertKind = 'note' | 'tip' | 'important' | 'warning' | 'caution';
+
+export interface AlertBlock {
+  /** Line index of the `> [!TYPE]` opener. */
+  start: number;
+  /** Line index of the last blockquote line in the alert. */
+  end: number;
+  /** Alert kind (lowercased). */
+  kind: AlertKind;
+}
+
+/** Human-facing titles per alert kind (rendered by the Webview title widget). */
+export const ALERT_TITLES: Record<AlertKind, string> = {
+  note: 'Note',
+  tip: 'Tip',
+  important: 'Important',
+  warning: 'Warning',
+  caution: 'Caution',
+};
+
+/** Matches a GitHub alert opener line: a blockquote whose sole content is the
+ *  `[!TYPE]` marker (e.g. `> [!NOTE]`). Case-insensitive per GitHub. */
+const ALERT_OPEN_RE = /^(\s*)>\s?\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i;
+/** Matches the `[!TYPE]` label (plus any trailing space) inside the opener's
+ *  post-marker content, used to hide/replace just the label off-cursor. */
+export const ALERT_LABEL_RE = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i;
+/** Any blockquote line (continuation of an alert body). */
+const ALERT_BODY_RE = /^\s*>/;
+
+/**
+ * Identify GitHub alert blocks (`> [!NOTE]` / `[!TIP]` / `[!IMPORTANT]` /
+ * `[!WARNING]` / `[!CAUTION]`) as line ranges. The opener line must be a
+ * blockquote carrying only the `[!TYPE]` marker; every following contiguous
+ * blockquote line belongs to the alert body. Fenced code blocks are skipped (a
+ * `> [!NOTE]` inside a code block is literal text, not an alert). Pure &
+ * framework-agnostic.
+ */
+export function detectAlertBlocks(lines: LineInfo[], code: CodeBlockInfo): AlertBlock[] {
+  const blocks: AlertBlock[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (code.role[i]) continue;
+    const m = ALERT_OPEN_RE.exec(lines[i].text);
+    if (!m) continue;
+    const kind = m[2].toLowerCase() as AlertKind;
+    let end = i;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (code.role[j]) break;
+      if (!ALERT_BODY_RE.test(lines[j].text)) break;
+      end = j;
+    }
+    blocks.push({ start: i, end, kind });
+    i = end;
+  }
+  return blocks;
+}
+
 export interface MathBlock {
   start: number; // first line index (the `$$` opener)
   end: number; // last line index (the `$$` closer)
@@ -777,6 +834,11 @@ export function computeDecorations(
     mathStartAt.set(mb.start, mb);
     for (let j = mb.start; j <= mb.end; j++) mathMember[j] = true;
   }
+  const alertBlocks = detectAlertBlocks(lines, code);
+  const alertBlockOf: (AlertBlock | null)[] = new Array(lines.length).fill(null);
+  for (const ab of alertBlocks) {
+    for (let j = ab.start; j <= ab.end; j++) alertBlockOf[j] = ab;
+  }
   const specs: DecoSpec[] = [];
 
   const inRange = (i: number) =>
@@ -799,18 +861,34 @@ export function computeDecorations(
       const active = blockHasCursor(block.open, block.close);
       const roleClass =
         role === 'open' ? 'cm-lp-codeblock-open' : role === 'close' ? 'cm-lp-codeblock-close' : 'cm-lp-codeblock-inside';
+      // The opening fence carries the info string (e.g. ```` ```markdown ````).
+      // Extract the language name so the Webview can render a clean language
+      // label on the block frame instead of leaving the raw info string visible
+      // (R-02-06 #4/#5). The source text is never mutated (R-01-02).
+      const fenceMatch = role === 'open' || role === 'close' ? FENCE_RE.exec(line.text)! : null;
+      // Only surface the language label off-cursor; on the cursor line the raw
+      // info string stays visible, so an extra label would double up (R-01-01).
+      const lang = role === 'open' && fenceMatch && !active ? fenceMatch[3].trim().split(/\s+/)[0].toLowerCase() : '';
       specs.push({
         from: line.from,
         to: line.from,
         type: 'line',
         tag: 'codeblock',
         className: `cm-lp-codeblock ${roleClass}`,
+        ...(lang ? { attrs: { lang } } : {}),
       });
-      if ((role === 'open' || role === 'close') && !active) {
-        const fenceMatch = FENCE_RE.exec(line.text)!;
+      if ((role === 'open' || role === 'close') && !active && fenceMatch) {
         const fenceStart = line.from + fenceMatch[1].length;
         const fenceEnd = fenceStart + fenceMatch[2].length;
         specs.push({ from: fenceStart, to: fenceEnd, type: 'hide', tag: 'fence-mark' });
+        // Off-cursor: also hide the info string (`markdown`, `js`, …) so the
+        // rendered block does not show a stray language word. The language is
+        // surfaced via the block's `data-lang` label instead. On the cursor line
+        // this branch is skipped, so the raw ```` ```markdown ```` stays editable
+        // (R-01-01).
+        if (role === 'open' && fenceEnd < line.to) {
+          specs.push({ from: fenceEnd, to: line.to, type: 'hide', tag: 'fence-info' });
+        }
       }
       // Crucial: never parse inline Markdown inside a code block.
       continue;
@@ -896,6 +974,59 @@ export function computeDecorations(
     }
 
     const isCursor = cursorLines.has(i);
+
+    // --- GitHub alerts (`> [!NOTE]` …) ----------------------------------
+    // Intercepted BEFORE the generic blockquote handling so an alert reads as a
+    // typed admonition (icon + coloured band) rather than a plain quote. Lines
+    // stay as ordinary editor lines (no block widget), so block-height
+    // accounting (R-28-10/11) is trivially satisfied. Raw `[!TYPE]` labels and
+    // the `>` markers are hidden off-cursor; on the cursor line the raw source
+    // stays visible/editable (R-01-01) and the source is never mutated (R-01-02).
+    const alert = alertBlockOf[i];
+    if (alert) {
+      const isStart = i === alert.start;
+      const isEnd = i === alert.end;
+      const roleClass = `${isStart ? ' cm-lp-alert-open' : ''}${isEnd ? ' cm-lp-alert-close' : ''}`;
+      specs.push({
+        from: line.from,
+        to: line.from,
+        type: 'line',
+        tag: 'alert',
+        className: `cm-lp-alert cm-lp-alert-${alert.kind}${roleClass}`,
+        attrs: { kind: alert.kind },
+      });
+      const qm = QUOTE_RE.exec(line.text);
+      const markerLen = qm ? qm[1].length + qm[2].length : 0;
+      if (isCursor) {
+        // Raw view: keep the `>` markers and `[!TYPE]` label visible/editable.
+        specs.push(...parseInline(line.text, line.from, true, markerLen));
+        continue;
+      }
+      // Off-cursor: hide the `>` marker(s).
+      if (qm) {
+        specs.push({ from: line.from + qm[1].length, to: line.from + markerLen, type: 'hide', tag: 'quote-mark' });
+      }
+      if (isStart) {
+        // Replace the `[!TYPE]` label with a themed title widget (icon + name);
+        // the raw label text is therefore never shown (R-02 alerts #7).
+        const content = qm ? qm[3] : line.text;
+        const lm = ALERT_LABEL_RE.exec(content);
+        const labelLen = lm ? lm[0].length : 0;
+        if (labelLen > 0) {
+          specs.push({
+            from: line.from + markerLen,
+            to: line.from + markerLen + labelLen,
+            type: 'replaceWidget',
+            tag: 'alert-title',
+            attrs: { kind: alert.kind, widget: ALERT_TITLES[alert.kind] },
+          });
+        }
+        specs.push(...parseInline(line.text, line.from, false, markerLen + labelLen));
+      } else {
+        specs.push(...parseInline(line.text, line.from, false, markerLen));
+      }
+      continue;
+    }
 
     // --- Headings --------------------------------------------------------
     let m = HEADING_RE.exec(line.text);
