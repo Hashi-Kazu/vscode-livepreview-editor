@@ -3,8 +3,17 @@
  * decoration plugin, and bridges document changes to/from the extension host
  * over `postMessage`.
  */
-import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
-import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
+import { EditorState, Prec, RangeSet, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import {
+  EditorView,
+  ViewUpdate,
+  DecorationSet,
+  ViewPlugin,
+  keymap,
+  drawSelection,
+  gutterLineClass,
+  GutterMarker,
+} from '@codemirror/view';
 import { defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { codeFolding, foldGutter, foldKeymap, foldService, syntaxHighlighting } from '@codemirror/language';
@@ -22,7 +31,7 @@ import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey } from '../core/editing';
-import { headingFoldRange, parseTableRow } from '../core/model';
+import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize, displayFontSize } from '../core/viewport';
 
 interface VsCodeApi {
@@ -469,6 +478,36 @@ const headingFoldService = foldService.of((state, lineStart) =>
   headingFoldRange(state.doc.toString(), state.doc.lineAt(lineStart).number - 1),
 );
 
+// R-30-04: the fold gutter chevron's vertical nudge differs only for H1–H3 (see
+// `.cm-lp-fold-h1/-h2/-h3` in editor.css). The gutter element itself carries no
+// heading-level information, so `gutterLineClass` attaches a level-specific CSS
+// class (via a marker-only `GutterMarker`, no `toDOM`) to every heading line's
+// gutter cell, computed from the same pure `scanHeadings` scanner used for
+// folding. H4–H6 intentionally get no marker (their nudge stays at the base
+// value defined on `.cm-gutterElement`).
+class HeadingLevelGutterMarker extends GutterMarker {
+  constructor(readonly level: number) {
+    super();
+  }
+  eq(other: GutterMarker) {
+    return other instanceof HeadingLevelGutterMarker && other.level === this.level;
+  }
+  elementClass = `cm-lp-fold-h${this.level}`;
+}
+
+function headingGutterMarks(state: EditorState): RangeSet<GutterMarker> {
+  const headings = scanHeadings(state.doc.toString());
+  const builder = new RangeSetBuilder<GutterMarker>();
+  for (const h of headings) {
+    if (h.level >= 1 && h.level <= 3) {
+      builder.add(h.from, h.from, new HeadingLevelGutterMarker(h.level));
+    }
+  }
+  return builder.finish();
+}
+
+const headingFoldGutterClass = gutterLineClass.compute(['doc'], (state) => headingGutterMarks(state));
+
 function makeState(text: string, selection?: { anchor: number; head: number }): EditorState {
   return EditorState.create({
     doc: text,
@@ -496,6 +535,7 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       // heading/body left edge stays aligned (R-28-07). Sections start expanded.
       codeFolding(),
       headingFoldService,
+      headingFoldGutterClass,
       foldGutter({ openText: '▾', closedText: '▸' }),
       livePreviewField(),
       viewportDecorationPlugin,

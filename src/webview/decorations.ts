@@ -584,6 +584,11 @@ function toDecoration(s: DecoSpec): Decoration | null {
           block: true,
         });
       }
+      if (s.tag === 'list-bullet') {
+        const glyph = s.attrs?.widget ?? '';
+        const cls = glyph === '○' ? 'cm-lp-list-bullet cm-lp-list-bullet-hollow' : 'cm-lp-list-bullet';
+        return Decoration.replace({ widget: new TextWidget(glyph, cls) });
+      }
       return Decoration.replace({ widget: new TextWidget(s.attrs?.widget ?? '', `cm-lp-${s.tag}`) });
     default:
       return null;
