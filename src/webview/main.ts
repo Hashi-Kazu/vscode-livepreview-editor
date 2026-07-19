@@ -555,16 +555,6 @@ const view = new EditorView({
   parent: document.getElementById('editor')!,
 });
 
-// --- R-31: unsaved indicator --------------------------------------------------
-// A fixed overlay outside the CodeMirror DOM so it never interferes with
-// decorations, height measurement, or click-position handling. Its visibility
-// reflects the host's authoritative `TextDocument.isDirty` only (the Webview
-// never estimates dirty state itself).
-const unsavedIndicator = document.createElement('div');
-unsavedIndicator.className = 'cm-lp-unsaved-indicator';
-unsavedIndicator.title = '未保存の変更があります';
-document.body.appendChild(unsavedIndicator);
-
 /** Send a composition's final full document exactly once, after it is settled. */
 function flushPendingComposition(): boolean {
   if (!shouldFlushComposition({ composing: view.composing, pendingCompositionChange, applyingRemote })) {
@@ -1253,7 +1243,6 @@ window.addEventListener('message', (event) => {
       pendingRemote = undefined;
       pendingMediaRequests.clear();
       renderErrorReported = false;
-      unsavedIndicator.classList.remove('is-visible');
       applyFontSize(msg.fontSize ?? 14);
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
       // Blocks start expanded; the user folds/unfolds via the ▸/▾ gutter.
@@ -1298,10 +1287,6 @@ window.addEventListener('message', (event) => {
       break;
     case 'format':
       if (typeof msg.kind === 'string') runFormat(msg.kind);
-      break;
-    case 'dirty':
-      if (msg.binding !== binding) break;
-      unsavedIndicator.classList.toggle('is-visible', msg.dirty === true);
       break;
     case 'insertMedia':
       if (msg.binding !== binding) break;

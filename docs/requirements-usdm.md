@@ -1,12 +1,14 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.37.2
+**バージョン**: 1.37.3
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-19
+**最終更新**: 2026-07-20
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-20 時点 / v1.37.3）**: v1.37.3 で、GitHub Issue #28 により、Live Preview ビューア内の重複した未保存インジケータと host↔Webview の `dirty` メッセージ経路を削除した。未保存状態は Custom Text Editor タブの VS Code 標準 dirty マークのみで表示する（R-03-08）。保存・同期・Undo/Redo の既存経路および `customEditors` の `livePreview.editor` 登録は維持し、ユーザーの Markdown 本文は引き続き書き換えない（R-03-12）。
+>
 > ▶️ **開発継続中（2026-07-19 時点 / v1.37.2）**: v1.37.2 で、GitHub Issue #26（#24 対応後の微調整）の 3 項目を CSS のみで実装した。(1) 箇条書きマーカーの階層間サイズバランスを再調整し、○（1 段目）の `font-size` を `0.72em` からさらに `0.62em` へ縮小する一方、•/▪ の `font-size` は `0.9em` から `1.0em` へ拡大した（R-01-05）、(2) 入れ子引用 `cm-lp-quote-l1〜l6` の `padding-left` 末尾定数を `12px` から `16px` へ広げ、テキスト開始位置を全階層で右へずらした（縦バーの本数・位置・`background-image`/`-size`/`-position` は不変、R-02-05）、(3) 見出し 1・2 のガター要素のみ下方向ナッジを `translateY(0.28em)` から `translateY(0.42em)` へ増やし（見出し 3 は `0.28em` のまま）、fold placeholder の背景を `var(--vscode-editorWidget-background, ...)` から `color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-editor-foreground) 10%)` という地色に近い控えめな色へ変更した（枠 `border` による差別化は維持、R-30-04）。装飾ロジック・純粋関数（`src/core/model.ts`）の spec は不変で、`test/feature.issue21.decorations.test.ts` の既存アサーションを維持する。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。色はすべて `var(--vscode-*)`／`color-mix` によるテーマ変数追従を維持する（R-28-04）。
 >
 > ▶️ **開発継続中（2026-07-19 時点 / v1.37.1）**: v1.37.1 で、GitHub Issue #24（Issue #21 対応の修正不備・追加対応）の 4 項目を実装した。(1) インラインコード `.cm-lp-code` の背景を `color-mix` で地の文よりさらに濃くブレンドし、ライト/ダーク双方で明確に浮くよう強調（R-02-02／R-28-06）、(2) 箇条書きの ○（1 段目）グリフのみ他階層より小さい `font-size` を追加し、•/▪ のサイズは不変のまま視覚サイズを揃える（R-01-05／#3）、(3) 入れ子引用 `cm-lp-quote-l1〜l6` を、`margin-left` による単一 `border-left` から階層数ぶんの縦バーを `linear-gradient` の重ね掛けで描画する方式へ改め、n 段目の行に祖先階層分を含む n 本のボーダーが表示されるようにした（インデント量は現状維持、R-02-05）、(4) 見出し折りたたみシェブロンの縦位置を #21 対応前の中央揃え（`align-items: center`）＋基本ナッジ `translateY(0.15em)` へ巻き戻しつつ、#21 で拡大した `font-size: 1.5em` は維持し、見出し 1〜3 のガター要素のみ `gutterLineClass`（`src/webview/main.ts` に追加した見出しレベル別 `GutterMarker`）でわずかに大きい下方向ナッジ（`translateY(0.28em)`）を追加、見出し 4〜6 は基本ナッジのまま据え置いた（R-30-04）。純粋関数（`src/core/model.ts`）の spec は不変で、`test/feature.issue21.decorations.test.ts` の既存アサーションを維持する。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。色はすべて `var(--vscode-*)`／`color-mix` によるテーマ変数追従を維持する（R-28-04）。
@@ -146,7 +148,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - 廃止 R-03-05（今回 version）: `livePreview.followActiveEditor` によるアクティブ Markdown ソースへの追従は、CustomTextEditor 化により廃止した。各エディタは VS Code が渡す単一 TextDocument に生涯バインドするため、follow 対象の選択・重複切り替え判定は不要となった。
 - ■■■ R-03-06 保留中の Webview 編集は、Undo/Redo・save・外部変更処理・dispose の各時点で `flushPendingEdit`（apply）を先に完了してから後続処理を実行し、`operationQueue` で受信順に直列化すること。
 - ■■□ R-03-07 Webview の `localResourceRoots`・画像等の resource base は、バインドされた単一 TextDocument の URI から `resolveCustomTextEditor` 時に一度だけ設定すること（文書切り替えによる再バインドは行わない）。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集は `resolveCustomTextEditor` でバインドされた単一 TextDocument へ、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として反映する。反映は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms、`EDIT_APPLY_DEBOUNCE_MS`）でバッチ apply し、連続打鍵は最新 version で coalesce する。apply 直後に必ず即時保存し、TextDocument が dirty のまま滞留しないようにする。バッチ apply→即時保存は単一の `flushPendingEdit` 操作として同一 queue で直列実行し、apply が save に先行する順序を保証する。明示保存（Webview の Ctrl+S／Cmd+S を `classifyUndoRedoKey` で捕捉し `preventDefault` して host へ `save` メッセージを送る）と、失焦・dispose・Undo/Redo・外部変更処理前の flush 点も同じ `flushPendingEdit` を経由し、いずれも先行して受信済みの edit 適用後に完走する。毎打鍵アイドル自動保存は行わない（VS Code 標準の autoSave は TextDocument に対して通常どおり動作する）。`workspace.applyEdit` false 時は警告し、authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用は完走する。Custom Text Editor 化により、Live Preview エディタのタブにも VS Code 標準の dirty バッジが表示される。ビューア内の未保存インジケータ（R-31）は保存失敗・遅延時の補助として残す。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集は `resolveCustomTextEditor` でバインドされた単一 TextDocument へ、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として反映する。反映は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms、`EDIT_APPLY_DEBOUNCE_MS`）でバッチ apply し、連続打鍵は最新 version で coalesce する。apply 直後に必ず即時保存し、TextDocument が dirty のまま滞留しないようにする。バッチ apply→即時保存は単一の `flushPendingEdit` 操作として同一 queue で直列実行し、apply が save に先行する順序を保証する。明示保存（Webview の Ctrl+S／Cmd+S を `classifyUndoRedoKey` で捕捉し `preventDefault` して host へ `save` メッセージを送る）と、失焦・dispose・Undo/Redo・外部変更処理前の flush 点も同じ `flushPendingEdit` を経由し、いずれも先行して受信済みの edit 適用後に完走する。毎打鍵アイドル自動保存は行わない（VS Code 標準の autoSave は TextDocument に対して通常どおり動作する）。`workspace.applyEdit` false 時は警告し、authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用は完走する。Custom Text Editor 化により、Live Preview エディタのタブにも VS Code 標準の dirty マークを表示し、ビューア内に重複した未保存表示は行わない（Issue #28、R-31 廃止）。
 - 廃止 R-03-09（今回 version）: 書式コマンドとアクティブエディタ追従の「最後に操作したビューア」対象保持は、active editor follow の廃止に伴い不要となった。書式コマンド（`livePreview.format.*`）は最後に active になった Live Preview エディタ（`lastActive`）を対象にする。
 - 廃止 R-03-10（今回 version）: 対象ファイルのリネーム時のビューア再バインド・削除時のクローズは、CustomTextEditor 化により VS Code が単一 TextDocument バインドとリネーム/削除を管理するため、拡張側の再バインド処理は不要となり廃止した。
 - ■■□ R-03-11 Live Preview の編集・保存処理は、ユーザーが開いたソースエディタータブを自動的に閉じないこと。ソースタブ再表示への対策は、デバウンス apply 直後の即時保存によって TextDocument の dirty 滞留を防止する方式とし、`vscode.window.tabGroups.close()` による補完処理は使用しない。
@@ -434,17 +436,11 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-30-03 Webview は `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldKeymap` で見出し配下を折りたたみ／展開できること。既定は全展開。
 - ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。開状態は下向き、閉状態は右向きの VS Code 標準風の細いシェブロンとし、塗りつぶし三角形を用いないこと。シェブロンは視認性のためさらに拡大する（`font-size: 1.5em` 目安）。ガター要素はガター要素自身の中央揃え（`align-items: center`）とし、基本ナッジは `translateY` 目安 `0.15em` とすること（Issue #24：#21 で `align-items: flex-start` ＋大きな `translateY(0.55em)` に変更した結果シェブロンが下方向へずれ過ぎ、別の行に属するように見えてしまったため巻き戻し）。見出し 1〜3（`#`/`##`/`###`）のガター要素のみ、他の見出しレベルより上パディングが大きく本文中心がブロック中心よりわずかに下にあることを補うため、基本ナッジよりわずかに大きい下方向ナッジを追加適用すること。見出し 1・2 は目安 `translateY(0.42em)`、見出し 3 は目安 `translateY(0.28em)` とする（Issue #26 で見出し 1・2 のみさらに下方向へ調整）。見出し 4〜6 のガター要素は基本ナッジのまま縦位置調整を行わないこと。ガターそのものには見出しレベル情報が無いため、見出しレベル別クラスをガター要素へ付与する機構（`gutterLineClass` 等）を用いてよい。クリック領域、`foldKeymap`、fold placeholder は維持すること（#8）。fold placeholder の背景は地色に近い控えめな色（`color-mix` によるテーマ追従、白背景を強調しない）とし、`border` による差別化のみで通常表示と区別できること（Issue #26）。
 
-### R-31 未保存インジケータ #unsaved
+### 廃止 R-31 未保存インジケータ #unsaved
 
-> **理由：** Custom Text Editor 化により Live Preview エディタのタブにも VS Code 標準の dirty バッジが表示されるようになったが、apply 直後の即時保存（R-03-08）にもかかわらず保存に失敗・遅延したケースを、ビューア内でも視認できるよう補助のインジケータを残す。
+> **廃止理由：** Issue #28 により、Custom Text Editor タブが提供する VS Code 標準 dirty マークを唯一の未保存表示とする。ビューア内オーバーレイと host↔Webview の `dirty` メッセージ経路は重複表示となるため廃止した。
 
-> **説明：** 未保存判定は host（`TextDocument.isDirty`）を正とし、Webview は独自に dirty を推定しない。host（`src/livePreviewCustomEditorProvider.ts` `postDirtyState`）はバインドされた TextDocument の `document.isDirty` を `{ type: 'dirty', dirty, binding }`（binding はエディタセッション id）として Webview へ送る。送信タイミングは編集適用成功後（`applyEdit`）、明示保存・flush 保存成功後（`performSave`）、初期表示（`postInit`）、外部変更・自己エコー後（`onDidChangeTextDocument` 経路）、および保存ライフサイクル（既存 `onDidSaveTextDocument`）。破棄済み Webview・バインド世代不一致（`shouldPostDirtyState`）には送らない。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外（`#editor` の兄弟要素）に固定配置のオーバーレイ `cm-lp-unsaved-indicator` を生成し、`dirty` メッセージ（現在の binding 一致時のみ）で表示/非表示クラス（`is-visible`）を切り替える。色は `var(--vscode-editorWarning-foreground)` 追従（フォールバック値あり、R-28-04）。なお v1.29.0 以降は apply 直後に即時保存する（R-03-08）ため通常 `dirty=false` で、インジケータはほぼ表示されない（apply→save 間の一瞬、または保存失敗時のみ表示される）。機構自体は将来の保存失敗・遅延に備えて残す。
-
-###### ＜インジケータ表示＞
-
-- ■■□ R-31-01 host は `TextDocument.isDirty` を正として、編集適用後・保存後・初期表示・外部変更後・保存ライフサイクルで `{ type: 'dirty', dirty, binding }` を Webview へ送ること。破棄済み Webview・世代不一致には送らないこと。
-- ■■□ R-31-02 Webview はビューア内（CodeMirror DOM 外のオーバーレイ）に未保存インジケータを表示し、dirty=true のときのみ視認でき、dirty=false で消えること。色は `var(--vscode-*)` 追従。
-- ■■□ R-31-03 インジケータ要素は CodeMirror の装飾・高さ計測・クリック位置に干渉しないこと。
+> **旧仕様：** host の `TextDocument.isDirty` を `{ type: 'dirty', dirty, binding }` として Webview へ送信し、CodeMirror DOM 外の `cm-lp-unsaved-indicator` を切り替えていた。R-31-01〜03 はこの廃止に伴い無効となる。保存・同期・Undo/Redo の既存経路は変更しない。
 
 ### R-32 数式レンダリング #math
 
