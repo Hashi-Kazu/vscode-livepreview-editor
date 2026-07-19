@@ -2,16 +2,16 @@
 
 Obsidian の Live Preview に近い、Markdown ファイル用の **1 枚ビュー編集エディタ** を提供する VS Code 拡張です。記法を保持したまま見た目を装飾し、カーソルがある行では生の Markdown 記法を表示します。
 
-> ▶️ **v1.22.0 開発版** — ソース横の editable Live Preview ビューアと active editor follow に対応。
+> ▶️ **v1.36.0 開発版** — Live Preview を Custom Text Editor（`CustomTextEditorProvider`）として再採用し、Undo/Redo を VS Code へ委譲。
 
 ## スクリーンショット
 
 ## 特徴
 
-- CodeMirror 6 を editable `WebviewPanel` に埋め込んだ実装
+- CodeMirror 6 を Custom Text Editor（`CustomTextEditorProvider`）の Webview に埋め込んだ実装
 - カーソル行は生記法、それ以外の行は装飾表示（Obsidian ライク）
-- VS Code 標準エディタ（ソース）横の編集可能な Live Preview ビューア
-- 異なる Markdown 文書の複数ビューア、同一 URI の重複防止、アクティブソース追従
+- VS Code 標準エディタ（ソース）横の編集可能な Live Preview エディタ（`ViewColumn.Beside`）
+- Undo/Redo は VS Code へ委譲し、ソースエディタと履歴を共有
 - `<details>` アコーディオンのビューアレンダリング（`<summary>` クリックで開閉）
 - 外部ファイル変更（Git pull・他エディタ編集）を検知して再同期
 - 装飾判定ロジックを CodeMirror から分離した純粋関数として実装し、Vitest でユニットテスト
@@ -69,7 +69,6 @@ VS Code Marketplace から直接インストールできます。
 | 設定キー | 既定値 | 説明 |
 | --- | --- | --- |
 | `livePreview.fontSize` | `14` | エディタのフォントサイズ (px, 8〜40 にクランプ) |
-| `livePreview.followActiveEditor` | `true` | 最後に操作した Live Preview ビューアをアクティブな Markdown ソースへ追従 |
 
 設定変更は開いているエディタへ即時反映されます。
 
@@ -87,12 +86,13 @@ VS Code Marketplace から直接インストールできます。
 ## 使い方
 
 1. 拡張をインストール
-2. `*.md` は VS Code 標準テキストエディタ（ソース）で開きます。標準エディタのタイトルバーの **目アイコン**（`Live Preview エディタで開く`）で、編集可能な Live Preview ビューアを横に開きます。
-3. `livePreview.followActiveEditor`（既定 `true`）が有効な場合、最後に操作した Live Preview ビューアがアクティブな Markdown ソースへ追従します。同じ URI のビューアは重複作成されません。
-4. `<details>` アコーディオンは `<summary>` をクリックして開閉します（本文の編集は標準エディタで行ってください）。
-5. Live Preview 表示中にリンク先（`.md`）を開くと、その文書の Live Preview ビューアを開きます。既に開いている場合は既存ビューアを再利用します。
+2. `*.md` は VS Code 標準テキストエディタ（ソース）で開きます。標準エディタのタイトルバーの **目アイコン**（`Live Preview エディタで開く`）で、編集可能な Live Preview エディタを横（`ViewColumn.Beside`）に開きます。
+3. Live Preview は Custom Text Editor（`priority: option`）として登録され、`vscode.openWith` でソース横に開きます。同じ URI のエディタは重複作成せず、既存エディタが再表示されます。
+4. Undo/Redo は VS Code へ委譲され（`Ctrl/Cmd+Z`／`Ctrl/Cmd+Shift+Z`／`Ctrl+Y`）、ソースエディタと履歴を共有します。保存は `Ctrl/Cmd+S`（および VS Code 標準の autoSave）で行います。
+5. `<details>` アコーディオンは `<summary>` をクリックして開閉します（本文の編集は標準エディタで行ってください）。
+6. Live Preview 表示中にリンク先（`.md`）を開くと、その文書の Live Preview エディタを開きます。既に開いている場合は既存エディタを再利用します。
 
-Live Preview は custom editor として登録せず、標準テキストエディタ（ソース表示）を置き換えません。
+Live Preview は `priority: option` の Custom Text Editor のため、`*.md` の既定エディタは標準テキストエディタ（ソース表示）のままで、明示的に「Live Preview エディタで開く」を選んだときだけ使われます。
 
 ## 開発
 

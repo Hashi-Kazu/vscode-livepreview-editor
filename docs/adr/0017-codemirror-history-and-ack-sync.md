@@ -7,6 +7,8 @@ metadata:
 
 # ADR-0017: CodeMirror history and acknowledgement sync
 
+> **一部 supersede（v1.36.0、ADR-0020）**: 「CodeMirror `history()` が Live Preview の Undo/Redo を単独所有する」という決定は、CustomTextEditorProvider の再採用に伴い撤回した。Undo/Redo は VS Code へ委譲し（`classifyUndoRedoKey` で host へ転送、host が `executeCommand('undo'|'redo')` を実行）、CodeMirror history と保存正規化の history 保持レコンサイル（`SelfSaveGuard`／`isSaveParticipantNormalization`／`preserveHistory`／`isTrailingNewlineOnlyDifference`）は撤去した。monotonic version の ack と self-echo ledger（`consumeExpectedWorkspaceEditChange`）で自己エコーを識別する考え方は維持する。以下は経緯として残す。
+
 ## Context
 
 The Webview and the VS Code TextDocument update asynchronously. Treating a

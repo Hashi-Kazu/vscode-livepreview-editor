@@ -8,7 +8,7 @@ metadata:
 # ADR-0013: Webview/CodeMirror 側での LF 正規化
 
 - **ステータス**: 採択済み
-- **確信度**: 高（src/core/sync.ts の toLF/fromLF/fromLFPreserving・src/livePreviewViewerManager.ts から明示的に確認）
+- **確信度**: 高（src/core/sync.ts の toLF/fromLF/fromLFPreserving・src/livePreviewCustomEditorProvider.ts から明示的に確認）
 
 ## コンテキスト
 

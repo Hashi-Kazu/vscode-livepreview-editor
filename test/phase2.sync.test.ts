@@ -13,7 +13,6 @@ import {
   appliedEditVersion,
   acceptsWebviewEditVersion,
   consumeExpectedWorkspaceEditChange,
-  failedEditBaseVersion,
 } from '../src/core/sync';
 
 describe('Phase 2: external change detection (shouldResync)', () => {
@@ -128,11 +127,6 @@ describe('Phase 2: edit acknowledgement versions (R-04-02/R-04-03)', () => {
     // never an accidental self echo.
     expect(consumeExpectedWorkspaceEditChange({ ledger, documentVersion: 13, documentText: 'same\n' })).toBeUndefined();
     expect(consumeExpectedWorkspaceEditChange({ ledger, documentVersion: 12, documentText: 'same\n' })).toBe(5);
-  });
-
-  it('uses the failed edit version for an authoritative rollback without advancing the acknowledgement', () => {
-    expect(failedEditBaseVersion({ appliedVersion: 3, failedVersion: 4 })).toBe(4);
-    expect(appliedEditVersion({ previousVersion: 3, receivedVersion: 4, completed: false })).toBe(3);
   });
 });
 

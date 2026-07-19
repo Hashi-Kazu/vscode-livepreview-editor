@@ -8,66 +8,56 @@
 ┌─────────────────────────────────────────────────────┐
 │ VS Code Extension Host                              │
 │ src/extension.ts                                    │
-│ src/livePreviewViewerManager.ts                     │
-│ - editable WebviewPanel の生成・URI 重複防止          │
-│ - TextDocument 再取得・最小差分 WorkspaceEdit・明示/flush 保存 │
-│ - active text editor follow・文書再バインド           │
+│ src/livePreviewCustomEditorProvider.ts              │
+│ - CustomTextEditorProvider（viewType livePreview.editor）登録 │
+│ - VS Code が渡す単一 TextDocument に生涯バインド      │
+│ - デバウンス apply（最小差分 WorkspaceEdit）・明示保存 │
+│ - Undo/Redo は executeCommand へ委譲・self-echo ledger │
 └───────────────────────┬─────────────────────────────┘
-                        │ init/update/edit/openLink/pasteMedia/insertMedia/…
+                        │ init/update/ack/dirty/edit/undo/redo/save/openLink/pasteMedia/insertMedia/…
 ┌───────────────────────▼─────────────────────────────┐
 │ Webview (browser/IIFE) src/webview/main.ts          │
-│ - CodeMirror 6 EditorView                           │
+│ - CodeMirror 6 EditorView（history を持たない）      │
 │ - Decoration / formatting / checkbox / link         │
-│ - binding generation を全ドキュメント依存通知へ付与    │
+│ - classifyUndoRedoKey で Undo/Redo/Save を host へ転送 │
 └───────────────────────┬─────────────────────────────┘
                         │ pure functions
 ┌───────────────────────▼─────────────────────────────┐
 │ src/core/                                           │
 │ - model.ts: decoration descriptors                  │
-│ - sync.ts: diff/EOL/IME/resync                      │
-│ - viewer.ts: follow/dedup/binding decisions         │
-│ - viewport.ts, format.ts, editing.ts                │
+│ - sync.ts: diff/EOL/IME/self-echo ledger            │
+│ - editing.ts: list/indent/heading/key classification │
+│ - viewport.ts, format.ts, pasteLink.ts              │
 └─────────────────────────────────────────────────────┘
 ```
 
-## ビューアライフサイクル
+## エディタライフサイクル
 
-- `livePreview.openWith` は標準ソースを置換せず、`livePreview.viewer` の editable `WebviewPanel` を `ViewColumn.Beside` に作成する。
-- `customEditors` contribution と `CustomTextEditorProvider` は使用しない。`livePreview.toggleSource` も提供しない。
-- `viewersByUri` が URI ごとの所有者を管理する。同一 URI の再オープンは既存パネルを reveal し、異なる URI は複数パネルを許可する。
-- パネルの active 状態と Webview の focus/pointer 操作で `lastInteractedViewerId` を更新する。書式コマンドと active editor follow はこのビューアを対象にする。
-- `livePreview.followActiveEditor`（既定 `true`）が有効なとき、アクティブな Markdown ソースへ最後に操作したビューアを再バインドする。対象 URI の所有者が既に存在する場合は重複を作らず、その所有者を維持する。ビューアがまだなければ follow だけでは新規作成しない。
+- `customEditors` contribution（viewType `livePreview.editor`、`priority: option`、`filenamePattern: *.md`）を登録し、`CustomTextEditorProvider` を `registerCustomEditorProvider` で解決する（`supportsMultipleEditorsPerDocument: false`／`retainContextWhenHidden: true`）。
+- `livePreview.openWith` は標準ソースを閉じず、`vscode.openWith` で `ViewColumn.Beside` に Live Preview エディタを開く。`supportsMultipleEditorsPerDocument: false` のため、同一リソースに既存エディタがあれば複製せず reveal される。
+- 各エディタ（`LivePreviewEditorSession`）は VS Code が `resolveCustomTextEditor` に渡す単一の `TextDocument` に生涯バインドする。active editor follow、URI 所有者マップ、`workspace.openTextDocument` の再取得、binding generation による文書切り替えは持たない（VS Code が単一 TextDocument バインドとリネーム/削除を管理する）。
+- 書式コマンド（`livePreview.format.*`）は最後に active になったエディタ（`lastActive`）を対象にする。
 
-## 安全な文書切り替え
+## 安全な文書更新
 
-各 Viewer は `operationQueue` を持ち、Webview 編集と文書切り替えを受信順に直列化する。切り替えは先行する編集の `WorkspaceEdit` と保存の完了後に実行される。失焦・dispose の flush 保存も同じキューへ追加するため、dispose 前に受信した edit はパネル破棄後でも TextDocument への適用と保存を完走する（Webview 返信だけを抑止する）。
+各エディタは `operationQueue`（`enqueue`）を持ち、Webview 編集の apply・保存・Undo/Redo・外部変更のレコンサイルを受信順に直列化する。失焦・dispose の flush もこのキューへ追加するため、dispose 直前に受信した edit はパネル破棄後でも TextDocument への適用まで完走する（Webview 返信だけを抑止する）。
 
-保存モデルはデバウンスバッチ apply＋即時保存である（ADR-0019、ADR-0018 を supersede）。毎打鍵アイドル自動保存（`SaveDebouncer`、ADR-0018 で廃止）には戻さない。Webview の `edit` は即 apply せず binding の `pendingEdit` に最新 version で coalesce し、タイピング停止後のデバウンス（既定 200ms、`EDIT_APPLY_DEBOUNCE_MS`）でバッチ apply する。apply とその直後の保存は単一の `flushPendingEdit` 操作として `operationQueue` 内で直列実行し（apply が save に先行）、apply 直後に必ず `performSave`（dirty のときだけ `document.save()`）して TextDocument の dirty 滞留を無くす。ソースタブ再表示への対策はこの dirty 滞留防止に一本化し、拡張機能はソースエディタータブを自動的に閉じない。
+保存モデルはデバウンスバッチ apply＋即時保存である（ADR-0019）。Webview の `edit` は即 apply せず `pendingEdit` に最新 version で coalesce し、タイピング停止後のデバウンス（既定 200ms、`EDIT_APPLY_DEBOUNCE_MS`）でバッチ apply する。apply は最小差分 `WorkspaceEdit.replace`（`diffRange` + `fromLFPreserving` で既存 EOL を維持）として実行する。
 
 flush 点はすべて `flushPendingEdit` に統一する（取りこぼしゼロ）。
 
-- 明示保存: WebviewPanel は `CustomTextEditor` ではないため VS Code の Ctrl+S は下層 TextDocument に届かない。Webview 側で `Ctrl+S`/`Cmd+S` を捕捉し `preventDefault` して host へ `save` メッセージを送り、host が `operationQueue` 上で `flushPendingEdit`（pending apply→save）を実行する。
-- flush 保存: 失焦（パネル非 active 化）・dispose・バインド切替、および外部変更処理の入口の各時点で `flushPendingEdit` を呼び、受信済み edit の後ろに直列化してデータ喪失を防ぐ。
+- 明示保存: WebviewPanel 自体は Ctrl+S を下層 TextDocument へ届けないため、Webview 側で `classifyUndoRedoKey` により `Ctrl+S`/`Cmd+S` を捕捉して host へ `save` メッセージを送り、host が `operationQueue` 上で `flushPendingEdit`→`document.save()`（dirty のときだけ）を実行する。VS Code 標準の autoSave も TextDocument に対して通常どおり動作する。
+- flush 保存以外の flush 点: 失焦（パネル非 active 化）・dispose・Undo/Redo・save・外部変更処理の入口で `flushPendingEdit` を呼ぶ。失焦・dispose は flush するが保存はしない。
 
-Live Preview の Undo/Redo は CodeMirror が単独所有のままで不変（デバウンス化の影響を受けない）。保存参加者・format-on-save のエコーは即時保存でも発生するため、`SelfSaveGuard` の own-save 窓、`isSaveParticipantNormalization`、`preserveHistory` レコンサイルは Undo 安全機構として据え置く。
+## Undo/Redo の VS Code 委譲
 
-各文書バインドには単調増加する `generation` を付ける。Webview は `edit`、`pasteMedia`、`openLink`、`renderError` に現在の generation を付与し、ホストは現在値と異なる遅延メッセージを拒否する。切り替え時は次を一括して更新する。
-
-- URI 所有者マップ
-- パネルタイトル
-- `localResourceRoots` と画像等の resource base
-- `onDidChangeTextDocument` listener
-- LF 正規化済み Webview テキスト
+Live Preview の Undo/Redo は CodeMirror の history を持たず、VS Code へ委譲する（ADR-0020、R-33）。Webview は `classifyUndoRedoKey`（`src/core/editing.ts`）で `Ctrl/Cmd+Z`=undo・`Ctrl/Cmd+Shift+Z` および `Ctrl+Y`(非 Cmd)=redo・`Ctrl/Cmd+S`=save を分類し（IME 変換中・Alt 併用・修飾なしは対象外）、host へ転送する。host は undo/redo/save の実行前に必ず pending edit を flush し、その後 `executeCommand('undo'|'redo')`／`document.save()` を実行する。undo/redo は保存しない。undo/redo が TextDocument を書き換えた結果は `onDidChangeTextDocument` で外部変更として Webview に一方向反映される。
 
 ## TextDocument と同期
 
-Webview 編集のたびに `workspace.openTextDocument(uri)` で対象を取得する。この API は文書をロードするがエディタを reveal しないため、標準ソースタブを閉じた後も Live Preview から編集できる。
+host は `applyPendingEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed の self-echo ledger（`expectedChanges`）へ記録し、`consumeExpectedWorkspaceEditChange` で一致する変更だけを自己エコーとして消費する（Webview へ反映しない）。ledger に一致しない変更（VS Code の Undo/Redo、標準編集、保存参加者、Git、他拡張、autoSave 正規化）は真の外部変更として `reconcileExternalChange` が一方向に反映する（1回）。反映前に pending edit があれば先に `applyPendingEdit` して確定済み入力を失わない。
 
-Webview の Live Preview Undo/Redo は CodeMirror `history()` だけが所有する。編集は `diffRange` と `fromLFPreserving` で既存 EOL を維持した最小 `WorkspaceEdit.replace` として即時適用する。host は最後に受理した version、成功 ack version、期待 LF 本文＋TextDocument version の version-keyed self-echo ledger を別々に管理し、ledger に一致しない変更を `classifyDocumentChange` で分類し、operationQueue で直列配信する。自己保存由来（`SelfSaveGuard.isActive` の own-save 窓、または `isSaveParticipantNormalization` が説明できる EOL・末尾改行・行末空白だけの差分）は `preserveHistory` 付きで送り、Webview は `computeRemotePatch` の最小差分を `addToHistory.of(false)` で適用して CodeMirror history を保持したままレコンサイルする。真の外部変更のみ authoritative update とする。Webview は `baseVersion === editVersion === ackVersion` の update だけを適用し、IME または未 ack edit 中は最新1件を保留する。真の外部更新・apply false rollback は `computeRemotePatch` で選択を再マップした新しい EditorState に置換し、古い CodeMirror history を破棄する。`paste`/`drop`/`dragover` は `Prec.highest(EditorView.domEventHandlers)` で DataTransfer の File、URI MIME、file URI-only plain text を処理する。URI は File より優先し、host response の request ID と追従選択範囲を使って snippet を挿入する。
-
-`onDidChangeTextDocument` は ledger 不一致イベントを受けた時点で、`SelfSaveGuard` と内容差分から「保存正規化由来」か「真の外部変更」かを分類し、その由来とイベント snapshot を `operationQueue` へ保持する。pending edit がある場合は、同じ queue 項目内で `flushPendingEdit`（apply→save）を先に完了させる。保存正規化由来はその後 bound `TextDocument` を再取得して最終本文を再分類し、イベント時点の古い snapshot は再利用しない（最終改行だけなら従来どおり host 側のみ整合）。真の外部変更は flush 後も捕捉 snapshot を authoritative として一度だけ配信する。この順序により `lastAckVersion` が進んだ後に stale save-normalization update が version gate を通ることを防ぐ。
-
-各 non-ledger イベントは TextDocument version ごとの由来と LF 本文を reconciliation 完了まで保持する。保存正規化後の再読込がより新しい真の外部イベントの version に到達した場合、古い callback は処理を譲り、後続 callback が authoritative update を一度だけ担当する。逆に flush 自身の保存参加者イベントなら、その最新本文を history-preserving に処理する。pending flush が捕捉済みの真の外部本文を TextDocument 上で上書きした場合は、専用の exact echo guard を登録して最小 `WorkspaceEdit` で外部本文を復元し、即時保存後の本文を Webview と binding へ送る。復元 apply の自己イベントは guard で吸収し、保存参加者イベントだけを通常の queue へ流すため、再入して外部変更と誤分類しない。
+Webview（`src/webview/main.ts`）は edit version と ack version を別管理し、`shouldApplyRemoteUpdate` により `baseVersion === editVersion === ackVersion` の update だけを適用する。IME 合成中・未 ack edit 中は最新1件を保留する。外部更新・apply false rollback は `computeRemotePatch` で選択を再マップした新しい EditorState に置換する（CodeMirror history を持たないため単純置換）。`paste`/`drop`/`dragover` は `Prec.highest(EditorView.domEventHandlers)` で DataTransfer の File、URI MIME、file URI-only plain text を処理し、URI は File より優先する。
 
 ## Webview 描画
 
@@ -79,17 +69,19 @@ Webview の Live Preview Undo/Redo は CodeMirror `history()` だけが所有す
 - 新しい記法判定は先に `src/core` の純粋関数として実装する。
 - Widget の副作用は Webview→Extension Host の message 経路で行う。
 - CSP は nonce ベースを維持する。
-- URI 重複・follow・binding 判定は `src/core/viewer.ts` に置き、VS Code 非依存でテストする。
+- 同期・差分・IME・self-echo 判定は `src/core/sync.ts` に置き、VS Code 非依存でテストする。
 
 ## 主要ファイル
 
 | 関心事 | ファイル |
 |---|---|
-| Viewer lifecycle / TextDocument sync / links | `src/livePreviewViewerManager.ts` |
+| Custom Text Editor / TextDocument sync / Undo 委譲 / links | `src/livePreviewCustomEditorProvider.ts` |
 | Media/link pure helpers (image, path formatting, snippet, filename uniqueness) | `src/core/pasteLink.ts` |
-| activate / commands | `src/extension.ts` |
+| activate / commands / custom editor 登録 | `src/extension.ts` |
 | Webview / CodeMirror / message generation | `src/webview/main.ts` |
-| Follow / duplicate / binding pure logic | `src/core/viewer.ts` |
+| List/indent/heading/Undo-Redo キー分類 pure logic | `src/core/editing.ts` |
 | Decoration model | `src/core/model.ts` |
-| Minimal diff / IME / EOL | `src/core/sync.ts` |
+| Minimal diff / IME / EOL / self-echo ledger | `src/core/sync.ts` |
 | Acceptance definitions | `docs/acceptance-tests.md` |
+</content>
+</invoke>

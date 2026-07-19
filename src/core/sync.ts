@@ -442,17 +442,6 @@ export function consumeExpectedWorkspaceEditChange(params: {
   return undefined;
 }
 
-/**
- * Version to attach to an authoritative rollback after a failed edit.  A
- * client that has already produced a newer edit will reject this old rollback,
- * while the client that sent the failed edit can still accept it.
- */
-export function failedEditBaseVersion(params: { appliedVersion: number; failedVersion: unknown }): number {
-  return typeof params.failedVersion === 'number'
-    ? Math.max(params.appliedVersion, params.failedVersion)
-    : params.appliedVersion;
-}
-
 /** Normalise any CRLF/CR to LF (the convention used on the webview/CodeMirror side). */
 export function toLF(text: string): string {
   return text.replace(/\r\n?/g, '\n');

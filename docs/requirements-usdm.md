@@ -1,12 +1,14 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.35.0
+**バージョン**: 1.36.0
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-18
+**最終更新**: 2026-07-19
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-19 時点 / v1.36.0）**: v1.36.0 で、Live Preview を editable WebviewPanel＋active editor follow 方式から **CustomTextEditorProvider（viewType `livePreview.editor`）の再採用**へ設計変更した（ADR-0020、ADR-0005 復活・ADR-0015 廃止）。各エディタは VS Code が渡す単一 TextDocument に生涯バインドし、URI 所有者マップ・active editor follow・`workspace.openTextDocument` 再取得・binding generation は持たない（VS Code が単一 TextDocument バインドとリネーム/削除を管理する。R-03-05／R-03-09／R-03-10 は廃止、R-03-12 を新設）。**Undo/Redo は VS Code へ委譲**し、Webview（CodeMirror）は history を持たず、`classifyUndoRedoKey` で Undo/Redo/Save キーを host へ転送、host が pending edit を flush してから `executeCommand('undo'|'redo')`／`document.save()` を実行する（R-33 新設、R-04-01／R-04-02 改訂、ADR-0017 の「CodeMirror 単独 Undo」を supersede）。デバウンス apply（`EDIT_APPLY_DEBOUNCE_MS`=200ms）＋即時保存の保存モデル（R-03-08、ADR-0019）と最小差分 `WorkspaceEdit`・self-echo ledger（`consumeExpectedWorkspaceEditChange`）・外部変更の一方向反映（`reconcileExternalChange`）は維持する。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
+>
 > ▶️ **開発継続中（2026-07-18 時点 / v1.35.0）**: v1.35.0 で、Live Preview の装飾・レイアウトの見た目を標準 Markdown プレビュー相当に近づける 10 項目の修正を行った。箇条書きは階層別マーカー（`•`/`○`/`▪`）＋本文色追従（R-01-05 改訂）、番号付きリストは 1 段目ローマ数字・2 段目アルファベットの階層別 numeral（R-01-07 新設）、太字＋斜体の複合記法 `***text***`/`___text___` を strong＋em で同時装飾（R-01-08 新設）、入れ子引用（`>>`）を階層クラスで表示（R-02-05 改訂）を純粋関数（`src/core/model.ts`）に実装した。CSS/Webview 側では、見出し下の区切り線・水平線単体の余白縮小、インラインコードの強調、フェンスコードブロックの行別 role クラスによる枠の一体化、折りたたみアイコンの拡大、リスト階層インデントの拡大（R-28-05／R-28-06 改訂）を行った。初期表示フォントサイズはズーム基準値の 1.1 倍で描画するようにした（`displayFontSize`、R-28-17 新設）。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
 >
 > ▶️ **開発継続中（2026-07-19 時点 / v1.34.0）**: v1.34.0 で、Live Preview の編集・保存時に Markdown ソースエディタータブを自動的に閉じる処理を廃止した。ソースタブ再表示への対策は、デバウンス apply 直後の即時保存による TextDocument の dirty 滞留防止に一本化し、拡張機能はユーザーが開いたソースタブを閉じない（R-03-08／R-03-11、ADR-0015／ADR-0019）。
@@ -123,24 +125,25 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** 標準 Markdown ソースを維持したまま、横に並べた Live Preview でも編集でき、複数文書の確認と編集を安全に行えるようにするため。
 
-> **説明：** `livePreview.openWith` は標準ソースエディタを置換せず、編集可能な `WebviewPanel` を横に開く。`customEditors` と `livePreview.toggleSource` は提供しない。同一 URI は常に 1 ビューアとし、異なる URI は複数ビューアを許可する。`livePreview.followActiveEditor` が有効な場合、アクティブな Markdown ソースへ最後に操作したビューアが追従する。切り替えは保留中の Webview 編集の適用後に行い、世代番号で旧バインド由来の遅延メッセージを拒否する。
+> **説明：** `livePreview.openWith` は標準ソースエディタを置換せず、`CustomTextEditorProvider`（viewType `livePreview.editor`、`priority: option`）を `vscode.openWith` で `ViewColumn.Beside` に開く。各エディタは VS Code が `resolveCustomTextEditor` に渡す単一 TextDocument に生涯バインドし、`supportsMultipleEditorsPerDocument: false` により同一リソースの重複を作らず既存エディタを reveal する。active editor follow、URI 所有者マップ、`workspace.openTextDocument` 再取得、binding generation は持たない（文書のリネーム/削除は VS Code が管理する）。`livePreview.toggleSource` は提供しない。Undo/Redo は VS Code へ委譲する（R-33）。
 
 ###### ＜起動・重複防止＞
 
-- ■■■ R-03-01 標準 Markdown エディタのタイトルバーボタンまたは Explorer コンテキストメニューの `livePreview.openWith` で、ソースを閉じずに Live Preview ビューアを `ViewColumn.Beside` へ開けること。
-- ■■■ R-03-02 異なる Markdown URI の Live Preview ビューアは複数同時に開けるが、同一 URI のビューアは重複作成せず既存ビューアを再表示すること。
-- ■■■ R-03-03 `.md` リンクは同一 URI の重複を作らず Live Preview ビューアで開き、現在のビューアを維持すること。外部 URL はブラウザ、その他の相対パスは `preview: false` の既定エディタで開くこと。
-- ■■■ R-03-04 Live Preview は CodeMirror 編集、書式コマンド、チェックボックス、リンク、Undo、IME 抑制、CRLF 保持、最小差分同期を従来どおり提供し、Markdown テキストを表示目的で書き換えないこと。
+- ■■■ R-03-01 標準 Markdown エディタのタイトルバーボタンまたは Explorer コンテキストメニューの `livePreview.openWith` で、ソースを閉じずに Live Preview（Custom Text Editor、`vscode.openWith`）を `ViewColumn.Beside` へ開けること。
+- ■■■ R-03-02 同一 URI の Live Preview エディタは `supportsMultipleEditorsPerDocument: false` により重複作成せず、既存エディタを再表示（reveal）すること。異なる URI のエディタは並行して開けること。
+- ■■■ R-03-03 `.md` リンクは同一 URI の重複を作らず Live Preview（Custom Text Editor）で開き、現在のエディタを維持すること。外部 URL はブラウザ、その他の相対パスは `preview: false` の既定エディタで開くこと。
+- ■■■ R-03-04 Live Preview は CodeMirror 編集、書式コマンド、チェックボックス、リンク、Undo/Redo（VS Code へ委譲、R-33）、IME 抑制、CRLF 保持、最小差分同期を提供し、Markdown テキストを表示目的で書き換えないこと。
 
-###### ＜アクティブエディタ追従＞
+###### ＜文書バインド＞
 
-- ■■■ R-03-05 `livePreview.followActiveEditor` は既定値 `true` とし、有効時はアクティブな Markdown ソースエディタへ最後に操作したビューアを追従させること。対象 URI を既に別ビューアが表示している場合は既存ビューアを所有者として維持し、重複切り替えを行わないこと。無効時は自動切り替えを行わないこと。
-- ■■■ R-03-06 文書切り替えは、そのビューアで受信済みの保留編集を `WorkspaceEdit` へ適用した後に直列実行すること。各バインドに世代番号を付け、切り替え前の Webview が遅延送信した編集・タスク・リンク・エラー通知を新しい文書へ適用しないこと。
-- ■■□ R-03-07 文書切り替え時はパネルタイトル、画像等の resource base、`localResourceRoots`、TextDocument 変更リスナーを新 URI へ再バインドすること。
-- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集時は `workspace.openTextDocument(uri)` で TextDocument を再取得し、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として反映する。反映は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms、`EDIT_APPLY_DEBOUNCE_MS`）でバッチ apply し、連続打鍵は最新 version で coalesce する。apply 直後に必ず即時保存し、TextDocument が dirty のまま滞留しないようにする（これによりコア側が閉じたソースタブを再表示する現象の発生源を断つ）。バッチ apply→即時保存は単一の `flushPendingEdit` 操作として同一 queue で直列実行し、apply が save に先行する順序を保証する。明示保存（Webview の Ctrl+S／Cmd+S を捕捉し `preventDefault` して host へ `save` メッセージを送る）と、失焦・破棄・バインド切替・外部変更処理前の flush 点も同じ `flushPendingEdit` を経由し、いずれも先行して受信済みの edit 適用後に完走する。毎打鍵アイドル自動保存は行わない。`workspace.applyEdit` false 時は警告し、失敗 version を基準とする authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用と保存は完走する。ソースタブ再表示への対策はデバウンス apply＋直後保存による dirty 滞留防止に一本化し、タブを再度閉じる backstop は使用しない。なお WebviewPanel は CustomTextEditor ではないため、パネル自体の dirty バッジは表示されない（ソースタブが開いていれば VS Code 標準の dirty ドットで未保存を示す）。これは既知の制約とする。ビューア内の未保存インジケータ（R-31）がこの制約を補う。
-- ■■□ R-03-09 書式コマンドとアクティブエディタ追従の対象は最後に操作したビューアとし、ビューア操作後にソースへフォーカスを戻しても対象を保持すること。
-- ■■□ R-03-10 Live Preview の対象ファイルが VS Code 内でリネームされた場合は、受信済みの保留編集を適用した後にビューアを新 URI へ再バインドし、世代番号、パネルタイトル、resource base、`localResourceRoots`、TextDocument 変更リスナーを更新して編集を継続すること。新 URI を別ビューアが所有している場合は重複を避けるため旧 URI 側を閉じること。対象ファイルが削除された場合はビューアを閉じること。
+- 廃止 R-03-05（今回 version）: `livePreview.followActiveEditor` によるアクティブ Markdown ソースへの追従は、CustomTextEditor 化により廃止した。各エディタは VS Code が渡す単一 TextDocument に生涯バインドするため、follow 対象の選択・重複切り替え判定は不要となった。
+- ■■■ R-03-06 保留中の Webview 編集は、Undo/Redo・save・外部変更処理・dispose の各時点で `flushPendingEdit`（apply）を先に完了してから後続処理を実行し、`operationQueue` で受信順に直列化すること。
+- ■■□ R-03-07 Webview の `localResourceRoots`・画像等の resource base は、バインドされた単一 TextDocument の URI から `resolveCustomTextEditor` 時に一度だけ設定すること（文書切り替えによる再バインドは行わない）。
+- ■■□ R-03-08 ソースタブを閉じた後も Live Preview から編集できること。編集は `resolveCustomTextEditor` でバインドされた単一 TextDocument へ、CodeMirror の local transaction を通常の edit 経路で最小 `WorkspaceEdit` として反映する。反映は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms、`EDIT_APPLY_DEBOUNCE_MS`）でバッチ apply し、連続打鍵は最新 version で coalesce する。apply 直後に必ず即時保存し、TextDocument が dirty のまま滞留しないようにする。バッチ apply→即時保存は単一の `flushPendingEdit` 操作として同一 queue で直列実行し、apply が save に先行する順序を保証する。明示保存（Webview の Ctrl+S／Cmd+S を `classifyUndoRedoKey` で捕捉し `preventDefault` して host へ `save` メッセージを送る）と、失焦・dispose・Undo/Redo・外部変更処理前の flush 点も同じ `flushPendingEdit` を経由し、いずれも先行して受信済みの edit 適用後に完走する。毎打鍵アイドル自動保存は行わない（VS Code 標準の autoSave は TextDocument に対して通常どおり動作する）。`workspace.applyEdit` false 時は警告し、authoritative rollback を返す。破棄済み Webview には新規メッセージを送らないが、既受信 edit の適用は完走する。Custom Text Editor 化により、Live Preview エディタのタブにも VS Code 標準の dirty バッジが表示される。ビューア内の未保存インジケータ（R-31）は保存失敗・遅延時の補助として残す。
+- 廃止 R-03-09（今回 version）: 書式コマンドとアクティブエディタ追従の「最後に操作したビューア」対象保持は、active editor follow の廃止に伴い不要となった。書式コマンド（`livePreview.format.*`）は最後に active になった Live Preview エディタ（`lastActive`）を対象にする。
+- 廃止 R-03-10（今回 version）: 対象ファイルのリネーム時のビューア再バインド・削除時のクローズは、CustomTextEditor 化により VS Code が単一 TextDocument バインドとリネーム/削除を管理するため、拡張側の再バインド処理は不要となり廃止した。
 - ■■□ R-03-11 Live Preview の編集・保存処理は、ユーザーが開いたソースエディタータブを自動的に閉じないこと。ソースタブ再表示への対策は、デバウンス apply 直後の即時保存によって TextDocument の dirty 滞留を防止する方式とし、`vscode.window.tabGroups.close()` による補完処理は使用しない。
+- ■■□ R-03-12 `customEditors` contribution（viewType `livePreview.editor`、`priority: option`、`filenamePattern: *.md`）を登録し、`registerCustomEditorProvider` の `supportsMultipleEditorsPerDocument: false`／`retainContextWhenHidden: true` で解決すること。`livePreview.openWith` は `vscode.openWith` でソース横（`ViewColumn.Beside`）に開き、既存エディタがあれば複製せず reveal すること。
 
 ### R-04 ドキュメント同期 #sync
 
@@ -148,13 +151,11 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜双方向同期＞
 
-- ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用する。適用は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms）でバッチ化し、その間の連続打鍵は最新 version で coalesce してから1回の最小差分として適用する。Live Preview の Undo/Redo は CodeMirror `history()` だけが単独所有し、ローカル transaction を履歴へ入れる（この点はデバウンス化で不変）。デバウンス中はホストが未 apply のため自己エコーも remote update も発生せず、Webview 内のキャレットはそのまま保持される。ソースエディタ側の undo 粒度はバッチ単位に粗くなる（許容）。自己保存由来（保存参加者・own-save 窓中の format-on-save）の書き換えは `computeRemotePatch` の最小差分を `addToHistory.of(false)` で適用し、履歴を保持したままレコンサイルする（`preserveHistory`）。真の外部変更または apply 失敗 rollback だけが、選択を再マップした新しい EditorState に置換して履歴を破棄する。
-- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`WorkspaceEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed ledger へ記録し、その組だけを自己エコーとして消費する。ledger に一致しない変更は `classifyDocumentChange` で分類し、自己保存由来（`SelfSaveGuard.isActive` の own-save 窓、または `isSaveParticipantNormalization` が説明できる EOL・末尾改行・行末空白だけの差分）は `preserveHistory` 付きで履歴を保持して再同期し、真の外部変更のみ authoritative update として履歴を破棄する。ただし文書末尾の最終改行だけが増減した保存正規化（`isTrailingNewlineOnlyDifference`、例：`files.insertFinalNewline`／`files.trimFinalNewlines`）は CodeMirror へ反映せず host 側の記録のみ整合させる。境界の改行を out-of-history で適用すると、後続の Undo が先行編集を戻す際に改行が取り残されて空行が挿入され、行数が単調減少しなくなる（Undo なのに行数が増える）ため。最終改行はユーザ本文には属さない保存時の関心事とし、保存ごとに再付与する。ack は apply 成功または差分なし確認後だけ送る。
+- ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用する。適用は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms）でバッチ化し、その間の連続打鍵は最新 version で coalesce してから1回の最小差分として適用する。Live Preview の Undo/Redo は CodeMirror が history を持たず VS Code へ委譲する（R-33）。デバウンス中はホストが未 apply のため自己エコーも remote update も発生せず、Webview 内のキャレットはそのまま保持される。ソースエディタ側の undo 粒度はバッチ単位に粗くなる（許容）。host が起こした自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）は Webview へ反映しない。真の外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）または apply 失敗 rollback は、`reconcileExternalChange` が一方向に反映し、Webview は `computeRemotePatch` で選択を再マップした新しい EditorState に置換する（CodeMirror は history を持たないため単純置換）。
+- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`applyPendingEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed の self-echo ledger（`expectedChanges`）へ記録し、`consumeExpectedWorkspaceEditChange` が一致させたその組だけを自己エコーとして消費する（Webview へ反映しない）。ledger に一致しない変更は真の外部変更として `reconcileExternalChange` が一度だけ一方向反映する。反映前に pending edit があれば先に `applyPendingEdit` して確定済み入力を失わない。VS Code の Undo/Redo で TextDocument が書き換わった結果も、この外部変更経路で Webview に反映される。ack は apply 成功または差分なし確認後だけ送る。
 - ■■□ R-04-03 Webview は edit version と ack version を別管理し、external update を `baseVersion === editVersion === ackVersion` のときだけ適用する。未 ack local edit、IME、または保留 local change 中は最新1件を保留して ack 後に再判定し、古い base は破棄する。旧形式（baseVersion なし）は未 ack local edit がない場合だけ適用する。`workspace.applyEdit` false の rollback は失敗 edit version を基準にして、より新しい local edit を上書きしない。
 
-> **R-04-02 追加制約（v1.33.1）**: pending edit と保存参加者／format-on-save の文書変更が競合した場合、Host はイベント時点の由来を queue へ保持し、pending edit の `flushPendingEdit` 完了後に bound TextDocument を再読込して保存正規化を再分類する。捕捉済みの古い保存正規化本文を、flush で進んだ `lastAckVersion` を付けた `update` として Webview へ送ってはならない。真の外部変更は捕捉したイベント snapshot を失わず、一度だけ authoritative update として配信する。
-
-> pending flush が真の外部 snapshot を TextDocument 上で一時的に上書きした場合は、Host が専用の期待 echo guard を付けた最小 `WorkspaceEdit` で外部 snapshot を TextDocument へ復元し、即時保存後の最終本文を binding／Webview へ authoritative 配信して、TextDocument・ディスク・binding・Webview を同じ本文へ収束させる。保存正規化の再読込中により新しい document version の真の外部イベントが届いた場合、先行イベントはその本文を `preserveHistory` で消費せず、後続イベント自身が一度だけ authoritative に処理する。
+> **R-04-02 追記（今回 version）**: CustomTextEditor 再採用と Undo/Redo の VS Code 委譲（R-33、ADR-0020）に伴い、旧設計の保存正規化再分類（`classifyDocumentChange`／`SelfSaveGuard`／`preserveHistory`／`isSaveParticipantNormalization`／`isTrailingNewlineOnlyDifference`）による history 保持レコンサイルは撤去した。現行 provider は self-echo ledger（`consumeExpectedWorkspaceEditChange`）で自己エコーだけを消費し、それ以外は `reconcileExternalChange` が一度だけ一方向反映する単純化した経路に統一している。CodeMirror が history を持たないため、外部反映は EditorState の単純置換で足りる（out-of-history 適用による Undo 崩れの問題自体が発生しない）。なお `src/core/sync.ts` の同名純粋関数は他テストの回帰基準として残置している。
 
 ---
 
@@ -270,7 +271,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-21-01 `<https://…>` をリンク化し `< >` を非カーソル行で隠すこと。
 - ■■■ R-21-02 `<a@b.com>` には `mailto:` を付与すること。
-- ■■■ R-21-03 CommonMark の山括弧宛先 `[ラベル](<相対パス>)`（パスにスペースを含み得る）を開く際、`openLink`（`src/livePreviewEditorProvider.ts`）が href の外側 1 組の山括弧 `< >` のみを除去（`/^<([\s\S]*)>$/`）してから解決すること。山括弧内のスペースは保持する（`Uri.joinPath` がそのまま扱う）。`model` のパース（`LINK_RE`）は href に山括弧を残す仕様とし、除去はホスト側 `openLink` で吸収する（`data-href`/title 表示には影響させない）。全角スラッシュ `／`(U+FF0F) は実フォルダ名の一部として不変に扱うこと。
+- ■■■ R-21-03 CommonMark の山括弧宛先 `[ラベル](<相対パス>)`（パスにスペースを含み得る）を開く際、`openLink`（`src/livePreviewCustomEditorProvider.ts`）が href の外側 1 組の山括弧 `< >` のみを除去（`/^<([\s\S]*)>$/`）してから解決すること。山括弧内のスペースは保持する（`Uri.joinPath` がそのまま扱う）。`model` のパース（`LINK_RE`）は href に山括弧を残す仕様とし、除去はホスト側 `openLink` で吸収する（`data-href`/title 表示には影響させない）。全角スラッシュ `／`(U+FF0F) は実フォルダ名の一部として不変に扱うこと。
 - ■■□ R-21-04 リンク（`.cm-lp-link`）は常時下線（`text-decoration: underline`）を表示し、ホバー時も下線を維持すること。タスク行内のリンク（`.cm-line.cm-lp-task .cm-lp-link`）も同様に `.cm-lp-link` のリンク色と下線を継承して表示すること（本文色への上書きをしない）。
 
 ### R-22 表のレンダリング #table
@@ -402,7 +403,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** 標準 Markdown エディタと同様に、画像バイナリのペーストやファイルのドロップだけでワークスペースへ画像を保存し、Markdown リンクを自動挿入できることは編集体験の要であるため。v1.5.0 で削除した「画像ペースト保存」を、Obsidian 独自挙動ではなく標準 Markdown エディタ相当の挙動として v1.24.0 で再導入する。
 
-> **説明：** 画像判定・山括弧エスケープ・スニペット生成・ファイル名衝突回避は VS Code 非依存の純粋関数（`src/core/pasteLink.ts`: `isImageFile`／`formatMarkdownLinkTarget`／`buildMediaSnippet`／`uniqueMediaName`）が担う。Webview（`src/webview/main.ts`）は `paste`/`drop` でファイル・`text/uri-list` を収集し、ファイルまたは URI があるときのみ `preventDefault` して `{ type: 'pasteMedia', binding, files: [{ name, data: Uint8Array }], uris? }` をホストへ送る（ファイルも URI も無い通常テキストは CodeMirror 既定に委ねる）。ホスト（`src/livePreviewViewerManager.ts` `handlePasteMedia`）はバイナリを document フォルダ相対の保存先（既定 `assets/`）へ `workspace.fs.writeFile` で保存し、同名衝突は `-N` 連番で回避する。ワークスペース内 URI（画像・非画像とも）は複製せず document フォルダ基準の相対パスへ変換し、元ファイルへ直接リンクする。`isCurrentBinding` 確認後、単一スニペットを `{ type: 'insertMedia', binding, text, placeholderFrom, placeholderTo }` として返信し、Webview が現在の選択範囲へ挿入してプレースホルダ（`alt text`／`text`）を選択状態にする。挿入後は既存 edit フローで保存まで確定する。往復は `enqueue` で直列化し、`resolveSrc`（R-26-01）で `assets/` 配下の画像が追加設定なしに描画される。
+> **説明：** 画像判定・山括弧エスケープ・スニペット生成・ファイル名衝突回避は VS Code 非依存の純粋関数（`src/core/pasteLink.ts`: `isImageFile`／`formatMarkdownLinkTarget`／`buildMediaSnippet`／`uniqueMediaName`）が担う。Webview（`src/webview/main.ts`）は `paste`/`drop` でファイル・`text/uri-list` を収集し、ファイルまたは URI があるときのみ `preventDefault` して `{ type: 'pasteMedia', binding, files: [{ name, data: Uint8Array }], uris? }` をホストへ送る（ファイルも URI も無い通常テキストは CodeMirror 既定に委ねる）。ホスト（`src/livePreviewCustomEditorProvider.ts` `handlePasteMedia`）はバイナリを document フォルダ相対の保存先（既定 `assets/`）へ `workspace.fs.writeFile` で保存し、同名衝突は `-N` 連番で回避する。ワークスペース内 URI（画像・非画像とも）は複製せず document フォルダ基準の相対パスへ変換し、元ファイルへ直接リンクする。`isCurrentBinding` 確認後、単一スニペットを `{ type: 'insertMedia', binding, text, placeholderFrom, placeholderTo }` として返信し、Webview が現在の選択範囲へ挿入してプレースホルダ（`alt text`／`text`）を選択状態にする。挿入後は既存 edit フローで保存まで確定する。往復は `enqueue` で直列化し、`resolveSrc`（R-26-01）で `assets/` 配下の画像が追加設定なしに描画される。
 
 ###### ＜ペースト/ドロップ＞
 
@@ -427,9 +428,9 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ### R-31 未保存インジケータ #unsaved
 
-> **理由：** `WebviewPanel` は `CustomTextEditor` ではないためパネル自体に dirty バッジが表示されない（R-03-08 の既知の制約）。ソースタブを閉じて Live Preview だけで編集している場合、未保存であることを確認する手段がなくなるため、ビューア内に視認可能なインジケータを設けて補う。
+> **理由：** Custom Text Editor 化により Live Preview エディタのタブにも VS Code 標準の dirty バッジが表示されるようになったが、apply 直後の即時保存（R-03-08）にもかかわらず保存に失敗・遅延したケースを、ビューア内でも視認できるよう補助のインジケータを残す。
 
-> **説明：** 未保存判定は host（`TextDocument.isDirty`）を正とし、Webview は独自に dirty を推定しない。host（`src/livePreviewViewerManager.ts` `postDirtyState`）は `workspace.openTextDocument(binding.uri)` で取得した `document.isDirty` を `{ type: 'dirty', dirty, binding: binding.generation }` として Webview へ送る。送信タイミングは編集適用成功後（`applyEdit`）、明示保存・flush 保存成功後（`performSave`）、初期表示（`postInit`）、外部変更・自己エコー後（`onDidChangeTextDocument` 経路）、および保存ライフサイクル（既存 `onDidSaveTextDocument`）。破棄済み Webview・バインド世代不一致（`shouldPostDirtyState`）には送らない。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外（`#editor` の兄弟要素）に固定配置のオーバーレイ `cm-lp-unsaved-indicator` を生成し、`dirty` メッセージ（現在の binding 一致時のみ）で表示/非表示クラス（`is-visible`）を切り替える。色は `var(--vscode-editorWarning-foreground)` 追従（フォールバック値あり、R-28-04）。なお v1.29.0 以降は apply 直後に即時保存する（R-03-08）ため通常 `dirty=false` で、インジケータはほぼ表示されない（apply→save 間の一瞬、または保存失敗時のみ表示される）。機構自体は将来の保存失敗・遅延に備えて残す。
+> **説明：** 未保存判定は host（`TextDocument.isDirty`）を正とし、Webview は独自に dirty を推定しない。host（`src/livePreviewCustomEditorProvider.ts` `postDirtyState`）はバインドされた TextDocument の `document.isDirty` を `{ type: 'dirty', dirty, binding }`（binding はエディタセッション id）として Webview へ送る。送信タイミングは編集適用成功後（`applyEdit`）、明示保存・flush 保存成功後（`performSave`）、初期表示（`postInit`）、外部変更・自己エコー後（`onDidChangeTextDocument` 経路）、および保存ライフサイクル（既存 `onDidSaveTextDocument`）。破棄済み Webview・バインド世代不一致（`shouldPostDirtyState`）には送らない。Webview（`src/webview/main.ts`）は CodeMirror の DOM 外（`#editor` の兄弟要素）に固定配置のオーバーレイ `cm-lp-unsaved-indicator` を生成し、`dirty` メッセージ（現在の binding 一致時のみ）で表示/非表示クラス（`is-visible`）を切り替える。色は `var(--vscode-editorWarning-foreground)` 追従（フォールバック値あり、R-28-04）。なお v1.29.0 以降は apply 直後に即時保存する（R-03-08）ため通常 `dirty=false` で、インジケータはほぼ表示されない（apply→save 間の一瞬、または保存失敗時のみ表示される）。機構自体は将来の保存失敗・遅延に備えて残す。
 
 ###### ＜インジケータ表示＞
 
@@ -441,7 +442,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **理由：** Markdown 中の数式（インライン `$…$`・ブロック `$$…$$`）を KaTeX で表示描画し、他の装飾と同様に「非カーソルはレンダリング／カーソル内は生記法」で編集できるようにする。
 
-> **説明：** 装飾判定は CodeMirror 非依存の純粋関数（`src/core/model.ts`）で行う（ADR-0002 / 0003）。インラインは `parseInline` に `$…$` 検知を追加する（優先度はインラインコードの次。開き `$` の直後・閉じ `$` の直前が非空白、内部に `$`／改行を含まない、直前が `\` の `\$` はエスケープとして対象外、コードブロック内は既存 code 判定により対象外）。非カーソル行では `replaceWidget`（tag `math-inline`、`attrs.tex`）へ置換、カーソル行では生記法を表示する。ブロックは新設の純粋関数 `detectMathBlocks(lines, code)` が `$$…$$`（単一行 `$$ … $$` と、`$$` で始まり後続の `$$` 行で閉じる複数行の両形式。コードブロック除外・先頭 `\$$` エスケープ非対象・未終了非対象）を検知し、`computeDecorations` の table/details と同様の位置でキャレットがブロック外のときのみ `replaceWidget`（tag `math-block`、`block: true`）へ置換、ブロック内では生記法を表示する（table と同じ active 判定）。Webview（`src/webview/decorations.ts`）は `MathInlineWidget`／`MathBlockWidget` を追加し、`katex.render(tex, element, { throwOnError: false })` で DOM へ直接描画する（生ユーザー HTML は挿入しない）。KaTeX JS は `dist/webview.js` に IIFE バンドルされ、CSS/フォントは `esbuild.js` が `media/katex/`（`katex.min.css` と `fonts/`）へコピーし、`getHtml`（`src/livePreviewViewerManager.ts`）が `<link>` で配信する。`font-src ${cspSource}` で許可済み。`script-src` は nonce のみを維持し外部 script を追加しない（ADR-0006）。`MathBlockWidget` は `estimatedHeight` を実装し `toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶ（R-28-10 / R-28-11）。本文は書き換えない（R-01-02）。
+> **説明：** 装飾判定は CodeMirror 非依存の純粋関数（`src/core/model.ts`）で行う（ADR-0002 / 0003）。インラインは `parseInline` に `$…$` 検知を追加する（優先度はインラインコードの次。開き `$` の直後・閉じ `$` の直前が非空白、内部に `$`／改行を含まない、直前が `\` の `\$` はエスケープとして対象外、コードブロック内は既存 code 判定により対象外）。非カーソル行では `replaceWidget`（tag `math-inline`、`attrs.tex`）へ置換、カーソル行では生記法を表示する。ブロックは新設の純粋関数 `detectMathBlocks(lines, code)` が `$$…$$`（単一行 `$$ … $$` と、`$$` で始まり後続の `$$` 行で閉じる複数行の両形式。コードブロック除外・先頭 `\$$` エスケープ非対象・未終了非対象）を検知し、`computeDecorations` の table/details と同様の位置でキャレットがブロック外のときのみ `replaceWidget`（tag `math-block`、`block: true`）へ置換、ブロック内では生記法を表示する（table と同じ active 判定）。Webview（`src/webview/decorations.ts`）は `MathInlineWidget`／`MathBlockWidget` を追加し、`katex.render(tex, element, { throwOnError: false })` で DOM へ直接描画する（生ユーザー HTML は挿入しない）。KaTeX JS は `dist/webview.js` に IIFE バンドルされ、CSS/フォントは `esbuild.js` が `media/katex/`（`katex.min.css` と `fonts/`）へコピーし、`getHtml`（`src/livePreviewCustomEditorProvider.ts`）が `<link>` で配信する。`font-src ${cspSource}` で許可済み。`script-src` は nonce のみを維持し外部 script を追加しない（ADR-0006）。`MathBlockWidget` は `estimatedHeight` を実装し `toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶ（R-28-10 / R-28-11）。本文は書き換えない（R-01-02）。
 
 ###### ＜数式レンダリング＞
 
@@ -449,3 +450,16 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-32-02 純粋関数 `detectMathBlocks` は `$$…$$` ブロック（コードブロック除外・未終了は非対象）を検知し、カーソルがブロック外のとき block 数式ウィジェットへ置換、ブロック内では生記法を表示すること。
 - ■■□ R-32-03 Webview は KaTeX を JS バンドル同梱・CSS/フォントを `media/katex/` から配信して数式を DOM 描画し、レンダリング失敗時も Webview を落とさず生 tex をフォールバック表示すること。CSP（nonce／font-src cspSource）を維持すること。
 - ■■□ R-32-04 block 数式ウィジェットは `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶこと（R-28-10 / R-28-11）。
+
+### R-33 Undo/Redo 委譲 #undoredo
+
+> **理由：** Live Preview を CustomTextEditor として再採用した（R-03-12、ADR-0020）ことで、Undo/Redo をエディタ内部で二重管理せず VS Code に委譲でき、ソースエディタと履歴を共有して整合を保てるため。CodeMirror 単独 Undo（旧 R-04-01／ADR-0017）は WebviewPanel 前提の設計であり、CustomTextEditor では VS Code のコマンド経路へ委譲するのが自然である。
+
+> **説明：** Webview（CodeMirror）は history を持たず、Undo/Redo/Save のキー入力を純粋関数 `classifyUndoRedoKey`（`src/core/editing.ts`）で分類して host へ転送する。host（`src/livePreviewCustomEditorProvider.ts`）は pending edit を flush してから `vscode.commands.executeCommand('undo'|'redo')`／`document.save()` を実行する。undo/redo が TextDocument を書き換えた結果は `onDidChangeTextDocument` を通じて外部変更として Webview に一方向反映される（R-04）。
+
+###### ＜キー分類・委譲＞
+
+- ■■□ R-33-01 `classifyUndoRedoKey` は、`Ctrl/Cmd+Z`=undo、`Ctrl/Cmd+Shift+Z` および `Ctrl+Y`（非 Cmd）=redo、`Ctrl/Cmd+S`=save に分類し、IME 変換中（`isComposing`）・Alt 併用・修飾なしは `undefined` を返すこと。
+- ■■□ R-33-02 host は undo/redo/save の実行前に必ず pending edit を `flushPendingEdit`（apply）で反映し、その後 `executeCommand('undo'|'redo')`／`document.save()`（dirty のときだけ）を実行すること。undo/redo は保存しないこと。
+- ■■□ R-33-03 Webview（CodeMirror）は Undo/Redo history を持たず（`@codemirror/commands` の `history()`／`historyKeymap`／`isolateHistory` を import・登録しない）、Undo/Redo キーは host へ転送すること。
+- ■■□ R-33-04 host は自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）を消費し Webview へ反映せず、外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）は `reconcileExternalChange` で一度だけ一方向反映すること。dispose 時は pending edit を flush するが保存はしないこと。

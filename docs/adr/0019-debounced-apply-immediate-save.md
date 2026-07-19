@@ -10,6 +10,8 @@ metadata:
 - **ステータス**: 採択済み（ADR-0018 を supersede）
 - **確信度**: 高
 
+> **前提の更新（v1.36.0、ADR-0020）**: 本 ADR はデバウンスバッチ apply＋即時保存を維持しつつ、CustomTextEditorProvider の再採用へ移行した。各エディタは VS Code が渡す単一 TextDocument に生涯バインドし、`workspace.openTextDocument` 再取得・binding generation・URI 所有者マップ・active editor follow は撤去した。旧「キャレット退行防止機構」（`SelfSaveGuard`／`isSaveParticipantNormalization`／`classifyDocumentChange` の `preserveHistory`／`isTrailingNewlineOnlyDifference`）は、Undo/Redo を VS Code へ委譲し CodeMirror が history を持たなくなった（ADR-0020、R-33）ため撤去した。self-echo ledger（`consumeExpectedWorkspaceEditChange`）と外部変更の一方向反映（`reconcileExternalChange`）に単純化している。`closeAutoOpenedSourceTab` backstop は v1.34.0 で既に廃止済み。
+
 ## コンテキスト
 
 ADR-0015 追記のとおり、`workspace.applyEdit` / `document.save()` の副作用で VS

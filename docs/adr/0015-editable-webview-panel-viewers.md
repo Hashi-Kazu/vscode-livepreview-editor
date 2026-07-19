@@ -7,8 +7,10 @@ metadata:
 
 # ADR-0015: editable WebviewPanel ビューア
 
-- **ステータス**: 採択済み
+- **ステータス**: 廃止（v1.36.0、ADR-0020 により置換）
 - **確信度**: 高
+
+> **廃止（v1.36.0、ADR-0020）**: WebviewPanel 方式は dirty バッジ非表示・保存/Undo 統合の複雑さ・パネル/タブ二重管理の課題を抱えていたため、v1.36.0 で CustomTextEditorProvider（ADR-0005 を復活）を再採用し、active editor follow・URI 単一所有・queued rebinding・binding generation を撤去した。以下は経緯として残す。
 
 ## コンテキスト
 

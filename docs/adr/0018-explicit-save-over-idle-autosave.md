@@ -7,6 +7,8 @@ metadata:
 
 # ADR-0018: Explicit save plus lifecycle flush over idle autosave
 
+> **前提の更新（v1.36.0、ADR-0020）**: 本 ADR の「WebviewPanel は `CustomTextEditor` ではないため VS Code の Ctrl+S が下層 TextDocument に届かない」という前提は、CustomTextEditorProvider の再採用で変わった。ただし Webview が `Ctrl+S`/`Cmd+S` を横取り（`classifyUndoRedoKey`）して host へ `save` を転送し、host が `flushPendingEdit`→`document.save()` を実行する点は不変。VS Code 標準の autoSave も TextDocument に対して通常どおり動作する。
+
 > **ステータス**: ADR-0019（2026-07-18）により supersede。v1.29.0 で反映モデルを「タイピング停止後のデバウンスでのバッチ apply＋apply 直後の即時保存」へ変更し、TextDocument が dirty のまま滞留しないようにした。本 ADR が確立した「明示保存＋ライフサイクル flush」および Undo 安全機構は ADR-0019 に引き継がれる（明示保存・flush 点はいずれも即時保存を伴う `flushPendingEdit` 経由に統一）。本文は経緯として残す。
 
 ## Context

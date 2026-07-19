@@ -339,7 +339,7 @@ export function setResourceBase(base: string) {
 /** Resolve an image src: absolute/data URLs as-is, relative paths via the base.
  *  `src` may still carry the CommonMark angle-bracket destination wrapper
  *  (`<path with spaces>`) — the model keeps it verbatim by design (see
- *  `livePreviewViewerManager.openLink`, which strips it the same way for link
+ *  `livePreviewCustomEditorProvider.openLink`, which strips it the same way for link
  *  hrefs) — so unwrap the outer pair here before resolving. */
 function resolveSrc(src: string): string {
   const unwrapped = src.replace(/^<([\s\S]*)>$/, '$1');
