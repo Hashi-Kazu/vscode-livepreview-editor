@@ -14,7 +14,7 @@
 │ - デバウンス apply（最小差分 WorkspaceEdit）・明示保存 │
 │ - Undo/Redo は executeCommand へ委譲・self-echo ledger │
 └───────────────────────┬─────────────────────────────┘
-                        │ init/update/ack/dirty/edit/undo/redo/save/openLink/pasteMedia/insertMedia/…
+                        │ init/update/ack/edit/undo/redo/save/openLink/pasteMedia/insertMedia/…
 ┌───────────────────────▼─────────────────────────────┐
 │ Webview (browser/IIFE) src/webview/main.ts          │
 │ - CodeMirror 6 EditorView（history を持たない）      │

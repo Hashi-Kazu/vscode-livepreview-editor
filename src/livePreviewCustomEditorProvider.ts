@@ -293,7 +293,6 @@ class LivePreviewEditorSession {
       completed: true,
     });
     await this.postAck(pending.version);
-    await this.postDirtyState();
   }
 
   /** Flush any buffered edit, then persist the document (explicit save only). */
@@ -307,7 +306,6 @@ class LivePreviewEditorSession {
       }
       this.log('document-saved', { dirty: this.document.isDirty });
     }
-    await this.postDirtyState();
   }
 
   /** Flush the buffered edit, then delegate Undo/Redo to VS Code (R-33-02 / R-33-03). */
@@ -336,7 +334,6 @@ class LivePreviewEditorSession {
       this.expectedChanges.delete(selfVersion);
       this.webviewText = documentText;
       this.log('self-echo-consumed', { version: selfVersion, documentVersion });
-      if (!this.disposed) this.enqueue(async () => this.postDirtyState());
       return;
     }
 
@@ -354,7 +351,6 @@ class LivePreviewEditorSession {
     if (this.pendingEdit) await this.applyPendingEdit();
     const text = toLF(this.document.getText());
     if (text === this.webviewText) {
-      await this.postDirtyState();
       return;
     }
     this.webviewText = text;
@@ -367,7 +363,6 @@ class LivePreviewEditorSession {
         baseVersion: this.lastAckVersion,
       });
     }
-    await this.postDirtyState();
   }
 
   // --- Webview <- host bookkeeping messages ----------------------------------
@@ -375,15 +370,6 @@ class LivePreviewEditorSession {
   private async postAck(version: number): Promise<void> {
     if (this.disposed) return;
     await this.panel.webview.postMessage({ type: 'ack', binding: this.id, version });
-  }
-
-  private async postDirtyState(): Promise<void> {
-    if (this.disposed) return;
-    await this.panel.webview.postMessage({
-      type: 'dirty',
-      dirty: this.document.isDirty,
-      binding: this.id,
-    });
   }
 
   private postInit(): void {
@@ -397,11 +383,6 @@ class LivePreviewEditorSession {
       text: this.webviewText,
       fontSize: this.currentFontSize(),
       resourceBase,
-      binding: this.id,
-    });
-    void this.panel.webview.postMessage({
-      type: 'dirty',
-      dirty: this.document.isDirty,
       binding: this.id,
     });
   }
