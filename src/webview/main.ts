@@ -7,7 +7,8 @@ import { EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
 import { EditorView, ViewUpdate, DecorationSet, ViewPlugin, keymap, drawSelection } from '@codemirror/view';
 import { defaultKeymap } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
-import { codeFolding, foldGutter, foldKeymap, foldService } from '@codemirror/language';
+import { codeFolding, foldGutter, foldKeymap, foldService, syntaxHighlighting } from '@codemirror/language';
+import { codeLanguageFor, lpHighlightStyle } from './highlight';
 import { buildDecorations, setResourceBase, setFontSize } from './decorations';
 import {
   computeRemotePatch,
@@ -480,7 +481,15 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       editingKeymap,
       mediaDomHandlers,
       keymap.of([...defaultKeymap, ...foldKeymap]),
-      markdown(),
+      // R-34: parse embedded fenced code blocks with per-language parsers so the
+      // syntax-highlight style below can colour keywords/strings/etc. inside code
+      // blocks. `codeLanguageFor` returns a `Language` synchronously (no dynamic
+      // import → single Webview bundle stays intact).
+      markdown({ codeLanguages: codeLanguageFor }),
+      // R-34: token colours follow VS Code `--vscode-symbolIcon-*` theme
+      // variables (fallbacks only, R-28-04). Only programming-language tags are
+      // mapped, so Markdown prose markers keep their existing decoration styling.
+      syntaxHighlighting(lpHighlightStyle),
       // R-30 heading-section folding. `codeFolding()` supplies fold state +
       // placeholder; `headingFoldService` provides heading ranges; `foldGutter`
       // renders VS Code-style chevron toggles. The gutter is width-compensated in CSS so the

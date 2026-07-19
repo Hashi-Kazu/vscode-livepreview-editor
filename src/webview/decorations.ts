@@ -330,6 +330,49 @@ class DetailsWidget extends WidgetType {
   }
 }
 
+/** SVG path data for each alert kind's leading icon (GitHub-style octicons,
+ *  simplified). Rendered via an inline <svg> so the glyph follows `currentColor`
+ *  and therefore the theme-driven per-kind color set in CSS (R-28-04). */
+const ALERT_ICON_PATHS: Record<string, string> = {
+  note: 'M0 8a8 8 0 1116 0A8 8 0 010 8zm8-6.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM6.5 7.75A.75.75 0 017.25 7h1a.75.75 0 01.75.75v2.75h.25a.75.75 0 010 1.5h-2a.75.75 0 010-1.5h.25v-2h-.25a.75.75 0 01-.75-.75zM8 6a1 1 0 100-2 1 1 0 000 2z',
+  tip: 'M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 01-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 00-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.75.75 0 01-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75zM5.75 12h4.5a.75.75 0 010 1.5h-4.5a.75.75 0 010-1.5zM6 15.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75z',
+  important: 'M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0114.25 13H8.06l-2.573 2.573A1.457 1.457 0 013 14.543V13H1.75A1.75 1.75 0 010 11.25zM9 9a1 1 0 10-2 0 1 1 0 002 0zm-.25-5.25a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0z',
+  warning: 'M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575zM9 11a1 1 0 10-2 0 1 1 0 002 0zm-.25-5.25a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0z',
+  caution: 'M4.47.22A.749.749 0 015 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 01-.22.53l-4.25 4.25A.749.749 0 0111 16H5a.749.749 0 01-.53-.22L.22 11.53A.749.749 0 010 11V5c0-.199.079-.389.22-.53zM8 4a.75.75 0 00-.75.75v3.5a.75.75 0 001.5 0v-3.5A.75.75 0 008 4zm0 8a1 1 0 100-2 1 1 0 000 2z',
+};
+
+/** Leading title of a GitHub alert (icon + kind name), replacing the raw
+ *  `[!TYPE]` label off-cursor. The per-kind color is applied in CSS via the
+ *  `cm-lp-alert-title-<kind>` class; the icon inherits `currentColor` (R-28-04). */
+class AlertTitleWidget extends WidgetType {
+  constructor(private readonly kind: string, private readonly title: string) {
+    super();
+  }
+  eq(other: AlertTitleWidget) {
+    return other.kind === this.kind && other.title === this.title;
+  }
+  toDOM() {
+    const span = document.createElement('span');
+    span.className = `cm-lp-alert-title cm-lp-alert-title-${this.kind}`;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('width', '1em');
+    svg.setAttribute('height', '1em');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.classList.add('cm-lp-alert-icon');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', ALERT_ICON_PATHS[this.kind] ?? ALERT_ICON_PATHS.note);
+    path.setAttribute('fill', 'currentColor');
+    svg.appendChild(path);
+    span.appendChild(svg);
+    const label = document.createElement('span');
+    label.className = 'cm-lp-alert-title-text';
+    label.textContent = this.title;
+    span.appendChild(label);
+    return span;
+  }
+}
+
 /** Webview-side base URI (set by the host) used to resolve relative image paths. */
 let resourceBase = '';
 export function setResourceBase(base: string) {
@@ -492,6 +535,12 @@ function toDecoration(s: DecoSpec): Decoration | null {
         const level = Math.floor(indent / 2);
         if (level > 0) attributes = { style: `padding-left: ${level * 1.5}em;` };
       }
+      // Fenced code opener: expose the language name as `data-lang` so CSS can
+      // paint a clean language label on the block frame (the raw info string is
+      // hidden by the model off-cursor — #4/#5).
+      if (s.tag === 'codeblock' && s.attrs?.lang) {
+        attributes = { ...(attributes ?? {}), 'data-lang': s.attrs.lang };
+      }
       return Decoration.line({ class: s.className ?? '', attributes });
     }
     case 'mark':
@@ -513,6 +562,11 @@ function toDecoration(s: DecoSpec): Decoration | null {
       }
       if (s.tag === 'hr-widget') {
         return Decoration.replace({ widget: new HrWidget() });
+      }
+      if (s.tag === 'alert-title') {
+        return Decoration.replace({
+          widget: new AlertTitleWidget(s.attrs?.kind ?? 'note', s.attrs?.widget ?? ''),
+        });
       }
       if (s.tag === 'math-inline') {
         return Decoration.replace({ widget: new MathInlineWidget(s.attrs?.tex ?? '') });
