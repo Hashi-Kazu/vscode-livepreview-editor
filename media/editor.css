@@ -96,9 +96,18 @@ body {
   /* Inline code: tinted pill with a visible border so it reads clearly against
      the surrounding prose (GitHub-style, strengthened per R-28-06 / R-02-02).
      Wider horizontal padding and a stronger tint bring the contrast closer to
-     the standard Markdown preview so short spans stand out from body text. */
+     the standard Markdown preview so short spans stand out from body text.
+     The background is blended with the editor foreground (via `color-mix`, as
+     used for the GitHub Alerts below) so the pill reads one clear step darker
+     than the surrounding prose in both light and dark themes, instead of only
+     matching the fenced-code-block tint (Issue #24 follow-up). Colours stay
+     theme-driven (R-28-04); only the mix ratio is hard-coded. */
   padding: 0.2em 0.5em;
-  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.32));
+  background: color-mix(
+    in srgb,
+    var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.4)) 100%,
+    var(--vscode-editor-foreground) 10%
+  );
   border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.35));
 }
 .cm-lp-codeblock {
@@ -208,27 +217,81 @@ body {
 }
 
 .cm-lp-quote {
-  /* Each blockquote line carries a single, consistent-width left border at its
-     own left edge plus a faint tinted band (GitHub/MAIO look). Nesting depth is
-     expressed by stepping the whole line inward with `margin-left` (below), so
-     the border for each level sits at the correct indented position instead of a
-     single shared box whose inner borders drift (R-02-05 revision). */
-  border-left: 3px solid var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888));
-  padding-left: 12px;
-  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
+  /* Each blockquote line shows one vertical bar per nesting level (ancestors +
+     its own), drawn as stacked `linear-gradient` bars in `background-image`
+     rather than a single `border-left`, so an `l2`+ line displays all of its
+     ancestors' bars too (Issue #24 follow-up / R-02-05). The per-level
+     `padding-left`/`background-position` below (in `.cm-lp-quote-l1..l6`) keep
+     the same 1.4em-per-level step the previous `margin-left`-only layout used,
+     so indentation is visually unchanged; only the extra bars are new. The
+     tinted band + colours stay theme-driven (R-28-04). */
+  background-repeat: no-repeat;
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
   color: var(--vscode-textBlockQuote-foreground, var(--vscode-descriptionForeground, inherit));
 }
-/* Nested blockquotes (`>>`, `>>>`, …): step the line inward one indent per
-   level so each level's independent border + background band is offset from the
-   previous, matching standard Markdown-preview nesting. `margin-left` is
-   horizontal only, so it does not affect the height oracle (R-28-14). Deeper
-   levels reuse the same themed colors (no hard-coded color, R-28-04). */
-.cm-lp-quote-l1 { margin-left: 0; }
-.cm-lp-quote-l2 { margin-left: 1.4em; }
-.cm-lp-quote-l3 { margin-left: 2.8em; }
-.cm-lp-quote-l4 { margin-left: 4.2em; }
-.cm-lp-quote-l5 { margin-left: 5.6em; }
-.cm-lp-quote-l6 { margin-left: 7em; }
+/* Nested blockquotes (`>>`, `>>>`, …): each level draws `n` vertical bars (one
+   per ancestor level plus itself) at `k * 1.4em` offsets via stacked
+   `linear-gradient`s, and reserves the equivalent horizontal space with
+   `padding-left` so body text still starts at the same indent the previous
+   `margin-left`-per-level layout produced. Bars are 3px wide, matching the
+   previous single `border-left`. Colours reuse the same theme variable for
+   every level (R-28-04). */
+.cm-lp-quote-l1 {
+  padding-left: 12px;
+  background-image: linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
+  background-size: 3px 100%;
+  background-position: 0 0;
+}
+.cm-lp-quote-l2 {
+  padding-left: calc(1.4em + 12px);
+  background-image:
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
+  background-size: 3px 100%, 3px 100%;
+  background-position: 0 0, 1.4em 0;
+}
+.cm-lp-quote-l3 {
+  padding-left: calc(2.8em + 12px);
+  background-image:
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
+  background-size: 3px 100%, 3px 100%, 3px 100%;
+  background-position: 0 0, 1.4em 0, 2.8em 0;
+}
+.cm-lp-quote-l4 {
+  padding-left: calc(4.2em + 12px);
+  background-image:
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
+  background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%;
+  background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0;
+}
+.cm-lp-quote-l5 {
+  padding-left: calc(5.6em + 12px);
+  background-image:
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
+  background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%;
+  background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0, 5.6em 0;
+}
+.cm-lp-quote-l6 {
+  padding-left: calc(7em + 12px);
+  background-image:
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
+    linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
+  background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%;
+  background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0, 5.6em 0, 7em 0;
+}
 
 .cm-lp-link {
   color: var(--vscode-textLink-foreground);
@@ -253,6 +316,13 @@ body {
   text-align: center;
   font-size: 0.9em;
   line-height: inherit;
+}
+/* The hollow circle (○, 2nd-level bullet) still reads visually larger than •/▪
+   at the same font-size because of its glyph shape, so it gets its own smaller
+   size on top of the shared box above (Issue #24 follow-up / R-01-05). Only the
+   glyph gains the extra class (`decorations.ts`); •/▪ keep the 0.9em above. */
+.cm-lp-list-bullet-hollow {
+  font-size: 0.72em;
 }
 
 .cm-lp-list-number {
@@ -538,28 +608,38 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
   width: 18px;
 }
 .cm-editor .cm-foldGutter .cm-gutterElement {
-  /* CodeMirror sizes each gutter element to its line-block height. Heading lines
-     use more top than bottom padding, so their text's visual center sits below
-     the block center by roughly (padding-top − padding-bottom)/2. Align the
-     chevron to the TOP of the block and nudge it down by that offset so its
-     visual center tracks the heading text center across H1–H6 (larger headings
-     have a larger asymmetric top padding, so the em-based nudge — measured in the
-     gutter element's own scaled font — grows with them). The chevron is enlarged
-     for visibility while keeping the gutter width (R-30-04 / R-28-06). */
+  /* Reverted to the pre-#21 layout (Issue #24 follow-up): centering the chevron
+     in the gutter element's own box, with only a small baseline nudge, keeps it
+     next to the heading line it belongs to. #21's `flex-start` + large
+     `translateY(0.55em)` pushed the chevron down far enough that it visually
+     read as belonging to a different line. The larger `font-size` from #21 is
+     kept for visibility (R-30-04 / R-28-06); only the vertical alignment is
+     reverted. H1–H3 get a small extra downward nudge via `.cm-lp-fold-h1/-h2/-h3`
+     below (added to the gutter element by `gutterLineClass` in `main.ts`, since
+     the gutter itself has no heading-level information); H4–H6 keep this base
+     value unchanged. */
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
   padding: 0 2px 0 0;
   font-family: var(--vscode-editor-font-family, sans-serif);
   font-size: 1.5em;
   line-height: 1;
-  transform: translateY(0.55em);
+  transform: translateY(0.15em);
   cursor: pointer;
   color: var(--vscode-descriptionForeground);
   opacity: 0.7;
 }
 .cm-editor .cm-foldGutter .cm-gutterElement:hover {
   opacity: 1;
+}
+/* H1–H3 headings sit visually a bit lower within their (taller, more
+   top-padded) line block, so their chevron gets a slightly larger downward
+   nudge than the base 0.15em; H4–H6 use the base value untouched. */
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h1,
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h2,
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h3 {
+  transform: translateY(0.28em);
 }
 /* Reduce the content left padding by the gutter width so the total left offset
    (gutter + padding) stays at 48px and heading/body left edges keep aligning
