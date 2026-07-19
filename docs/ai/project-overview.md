@@ -29,7 +29,7 @@ npm run watch     # ウォッチビルド
 ```text
 src/core/         # 純粋ロジック（CodeMirror/VS Code 非依存・テスト対象）
 src/webview/      # CodeMirror 6 統合（core の記述子を Decoration に変換）
-src/              # 拡張ホスト（extension.ts / livePreviewEditorProvider.ts）
+src/              # 拡張ホスト（extension.ts / livePreviewCustomEditorProvider.ts）
 test/             # Vitest テスト
 docs/             # 要求仕様書（USDM形式）・アーキテクチャ・受け入れテスト
 media/            # アイコン・CSS

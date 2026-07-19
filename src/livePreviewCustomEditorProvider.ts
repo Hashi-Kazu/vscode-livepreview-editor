@@ -190,7 +190,7 @@ class LivePreviewEditorSession {
     }
   }
 
-  // --- Pending edit lifecycle (R-04-01 / R-13) -------------------------------
+  // --- Pending edit lifecycle (R-03-08 / R-04-01) ----------------------------
 
   /** Buffer the latest Webview edit and (re)arm the debounce timer. */
   private queuePendingEdit(text: string, version: number): void {
@@ -307,7 +307,7 @@ class LivePreviewEditorSession {
     await this.postDirtyState();
   }
 
-  /** Flush the buffered edit, then delegate Undo/Redo to VS Code (R-17 / R-18). */
+  /** Flush the buffered edit, then delegate Undo/Redo to VS Code (R-33-02 / R-33-03). */
   private async runHistoryCommand(kind: 'undo' | 'redo'): Promise<void> {
     this.log(`${kind}-request`, {});
     await this.flushPendingEdit();
@@ -339,7 +339,7 @@ class LivePreviewEditorSession {
 
     // Any change we did not originate (VS Code Undo/Redo, standard editing,
     // save participants, Git, other extensions, autoSave normalization) is an
-    // external change reflected one-directionally into the Webview (R-16).
+    // external change reflected one-directionally into the Webview (R-33-04).
     this.log('external-change', { documentVersion, chars: documentText.length });
     this.enqueue(async () => this.reconcileExternalChange());
   }
@@ -347,7 +347,7 @@ class LivePreviewEditorSession {
   private async reconcileExternalChange(): Promise<void> {
     if (this.disposed) return;
     // Preserve any confirmed-but-unapplied local input before adopting the
-    // external document text, so keystrokes are never dropped (R-22 priority).
+    // external document text, so keystrokes are never dropped (R-33-02).
     if (this.pendingEdit) await this.applyPendingEdit();
     const text = toLF(this.document.getText());
     if (text === this.webviewText) {
@@ -673,7 +673,7 @@ class LivePreviewEditorSession {
     this.log('editor-dispose', { pending: this.pendingEdit !== undefined });
     // Apply any buffered edit so a keystroke made just before closing the editor
     // is not lost. The panel is gone, so no ack/update is posted afterwards, and
-    // the document is never saved here (R-22 / R-19-03).
+    // the document is never saved here (R-33-04).
     this.enqueue(async () => this.flushPendingEdit());
     if (this.editDebounceTimer) {
       clearTimeout(this.editDebounceTimer);

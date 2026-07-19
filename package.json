@@ -2,7 +2,7 @@
   "name": "vscode-livepreview-editor",
   "displayName": "Markdown ライブプレビューエディタ",
   "description": "Obsidian ライクな Markdown ライブプレビュー編集エディタ (CodeMirror 6)",
-  "version": "1.35.0",
+  "version": "1.36.0",
   "publisher": "Hashi-Kazu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -85,31 +85,31 @@
         "command": "livePreview.format.bold",
         "key": "ctrl+b",
         "mac": "cmd+b",
-        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
+        "when": "activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.italic",
         "key": "ctrl+i",
         "mac": "cmd+i",
-        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
+        "when": "activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.strikethrough",
         "key": "ctrl+shift+x",
         "mac": "cmd+shift+x",
-        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
+        "when": "activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.highlight",
         "key": "ctrl+shift+h",
         "mac": "cmd+shift+h",
-        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
+        "when": "activeCustomEditorId == livePreview.editor"
       },
       {
         "command": "livePreview.format.code",
         "key": "ctrl+e",
         "mac": "cmd+e",
-        "when": "activeWebviewPanelId == livePreview.viewer || activeCustomEditorId == livePreview.editor"
+        "when": "activeCustomEditorId == livePreview.editor"
       }
     ],
     "menus": {

@@ -16,11 +16,12 @@ import {
 } from '../src/core/sync';
 
 /**
- * Deterministic harness for the Custom Text Editor host (R-08/R-15/R-16/R-17/
- * R-18/R-19/R-22). It mirrors {@link LivePreviewEditorSession}'s serial queue and
- * sync decisions around a fake TextDocument and a minimal (history-less) real
- * CodeMirror Webview, so the ordering guarantees can be asserted without a live
- * VS Code / DOM.
+ * Deterministic harness for the Custom Text Editor host (R-03-12 custom editor
+ * registration, R-33 Undo/Redo delegation & key routing & host sync contract,
+ * R-04 self-echo / external reflection). It mirrors
+ * {@link LivePreviewEditorSession}'s serial queue and sync decisions around a
+ * fake TextDocument and a minimal (history-less) real CodeMirror Webview, so the
+ * ordering guarantees can be asserted without a live VS Code / DOM.
  */
 
 type ChangeListener = (version: number, text: string) => void;
@@ -341,7 +342,7 @@ describe('classifyUndoRedoKey (webview key routing)', () => {
   });
 });
 
-describe('Custom Text Editor host sync (R-16/R-17/R-18/R-19/R-22)', () => {
+describe('Custom Text Editor host sync (R-33 / R-04)', () => {
   it('28.1 does not echo a host update back to the host as an edit', async () => {
     const doc = new FakeDoc('');
     const { host, wv } = connect(doc);

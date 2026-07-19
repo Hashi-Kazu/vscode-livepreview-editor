@@ -2,7 +2,7 @@
 
 **関連文書**: [requirements-usdm.md](requirements-usdm.md)
 
-> ▶️ **開発継続中（2026-06-26 / v1.22.2）**: Live Preview 編集後の即時保存の受け入れ定義を更新した。
+> ▶️ **開発継続中（2026-07-19 / v1.36.0）**: Live Preview を CustomTextEditorProvider として再採用し、Undo/Redo を VS Code へ委譲した（ADR-0020、R-03-12／R-33）。`test/customEditor.provider.test.ts` を受け入れ対象に登録し、旧 WebviewPanel／follow 前提の手動確認項目を現行 Custom Text Editor 設計へ改訂した。
 
 テストは Vitest（`npm test`）で実行する。対象は `src/core` の純粋ロジック。各テストは仕様 ID（RXX-YY）と対応付ける。
 
@@ -21,7 +21,7 @@
 | `test/feature.format.test.ts` | R-16（toggleWrap：囲む・解除・空選択・往復） |
 | `test/feature.markdown.test.ts` | R-19（水平線）・R-20（エスケープ）・R-21（オートリンク）・R-22（表のレンダリング/parseTable） |
 | `test/feature.editing.test.ts` | R-23（リスト継続）・R-24（インデント）・R-25（見出しトグル）・R-26-02（リンクのマウスボタン判定） |
-| `test/viewer.lifecycle.test.ts` | R-03-02/05/06（URI 重複防止・最後に操作したビューアへの追従・バインド世代判定） |
+| `test/customEditor.provider.test.ts` | R-03-12（custom editor 登録）・R-33（Undo/Redo 委譲・key routing・host sync 契約）・R-04（self-echo/外部反映） |
 
 ## 実行方法
 
@@ -36,7 +36,8 @@ npm run coverage  # カバレッジ確認
 - PASS した仕様は `requirements-usdm.md` のステータスを `■■■` に更新する。
 - Webview 上の副作用（チェックボックスのトグル反映）は純粋ロジック外のため自動テスト対象外。クリック→postMessage の経路は手動確認（VSIX インストール後）に委ねる。対応仕様 R-08-05 は純粋ロジック側（行トグル計算 `toggleTaskAt`）のみ自動検証し、UI 結線は手動確認とする。
 - **v1.6.0 で追加・変更した以下は VS Code 上の手動確認項目（純粋ロジック外）**。VSIX インストール後に確認する:
-  - R-03-01〜09（ソース横への editable WebviewPanel 起動、異なる URI の複数ビューア、同一 URI の重複防止、`.md` リンク、`livePreview.followActiveEditor` の有効／無効、最後に操作したビューアの追従、保留編集後の安全な切り替え、タイトル・画像 resource base・変更リスナーの再バインド、ソースタブを閉じた後の編集継続、書式・チェックボックス・Undo・IME・CRLF・最小差分同期の維持）
+  - R-03-01〜04・R-03-12（`livePreview.openWith` でソース横へ Custom Text Editor を `ViewColumn.Beside` 起動、`priority: option` により `*.md` の既定は標準ソースエディタのまま、`supportsMultipleEditorsPerDocument: false` で同一 URI は複製せず既存エディタを reveal、異なる URI は並行して開ける、`.md` リンクで同一 URI を重複させず開く、書式・チェックボックス・IME・CRLF・最小差分同期の維持。R-03-05／R-03-09（active editor follow）・R-03-10（リネーム/削除の再バインド）は今回 version で廃止済みのため確認対象外）
+  - R-33（Undo/Redo の VS Code 委譲: `Ctrl/Cmd+Z`=undo・`Ctrl/Cmd+Shift+Z`／`Ctrl+Y`=redo がソースエディタと履歴を共有して動作し、`Ctrl/Cmd+S` で保存されること。IME 変換中は Undo/Redo キーを奪わないこと。undo/redo は保存を伴わないこと）
   - R-03-08（Live Preview 編集と `toggleTask` の `WorkspaceEdit` は即時反映され、適用成功後のみ現在の TextDocument を再取得して即時保存されること。差分なし・`applyEdit` false/失敗時・バインド変更時に保存されないこと。ソースタブを閉じた状態でも標準ソースエディタを表示せず保存されること）
   - R-05-04（レンダリング例外時に警告を表示し、Live Preview ビューアを閉じたり標準ソースエディタへ切り替えたりしないこと）
   - R-27-01〜03（見出しブロック折りたたみ、初期全閉、`▸`/`▾` ガター開閉）
