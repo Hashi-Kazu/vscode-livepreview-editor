@@ -21,6 +21,14 @@ describe('R-01-05 箇条書きは階層別マーカー(•/○/▪)を返す', (
     expect(bullets).toHaveLength(1);
     expect(bullets[0].attrs?.widget).toBe('•');
   });
+
+  it('indent 6/8(4・5段目)も3段目と同じ▪を返す(周期繰り返しは行わない)', () => {
+    const doc = ['- a', '  - b', '    - c', '      - d', '        - e'].join('\n');
+    const specs = computeDecorations(doc, new Set());
+    const bullets = byTag(specs, 'list-bullet');
+    expect(bullets).toHaveLength(5);
+    expect(bullets.map((b) => b.attrs?.widget)).toEqual(['•', '○', '▪', '▪', '▪']);
+  });
 });
 
 // R-01-07: 番号付きリストの階層別numeral
@@ -44,6 +52,15 @@ describe('R-01-07 番号付きリストは階層別numeralを返す', () => {
   it('indent 0 の単独番号付きリストは従来通りwidget無し(既存互換)', () => {
     const specs = computeDecorations('1. first', new Set());
     expect(byTag(specs, 'list-number')).toHaveLength(0);
+  });
+
+  it('indent 6/8(4・5段目)も3段目と同じアルファベット小文字を返す(周期繰り返しは行わない)', () => {
+    const doc = ['1. a', '  1. b', '    1. c', '      1. d', '        1. e'].join('\n');
+    const specs = computeDecorations(doc, new Set());
+    const numbers = byTag(specs, 'list-number');
+    // level0 has no widget; levels 1-4 do.
+    expect(numbers).toHaveLength(4);
+    expect(numbers.map((n) => n.attrs?.widget)).toEqual(['i.', 'a.', 'a.', 'a.']);
   });
 });
 

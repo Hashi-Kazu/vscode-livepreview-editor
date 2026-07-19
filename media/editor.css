@@ -314,7 +314,7 @@ body {
   display: inline-block;
   min-width: 1em;
   text-align: center;
-  font-size: 1.0em;
+  font-size: 1.2em;
   line-height: inherit;
 }
 /* The hollow circle (○, 2nd-level bullet) still reads visually larger than •/▪
@@ -609,10 +609,13 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 .cm-editor .cm-foldGutter .cm-gutterElement:hover {
   opacity: 1;
 }
-/* H1–H3 headings sit visually a bit lower within their (taller, more
-   top-padded) line block, so their chevron gets a slightly larger downward
-   nudge than the base 0.15em; H4–H6 use the base value untouched. */
-.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h1,
+/* Heading 1 sits visually a bit lower within its (taller, more top-padded)
+   line block, so its chevron gets the largest downward nudge; heading 2 and 3
+   get progressively smaller nudges than the base 0.15em; H4–H6 use the base
+   value untouched. */
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h1 {
+  transform: translateY(0.55em);
+}
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h2 {
   transform: translateY(0.42em);
 }

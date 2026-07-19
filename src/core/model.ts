@@ -1126,7 +1126,8 @@ export function computeDecorations(
       const markerEnd = markerStart + m[2].length + m[3].length;
       if (!isCursor) {
         const level = Math.floor(indent / 2);
-        const glyph = ULIST_BULLETS[level % ULIST_BULLETS.length];
+        const bulletLevel = Math.min(level, ULIST_BULLETS.length - 1);
+        const glyph = ULIST_BULLETS[bulletLevel];
         specs.push({ from: markerStart, to: markerEnd, type: 'replaceWidget', tag: 'list-bullet', attrs: { widget: glyph, indent: String(indent) } });
       }
       specs.push(...parseInline(line.text, line.from, isCursor, indent + m[2].length + m[3].length));
@@ -1154,7 +1155,8 @@ export function computeDecorations(
         if (markerMatch) {
           const num = parseInt(markerMatch[1], 10);
           const sep = markerMatch[2];
-          const numeral = level % 3 === 1 ? toRomanLower(num) : toAlpha(num);
+          const numeralLevel = Math.min(level, 2);
+          const numeral = numeralLevel === 1 ? toRomanLower(num) : toAlpha(num);
           const markerStart = line.from + indent;
           const markerEnd = markerStart + m[2].length + m[3].length;
           specs.push({
