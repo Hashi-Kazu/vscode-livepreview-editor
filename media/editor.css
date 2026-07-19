@@ -237,13 +237,13 @@ body {
    previous single `border-left`. Colours reuse the same theme variable for
    every level (R-28-04). */
 .cm-lp-quote-l1 {
-  padding-left: 12px;
+  padding-left: 16px;
   background-image: linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%;
   background-position: 0 0;
 }
 .cm-lp-quote-l2 {
-  padding-left: calc(1.4em + 12px);
+  padding-left: calc(1.4em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
@@ -251,7 +251,7 @@ body {
   background-position: 0 0, 1.4em 0;
 }
 .cm-lp-quote-l3 {
-  padding-left: calc(2.8em + 12px);
+  padding-left: calc(2.8em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -260,7 +260,7 @@ body {
   background-position: 0 0, 1.4em 0, 2.8em 0;
 }
 .cm-lp-quote-l4 {
-  padding-left: calc(4.2em + 12px);
+  padding-left: calc(4.2em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -270,7 +270,7 @@ body {
   background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0;
 }
 .cm-lp-quote-l5 {
-  padding-left: calc(5.6em + 12px);
+  padding-left: calc(5.6em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -281,7 +281,7 @@ body {
   background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0, 5.6em 0;
 }
 .cm-lp-quote-l6 {
-  padding-left: calc(7em + 12px);
+  padding-left: calc(7em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -314,15 +314,16 @@ body {
   display: inline-block;
   min-width: 1em;
   text-align: center;
-  font-size: 0.9em;
+  font-size: 1.0em;
   line-height: inherit;
 }
 /* The hollow circle (○, 2nd-level bullet) still reads visually larger than •/▪
    at the same font-size because of its glyph shape, so it gets its own smaller
    size on top of the shared box above (Issue #24 follow-up / R-01-05). Only the
-   glyph gains the extra class (`decorations.ts`); •/▪ keep the 0.9em above. */
+   glyph gains the extra class (`decorations.ts`); •/▪ keep the 1.0em above
+   (Issue #26: •/▪ enlarged and ○ shrunk further to rebalance tier sizes). */
 .cm-lp-list-bullet-hollow {
-  font-size: 0.72em;
+  font-size: 0.62em;
 }
 
 .cm-lp-list-number {
@@ -637,7 +638,9 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
    top-padded) line block, so their chevron gets a slightly larger downward
    nudge than the base 0.15em; H4–H6 use the base value untouched. */
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h1,
-.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h2,
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h2 {
+  transform: translateY(0.42em);
+}
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h3 {
   transform: translateY(0.28em);
 }
@@ -649,7 +652,7 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 }
 /* Folded-section placeholder: a subtle, theme-following pill. */
 .cm-foldPlaceholder {
-  background: var(--vscode-editorWidget-background, rgba(127, 127, 127, 0.12));
+  background: color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-editor-foreground) 10%);
   border: 1px solid var(--vscode-widget-border, transparent);
   color: var(--vscode-descriptionForeground);
   border-radius: 3px;
