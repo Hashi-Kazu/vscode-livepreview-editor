@@ -143,7 +143,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - 廃止 R-03-09（今回 version）: 書式コマンドとアクティブエディタ追従の「最後に操作したビューア」対象保持は、active editor follow の廃止に伴い不要となった。書式コマンド（`livePreview.format.*`）は最後に active になった Live Preview エディタ（`lastActive`）を対象にする。
 - 廃止 R-03-10（今回 version）: 対象ファイルのリネーム時のビューア再バインド・削除時のクローズは、CustomTextEditor 化により VS Code が単一 TextDocument バインドとリネーム/削除を管理するため、拡張側の再バインド処理は不要となり廃止した。
 - ■■□ R-03-11 Live Preview の編集・保存処理は、ユーザーが開いたソースエディタータブを自動的に閉じないこと。ソースタブ再表示への対策は、デバウンス apply 直後の即時保存によって TextDocument の dirty 滞留を防止する方式とし、`vscode.window.tabGroups.close()` による補完処理は使用しない。
-- ■■□ R-03-12 `customEditors` contribution（viewType `livePreview.editor`、`priority: option`、`filenamePattern: *.md`）を登録し、`registerCustomEditorProvider` の `supportsMultipleEditorsPerDocument: false`／`retainContextWhenHidden: true` で解決すること。`livePreview.openWith` は `vscode.openWith` でソース横（`ViewColumn.Beside`）に開き、既存エディタがあれば複製せず reveal すること。
+- ■■■ R-03-12 `customEditors` contribution（viewType `livePreview.editor`、`priority: option`、`filenamePattern: *.md`）を登録し、`registerCustomEditorProvider` の `supportsMultipleEditorsPerDocument: false`／`retainContextWhenHidden: true` で解決すること。`livePreview.openWith` は `vscode.openWith` でソース横（`ViewColumn.Beside`）に開き、既存エディタがあれば複製せず reveal すること。
 
 ### R-04 ドキュメント同期 #sync
 
@@ -151,8 +151,8 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜双方向同期＞
 
-- ■■□ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用する。適用は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms）でバッチ化し、その間の連続打鍵は最新 version で coalesce してから1回の最小差分として適用する。Live Preview の Undo/Redo は CodeMirror が history を持たず VS Code へ委譲する（R-33）。デバウンス中はホストが未 apply のため自己エコーも remote update も発生せず、Webview 内のキャレットはそのまま保持される。ソースエディタ側の undo 粒度はバッチ単位に粗くなる（許容）。host が起こした自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）は Webview へ反映しない。真の外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）または apply 失敗 rollback は、`reconcileExternalChange` が一方向に反映し、Webview は `computeRemotePatch` で選択を再マップした新しい EditorState に置換する（CodeMirror は history を持たないため単純置換）。
-- ■■□ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`applyPendingEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed の self-echo ledger（`expectedChanges`）へ記録し、`consumeExpectedWorkspaceEditChange` が一致させたその組だけを自己エコーとして消費する（Webview へ反映しない）。ledger に一致しない変更は真の外部変更として `reconcileExternalChange` が一度だけ一方向反映する。反映前に pending edit があれば先に `applyPendingEdit` して確定済み入力を失わない。VS Code の Undo/Redo で TextDocument が書き換わった結果も、この外部変更経路で Webview に反映される。ack は apply 成功または差分なし確認後だけ送る。
+- ■■■ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用する。適用は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms）でバッチ化し、その間の連続打鍵は最新 version で coalesce してから1回の最小差分として適用する。Live Preview の Undo/Redo は CodeMirror が history を持たず VS Code へ委譲する（R-33）。デバウンス中はホストが未 apply のため自己エコーも remote update も発生せず、Webview 内のキャレットはそのまま保持される。ソースエディタ側の undo 粒度はバッチ単位に粗くなる（許容）。host が起こした自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）は Webview へ反映しない。真の外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）または apply 失敗 rollback は、`reconcileExternalChange` が一方向に反映し、Webview は `computeRemotePatch` で選択を再マップした新しい EditorState に置換する（CodeMirror は history を持たないため単純置換）。
+- ■■■ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`applyPendingEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed の self-echo ledger（`expectedChanges`）へ記録し、`consumeExpectedWorkspaceEditChange` が一致させたその組だけを自己エコーとして消費する（Webview へ反映しない）。ledger に一致しない変更は真の外部変更として `reconcileExternalChange` が一度だけ一方向反映する。反映前に pending edit があれば先に `applyPendingEdit` して確定済み入力を失わない。VS Code の Undo/Redo で TextDocument が書き換わった結果も、この外部変更経路で Webview に反映される。ack は apply 成功または差分なし確認後だけ送る。
 - ■■□ R-04-03 Webview は edit version と ack version を別管理し、external update を `baseVersion === editVersion === ackVersion` のときだけ適用する。未 ack local edit、IME、または保留 local change 中は最新1件を保留して ack 後に再判定し、古い base は破棄する。旧形式（baseVersion なし）は未 ack local edit がない場合だけ適用する。`workspace.applyEdit` false の rollback は失敗 edit version を基準にして、より新しい local edit を上書きしない。
 
 > **R-04-02 追記（今回 version）**: CustomTextEditor 再採用と Undo/Redo の VS Code 委譲（R-33、ADR-0020）に伴い、旧設計の保存正規化再分類（`classifyDocumentChange`／`SelfSaveGuard`／`preserveHistory`／`isSaveParticipantNormalization`／`isTrailingNewlineOnlyDifference`）による history 保持レコンサイルは撤去した。現行 provider は self-echo ledger（`consumeExpectedWorkspaceEditChange`）で自己エコーだけを消費し、それ以外は `reconcileExternalChange` が一度だけ一方向反映する単純化した経路に統一している。CodeMirror が history を持たないため、外部反映は EditorState の単純置換で足りる（out-of-history 適用による Undo 崩れの問題自体が発生しない）。なお `src/core/sync.ts` の同名純粋関数は他テストの回帰基準として残置している。
@@ -459,7 +459,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜キー分類・委譲＞
 
-- ■■□ R-33-01 `classifyUndoRedoKey` は、`Ctrl/Cmd+Z`=undo、`Ctrl/Cmd+Shift+Z` および `Ctrl+Y`（非 Cmd）=redo、`Ctrl/Cmd+S`=save に分類し、IME 変換中（`isComposing`）・Alt 併用・修飾なしは `undefined` を返すこと。
-- ■■□ R-33-02 host は undo/redo/save の実行前に必ず pending edit を `flushPendingEdit`（apply）で反映し、その後 `executeCommand('undo'|'redo')`／`document.save()`（dirty のときだけ）を実行すること。undo/redo は保存しないこと。
-- ■■□ R-33-03 Webview（CodeMirror）は Undo/Redo history を持たず（`@codemirror/commands` の `history()`／`historyKeymap`／`isolateHistory` を import・登録しない）、Undo/Redo キーは host へ転送すること。
-- ■■□ R-33-04 host は自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）を消費し Webview へ反映せず、外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）は `reconcileExternalChange` で一度だけ一方向反映すること。dispose 時は pending edit を flush するが保存はしないこと。
+- ■■■ R-33-01 `classifyUndoRedoKey` は、`Ctrl/Cmd+Z`=undo、`Ctrl/Cmd+Shift+Z` および `Ctrl+Y`（非 Cmd）=redo、`Ctrl/Cmd+S`=save に分類し、IME 変換中（`isComposing`）・Alt 併用・修飾なしは `undefined` を返すこと。
+- ■■■ R-33-02 host は undo/redo/save の実行前に必ず pending edit を `flushPendingEdit`（apply）で反映し、その後 `executeCommand('undo'|'redo')`／`document.save()`（dirty のときだけ）を実行すること。undo/redo は保存しないこと。
+- ■■■ R-33-03 Webview（CodeMirror）は Undo/Redo history を持たず（`@codemirror/commands` の `history()`／`historyKeymap`／`isolateHistory` を import・登録しない）、Undo/Redo キーは host へ転送すること。
+- ■■■ R-33-04 host は自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）を消費し Webview へ反映せず、外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）は `reconcileExternalChange` で一度だけ一方向反映すること。dispose 時は pending edit を flush するが保存はしないこと。
