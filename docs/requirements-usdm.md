@@ -1,12 +1,14 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.37.7
+**バージョン**: 1.37.8
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-20
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-20 時点 / v1.37.8）**: v1.37.8 で、見出し折りたたみシェブロンの縦位置調整を、見出しレベルごとの独立した固定 `translateY`（見出し 1〜3 のみに追加適用、値はパディングとの算出根拠を共有しない手調整）から、見出し行の縦パディング比率 `--lp-hN-pt`/`--lp-hN-pb`/`--lp-hN-size` とガター倍率 `--lp-fold-gutter-size` を単一の真実源とし `(padding-top − padding-bottom) / 2` を `calc()` で導出する方式へ全面的に置き換えた（R-30-04）。見出し 1〜6 の全レベルにガター要素クラス `cm-lp-fold-h1`〜`cm-lp-fold-h6` を付与するよう `headingGutterMarks`（`src/webview/main.ts`）を拡張し、見出し 4〜6 も含めて字面中央に揃うようにした。見出しの font-size・padding-top・padding-bottom の見た目の値自体は変更していない（既存の `.cm-lp-hN` の描画結果は同一）。純粋関数 `scanHeadings`/`headingFoldRange` のロジックは変更していない。`npm run check-types` と `npx vitest run` で既存の fold 関連テストの回帰が無いことを確認した。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
+>
 > ▶️ **開発継続中（2026-07-20 時点 / v1.37.7）**: v1.37.7 で、箇条書きの基本アイコンサイズ（`.cm-lp-list-bullet` の `font-size`）を `1.4em` から `1.6em` へさらに拡大した（2 段目の ○＝`.cm-lp-list-bullet-hollow` の `0.62em` は不変、R-01-05）。`test/feature.issue16.decorations.test.ts` の CSS 値アサーションを更新して検証。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
 >
 > ▶️ **開発継続中（2026-07-20 時点 / v1.37.6）**: v1.37.6 で、折りたたみプレースホルダー（`.cm-foldPlaceholder`）の背景色が CodeMirror 既定テーマの `#eee`（詳細度 0,2,0）に上書きされ、editor.css 側で意図した地色寄りの `color-mix` 配色（R-30-04）が実際には適用されていなかった不具合を修正した。セレクタを `.cm-foldPlaceholder` から `.cm-editor .cm-foldPlaceholder` へ変更し、詳細度を 0,2,0 以上へ引き上げることで CodeMirror 既定テーマより優先されるようにした。`background`／`border`／`border-radius`／`padding`／`margin` の値自体は変更していない。`test/feature.issue30.foldPlaceholderTheme.test.ts` を新設して検証した。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
@@ -442,7 +444,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-30-01 純粋関数 `scanHeadings` はフェンスコードブロック内の `#` を除外して全見出しを行番号・レベル・テキスト・オフセット付きで返すこと。
 - ■■□ R-30-02 純粋関数 `headingFoldRange` は見出し行に対し、次の同レベル以下の見出し直前までを折りたたみ範囲として返し、配下が無い場合は `null` を返すこと。コードブロックを跨いでも正しく範囲を返すこと。
 - ■■□ R-30-03 Webview は `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldKeymap` で見出し配下を折りたたみ／展開できること。既定は全展開。
-- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。開状態は下向き、閉状態は右向きの VS Code 標準風の細いシェブロンとし、塗りつぶし三角形を用いないこと。シェブロンは視認性のためさらに拡大する（`font-size: 1.5em` 目安）。ガター要素はガター要素自身の中央揃え（`align-items: center`）とし、基本ナッジは `translateY` 目安 `0.15em` とすること（Issue #24：#21 で `align-items: flex-start` ＋大きな `translateY(0.55em)` に変更した結果シェブロンが下方向へずれ過ぎ、別の行に属するように見えてしまったため巻き戻し）。見出し 1〜3（`#`/`##`/`###`）のガター要素のみ、他の見出しレベルより上パディングが大きく本文中心がブロック中心よりわずかに下にあることを補うため、基本ナッジよりわずかに大きい下方向ナッジを追加適用すること。見出し 1 は目安 `translateY(0.7em)`、見出し 2 は目安 `translateY(0.42em)`、見出し 3 は目安 `translateY(0.28em)` とする（Issue #26 で見出し 1・2 のみさらに下方向へ調整、その後見出し 1 のみさらに下方向へ2回にわたり再調整）。見出し 4〜6 のガター要素は基本ナッジのまま縦位置調整を行わないこと。ガターそのものには見出しレベル情報が無いため、見出しレベル別クラスをガター要素へ付与する機構（`gutterLineClass` 等）を用いてよい。クリック領域、`foldKeymap`、fold placeholder は維持すること（#8）。fold placeholder の背景は地色に近い控えめな色（`color-mix` によるテーマ追従、白背景を強調しない）とし、`border` による差別化のみで通常表示と区別できること（Issue #26）。
+- ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。開状態は下向き、閉状態は右向きの VS Code 標準風の細いシェブロンとし、塗りつぶし三角形を用いないこと。シェブロンは視認性のためさらに拡大する（`font-size: 1.5em` 目安）。ガター要素はガター要素自身の中央揃え（`align-items: center`）とすること（Issue #24：#21 で `align-items: flex-start` ＋大きな `translateY(0.55em)` に変更した結果シェブロンが下方向へずれ過ぎ、別の行に属するように見えてしまったため巻き戻し）。ガター要素の高さは対応する見出し行の（パディング込みの）ブロック高に一致するが、見出し行は `padding-top ≫ padding-bottom` の非対称パディングを持つため、`align-items: center` だけではシェブロンが見出しテキスト字面の視覚中心よりも下にずれる。この補正量は見出しレベルごとに固定値を個別に手調整するのではなく、`(padding-top − padding-bottom) / 2` を、見出し自身の font-size 倍率とガターの font-size 倍率（`--lp-fold-gutter-size`）で単位変換した `translateY` として、見出し 1〜6 全レベルについて `calc()` により導出すること。見出しの font-size・padding-top・padding-bottom・折りたたみガターの font-size 倍率は、見出しレベルごとに 1 か所の CSS カスタムプロパティ（`--lp-hN-size`／`--lp-hN-pt`／`--lp-hN-pb`／`--lp-fold-gutter-size`）で定義し、見出し本体のスタイルとガターのナッジの両方がこの同じ値を参照すること。これにより、見出しのサイズやパディング比率を変更しても、ガターの縦位置ナッジをレベルごとに個別に手調整することなく、シェブロンが見出しテキスト字面の中央に揃い続ける構造とする（旧方式は見出し 1〜3 にのみ独立した固定 `translateY` 値を追加適用しており、見出し 4〜6 には補正が無く、値もパディングとの算出根拠を共有しない手調整のマジックナンバーの積み増しだったため、フォントサイズやパディングを変えるたびにズレが生じていた）。ガターそのものには見出しレベル情報が無いため、見出しレベル別クラス（`cm-lp-fold-h1`〜`cm-lp-fold-h6`、見出し 1〜6 全レベルに付与）をガター要素へ付与する機構（`gutterLineClass` 等）を用いてよい。クリック領域、`foldKeymap`、fold placeholder は維持すること（#8）。fold placeholder の背景は地色に近い控えめな色（`color-mix` によるテーマ追従、白背景を強調しない）とし、`border` による差別化のみで通常表示と区別できること（Issue #26）。
 
 ### 廃止 R-31 未保存インジケータ #unsaved
 
