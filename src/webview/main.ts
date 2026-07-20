@@ -30,7 +30,7 @@ import {
 import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
-import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
+import { changeIndent, changeListIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
 import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize, displayFontSize, clampScrollLine } from '../core/viewport';
 
@@ -353,18 +353,57 @@ function handleEnter(target: EditorView): boolean {
   return true;
 }
 
-/** Tab / Shift-Tab: indent or outdent a list line. */
+/**
+ * Tab / Shift-Tab: indent or outdent list lines, aligning child content to the
+ * parent item's marker width (Issue #53). Every selected line is resolved
+ * against a single pre-edit snapshot of the document, so indenting several
+ * sibling items together lands them all at the same new level instead of
+ * cascading off one another. Non-list lines keep the prior fixed-width
+ * behavior: Tab falls through to the default keymap, Shift-Tab dedents by
+ * `changeIndent`'s fixed unit (R-24-01/02).
+ */
 function indentCommand(delta: number) {
   return (target: EditorView): boolean => {
-    const { from } = target.state.selection.main;
-    const line = target.state.doc.lineAt(from);
-    if (delta > 0 && !continueList(line.text).isList) return false; // default tab elsewhere
-    const { text, shift } = changeIndent(line.text, delta);
-    if (text === line.text) return delta < 0; // nothing to outdent
-    target.dispatch({
-      changes: { from: line.from, to: line.from + line.text.length, insert: text },
-      selection: { anchor: Math.max(line.from, from + shift) },
-    });
+    const state = target.state;
+    const doc = state.doc;
+    const sel = state.selection.main;
+    const startLine = doc.lineAt(sel.from).number;
+    const endLine = doc.lineAt(sel.to).number;
+
+    const allLines: string[] = [];
+    for (let n = 1; n <= doc.lines; n++) allLines.push(doc.line(n).text);
+
+    const changes: { from: number; to: number; insert: string }[] = [];
+    let anyListLine = false;
+    let singleShift = 0;
+    for (let n = startLine; n <= endLine; n++) {
+      const line = doc.line(n);
+      const precedingLines = allLines.slice(0, n - 1);
+      const listEdit = changeListIndent(line.text, delta, precedingLines);
+      let editText = line.text;
+      let editShift = 0;
+      if (listEdit) {
+        anyListLine = true;
+        editText = listEdit.text;
+        editShift = listEdit.shift;
+      } else if (delta < 0) {
+        const fallback = changeIndent(line.text, delta);
+        editText = fallback.text;
+        editShift = fallback.shift;
+      }
+      if (editText !== line.text) changes.push({ from: line.from, to: line.from + line.text.length, insert: editText });
+      if (n === startLine) singleShift = editShift;
+    }
+
+    if (delta > 0 && !anyListLine) return false; // no list line touched → default tab elsewhere
+
+    if (changes.length > 0) {
+      if (startLine === endLine) {
+        target.dispatch({ changes, selection: { anchor: Math.max(doc.line(startLine).from, sel.from + singleShift) } });
+      } else {
+        target.dispatch({ changes });
+      }
+    }
     return true;
   };
 }
