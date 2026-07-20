@@ -288,14 +288,20 @@ body {
   color: var(--vscode-textBlockQuote-foreground, var(--vscode-descriptionForeground, inherit));
 }
 /* Nested blockquotes (`>>`, `>>>`, …): each level draws `n` vertical bars (one
-   per ancestor level plus itself) at `k * 2em` offsets via stacked
+   per ancestor level plus itself) at `k * 16px` offsets via stacked
    `linear-gradient`s, and reserves the equivalent horizontal space with
    `padding-left` so body text starts further right at each level. Bars are 3px
    wide, matching the previous single `border-left`. Colours reuse the same
    theme variable for every level (R-28-04).
-   Issue #36: the per-level step was widened 1.4em→2em so nested levels are
-   clearly offset from their parent (and visually consistent with the 2em/level
-   list indentation from Issue #31); bar count/width/colour are unchanged. */
+   Issue #41: the per-level step is exactly `16px`, the same distance `l1`
+   already reserves between its bar (x=0) and its text (padding-left 16px). With
+   step == that innermost gap, every nested bar lands precisely on the column
+   where its parent level's text begins — so an `l2` line's own bar sits under
+   the parent quote's text, giving correct nested indentation instead of the
+   earlier `2em` step (Issue #36), where the nested bar overshot the parent text
+   column (bar step 2em ≠ text gap 16px) and the nesting looked broken (Issue
+   #41's report). `l1` (a plain single-level blockquote) is unchanged; bar
+   count/width/colour stay as before. */
 .cm-lp-quote-l1 {
   padding-left: 16px;
   background-image: linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
@@ -303,34 +309,34 @@ body {
   background-position: 0 0;
 }
 .cm-lp-quote-l2 {
-  padding-left: calc(2em + 16px);
+  padding-left: 32px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%;
-  background-position: 0 0, 2em 0;
+  background-position: 0 0, 16px 0;
 }
 .cm-lp-quote-l3 {
-  padding-left: calc(4em + 16px);
+  padding-left: 48px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 2em 0, 4em 0;
+  background-position: 0 0, 16px 0, 32px 0;
 }
 .cm-lp-quote-l4 {
-  padding-left: calc(6em + 16px);
+  padding-left: 64px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 2em 0, 4em 0, 6em 0;
+  background-position: 0 0, 16px 0, 32px 0, 48px 0;
 }
 .cm-lp-quote-l5 {
-  padding-left: calc(8em + 16px);
+  padding-left: 80px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -338,10 +344,10 @@ body {
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 2em 0, 4em 0, 6em 0, 8em 0;
+  background-position: 0 0, 16px 0, 32px 0, 48px 0, 64px 0;
 }
 .cm-lp-quote-l6 {
-  padding-left: calc(10em + 16px);
+  padding-left: 96px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -350,7 +356,7 @@ body {
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 2em 0, 4em 0, 6em 0, 8em 0, 10em 0;
+  background-position: 0 0, 16px 0, 32px 0, 48px 0, 64px 0, 80px 0;
 }
 
 .cm-lp-link {
@@ -374,8 +380,16 @@ body {
   display: inline-block;
   min-width: 1em;
   text-align: center;
-  font-size: 1.2em;
-  line-height: inherit;
+  font-size: 1.4em;
+  /* `.cm-line` uses a unitless `line-height: 1.6`, which the enlarged 1.4em
+     glyph would inherit as a 1.6×1.4em = 2.24em line box — taller than the
+     1.6em base line box, so •/▪ rows (every level except the 0.55em hollow ○)
+     grew extra vertical space between list items. Pin the bullet to a fixed
+     `line-height: 1` (1×1.4em = 1.4em < 1.6em) so it never pushes the line box
+     taller and item spacing matches the ○ rows across every level (Issue #41 /
+     R-01-05). */
+  line-height: 1;
+  vertical-align: baseline;
 }
 /* The hollow circle (○, 2nd-level bullet) still reads visually larger than •/▪
    at the same font-size because of its glyph shape, so it gets its own smaller
@@ -385,7 +399,9 @@ body {
    Issue #33: base reverted 1.6em→1.4em, ○ kept at 0.62em unchanged;
    Issue #33 follow-up: ○ shrunk further 0.62em→0.55em;
    Issue #36: base bullet shrunk 1.4em→1.2em so every level except ○ reads at
-   the 1.2em box; ○ stays at 0.55em unchanged). */
+   the 1.2em box; ○ stays at 0.55em unchanged;
+   Issue #41: base bullet enlarged 1.2em→1.4em (with a pinned line-height so the
+   taller glyph no longer widens list-item spacing); ○ stays at 0.55em). */
 .cm-lp-list-bullet-hollow {
   font-size: 0.55em;
 }
