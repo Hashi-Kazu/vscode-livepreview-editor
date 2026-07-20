@@ -32,10 +32,10 @@ describe('R-01-05 箇条書きは階層別マーカー(•/○/▪)を返す', (
     expect(bullets.map((b) => b.attrs?.widget)).toEqual(['•', '○', '▪', '▪', '▪']);
   });
 
-  it('.cm-lp-list-bulletのfont-sizeは1.6em、hollow(○)は0.62emのまま', () => {
+  it('.cm-lp-list-bulletのfont-sizeは1.4em、hollow(○)は0.55emのまま', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
-    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.6em;/);
-    expect(css).toMatch(/\.cm-lp-list-bullet-hollow\s*\{[^}]*font-size:\s*0\.62em;/);
+    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.4em;/);
+    expect(css).toMatch(/\.cm-lp-list-bullet-hollow\s*\{[^}]*font-size:\s*0\.55em;/);
   });
 
   it('3段目と4段目は同一グリフ(▪)だがindent属性は異なる(階層差は保持、回帰: Issue #31)', () => {
