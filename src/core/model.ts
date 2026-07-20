@@ -47,6 +47,20 @@ export interface DecorationOptions {
    * caret position (R-22-02 / R-22-09).
    */
   detailsDirectEditStartLines?: Set<number>;
+  /**
+   * Set of 0-based start-line indices of ```mermaid blocks the user has opted
+   * into raw-source ("Mermaidを編集") editing for. Unlike KaTeX (R-32) and tables
+   * (R-22) — which switch to raw automatically when the caret enters — mermaid
+   * blocks stay rendered as a widget regardless of caret position by default
+   * (viewer-only, same as `<details>` R-27-03). Only when a block's start line is
+   * in this set AND the caret is inside the block is the widget suppressed so the
+   * raw ```mermaid source (with R-34 language highlight) becomes editable. The
+   * opt-in is added via the right-click "Mermaidを編集" context-menu item and
+   * pruned once the caret leaves the block (R-36-05, mirrors
+   * `detailsDirectEditStartLines`). Absent/empty → mermaid blocks always render as
+   * widgets (R-36-02).
+   */
+  mermaidDirectEditStartLines?: Set<number>;
 }
 
 export interface LineInfo {
@@ -121,6 +135,42 @@ export function detectCodeBlocks(lines: LineInfo[]): CodeBlockInfo {
     }
   }
   return { role, blockOf };
+}
+
+export interface MermaidBlock {
+  start: number; // line index of the opening ```mermaid fence
+  end: number; // line index of the closing fence
+  code: string; // raw diagram source between the fences (newline-joined, untrimmed)
+}
+
+/**
+ * Identify fenced code blocks whose info string's first token is `mermaid`
+ * (case-insensitive), e.g. ```` ```mermaid ````. Pure & framework-agnostic.
+ * Consumes the result of {@link detectCodeBlocks} so fence scanning stays a
+ * single source of truth (unchanged here). Only terminated blocks (a real
+ * closing fence, `role[close] === 'close'`) qualify; an unterminated ```mermaid
+ * opener is left as raw text. Other languages (```js, ```markdown, …) and
+ * info-string-less fences are ignored. The `code` is every line strictly
+ * between the opening and closing fences, joined with `\n`, preserving interior
+ * indentation (not trimmed) so the diagram source round-trips verbatim (R-36-01).
+ */
+export function detectMermaidBlocks(lines: LineInfo[], code: CodeBlockInfo): MermaidBlock[] {
+  const blocks: MermaidBlock[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (code.role[i] !== 'open') continue;
+    const block = code.blockOf[i];
+    if (!block) continue;
+    // Only terminated fences carry a 'close' role; unterminated openers do not.
+    if (code.role[block.close] !== 'close') continue;
+    const fenceMatch = FENCE_RE.exec(lines[i].text);
+    if (!fenceMatch) continue;
+    const lang = fenceMatch[3].trim().split(/\s+/)[0].toLowerCase();
+    if (lang !== 'mermaid') continue;
+    const codeLines: string[] = [];
+    for (let j = block.open + 1; j < block.close; j++) codeLines.push(lines[j].text);
+    blocks.push({ start: block.open, end: block.close, code: codeLines.join('\n') });
+  }
+  return blocks;
 }
 
 export interface TableBlock {
@@ -839,6 +889,13 @@ export function computeDecorations(
   for (const ab of alertBlocks) {
     for (let j = ab.start; j <= ab.end; j++) alertBlockOf[j] = ab;
   }
+  const mermaidBlocks = detectMermaidBlocks(lines, code);
+  const mermaidStartAt = new Map<number, MermaidBlock>();
+  const mermaidMember: boolean[] = new Array(lines.length).fill(false);
+  for (const mm of mermaidBlocks) {
+    mermaidStartAt.set(mm.start, mm);
+    for (let j = mm.start; j <= mm.end; j++) mermaidMember[j] = true;
+  }
   const specs: DecoSpec[] = [];
 
   // Tracks the nesting level of the most recently seen blockquote line, so a
@@ -866,6 +923,31 @@ export function computeDecorations(
     // --- Fenced code blocks ---------------------------------------------
     if (role) {
       lastQuoteLevel = 0;
+      // --- Mermaid diagrams (```mermaid) --------------------------------
+      // A mermaid block renders as a block widget by DEFAULT regardless of caret
+      // position (viewer-only, R-27-03 style — NOT the KaTeX/table auto
+      // fall-through). Only when the user has opted the block into raw editing
+      // via the context menu AND the caret is inside it do we fall through to the
+      // normal code-block rendering so the raw ```mermaid source (with R-34
+      // language highlight) becomes editable (R-36-02 / R-36-05).
+      const mermaid = mermaidStartAt.get(i);
+      if (mermaid) {
+        const directEdit =
+          !!options.mermaidDirectEditStartLines?.has(mermaid.start) &&
+          blockHasCursor(mermaid.start, mermaid.end);
+        if (!directEdit) {
+          specs.push({
+            from: lines[mermaid.start].from,
+            to: lines[mermaid.end].to,
+            type: 'replaceWidget',
+            tag: 'mermaid-block',
+            attrs: { code: mermaid.code, startLine: String(mermaid.start) },
+          });
+          i = mermaid.end;
+          continue;
+        }
+        // directEdit → fall through to the standard code-block rendering below.
+      }
       const block = code.blockOf[i]!;
       const active = blockHasCursor(block.open, block.close);
       const roleClass =

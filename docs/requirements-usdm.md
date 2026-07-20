@@ -1,7 +1,7 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.42.0
+**バージョン**: 1.43.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-20
 **ステータス**: 承認済み  
@@ -522,3 +522,15 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-35-01 標準ソースエディタを縦スクロールすると、Live Preview（Webview）が対応する行が最上部に来るよう追従してスクロールすること。同期は 0 始まり行番号を同期キーとし、`onDidChangeTextEditorVisibleRanges` の対象 URI 一致イベントを `scrollTo` メッセージとして Webview へ送ること。
 - ■■■ R-35-02 Live Preview（Webview）を縦スクロールすると、対象 URI に一致する標準ソースエディタ（`visibleTextEditors`）が対応する行を `revealRange`（`AtTop`）で追従すること。算出は `.cm-scroller` の scroll イベントを rAF スロットルし、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を求めること。
 - ■■■ R-35-03 相互のスクロール同期が無限ループ・振動を起こさないこと。(1) Webview 側 `applyingRemoteScroll` ガード、(2) host 側の時刻ベース抑止窓（`revealRange` 起因の `onDidChangeTextEditorVisibleRanges` を中継しない）、(3) host 側の直近同期行デデュープ、の 3 層で防止し、各層の純粋判定ロジック（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`、`src/core/viewport.ts`）は DOM/vscode 非依存に実装し単体テストすること（`test/feature.issue37.scrollSync.test.ts`）。長文（数千行規模）でも安定して同期し振動しないこと（手動確認）。
+
+### R-36 Mermaid ダイアグラムのライブレンダリング #mermaid
+
+> **理由：** 技術文書の図表（フローチャート・シーケンス図等）を編集中にそのまま確認でき、ライブプレビューの本来価値（表示と編集の一致）を拡張するため。SVG 描画は KaTeX（R-32）の前例をなぞるが、編集への移行は `<details>` アコーディオン（R-27-07）と同じ**コンテキストメニュー・オプトイン方式**とする。
+
+> **説明：** 装飾判定は CodeMirror 非依存の純粋関数（`src/core/model.ts`）で行う（ADR-0002 / 0003）。新設の純粋関数 `detectMermaidBlocks(lines, code)` が、開始フェンス情報文字列先頭トークンが `mermaid` のフェンスコードブロックを行範囲＋生コードとして検知する（未終了フェンス・他言語は対象外）。`computeDecorations` は**既定ではキャレット位置に依らず**ブロック全体を `replaceWidget`（tag `mermaid-block`、`block: true`、`attrs.code`／`attrs.startLine`）へ置換する（ビューア専用、R-27-03 と同型）。`DecorationOptions.mermaidDirectEditStartLines?: Set<number>` に開始行がオプトインされ**かつ**キャレットがブロック内にあるときだけ、ウィジェットを emit せず既存コードブロック描画（R-34 の言語ハイライト含む）へフォールスルーして生 ```mermaid を編集可能にする。オプトインは Webview 側の右クリックコンテキストメニュー項目「Mermaidを編集」（`src/webview/main.ts`、`showDetailsMenu`/表メニューの chrome を再利用）で当該開始行を集合へ登録し、キャレットを開始行へ移動して行う。キャレットがブロック外へ出たら `pruneMermaidDirectEdit` が集合から除去しウィジェットへ復帰する（表 R-22-09・`<details>` R-27-07 と同じ体験）。Webview（`src/webview/decorations.ts`）は `MermaidBlockWidget` を追加し、`mermaid.render` の**非同期**結果 SVG を DOM へ注入する（`securityLevel: 'strict'` サニタイズ済み SVG のみ、生ユーザー HTML 不挿入）。Mermaid JS は `dist/webview.js` に IIFE バンドル同梱、CSS/フォント外部配信は不要。CSP は nonce script-src・`style-src 'unsafe-inline'`・`img-src data:` の現状維持（ADR-0006、外部 script を追加しない）。`MermaidBlockWidget` は `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず、非同期描画完了時と `updateDOM` で `requestMeasure` を呼ぶ（R-28-10 / R-28-11）。本文は書き換えない（R-01-02）。方式・新規依存は ADR-0023 に記録。
+
+- ■■□ R-36-01 純粋関数 `detectMermaidBlocks` は、開始フェンス情報文字列の先頭トークンが `mermaid`（大小無視）のフェンスコードブロックを行範囲＋生コードとして検知し、未終了フェンス・他言語フェンス（```markdown 等）を対象外とすること。フェンス検知（`detectCodeBlocks`）は不変とすること。
+- ■■□ R-36-02 `computeDecorations` は既定で（キャレットがブロック内にあっても）mermaid ブロックを常に `mermaid-block` block replaceWidget へ置換すること。KaTeX（R-32）・表（R-22）のような「キャレット行で自動的に生記法へフォールスルー」する挙動は mermaid には適用しないこと。`mermaidDirectEditStartLines` に開始行がオプトインされ、かつキャレットがブロック内にあるときだけ生記法（既存コードブロック描画）へフォールスルーすること。装飾は入力文字列を変更しないこと（R-01-02）。
+- ■■□ R-36-05 レンダリング表示から編集（生記法表示）への移行は、右クリックコンテキストメニュー項目「Mermaidを編集」からのオプトインでのみ発生すること（カーソル行移動だけでは移行しない）。オプトインは当該ブロック開始行を `mermaidDirectEditStartLines` に登録しキャレットを開始行へ移動すること。キャレットがブロック外へ出たら `pruneMermaidDirectEdit` がオプトインを解除しウィジェット表示へ復帰すること（表 R-22-09・`<details>` R-27-07 と同じ復帰体験）。編集中/表示中の per-block 状態は Webview の module-level 集合で保持し、装飾判定は純粋関数側がオプトイン集合とキャレット位置から決定すること（新規 StateField 拡張を要しない、ADR-0002）。
+- ■■□ R-36-03 Webview は Mermaid を JS バンドル同梱し、`mermaid.render` の非同期結果 SVG を DOM へ描画すること。レンダリング失敗時も Webview を落とさず生コードをフォールバック表示すること。CSP（nonce script-src／`style-src 'unsafe-inline'`／`img-src data:`）を変更せず維持すること。テーマは VS Code の明暗（body クラス）に追従して選択すること。
+- ■■□ R-36-04 `MermaidBlockWidget` は `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず、非同期描画完了時および `updateDOM` で `requestMeasure` を呼んでブロック直下のクリック位置を実 SVG 高さに整合させること（R-28-10 / R-28-11）。破棄済みウィジェットへの注入・再測定はスキップすること。
