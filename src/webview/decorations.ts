@@ -24,6 +24,33 @@ class TextWidget extends WidgetType {
   }
 }
 
+class ListMarkerWidget extends WidgetType {
+  constructor(
+    private readonly text: string,
+    private readonly kind: 'bullet' | 'number',
+  ) {
+    super();
+  }
+  eq(other: ListMarkerWidget) {
+    return other.text === this.text && other.kind === this.kind;
+  }
+  toDOM() {
+    const marker = document.createElement('span');
+    marker.className = 'cm-lp-list-marker';
+
+    const content = document.createElement('span');
+    content.className =
+      this.kind === 'number'
+        ? 'cm-lp-list-number'
+        : this.text === '○'
+          ? 'cm-lp-list-bullet cm-lp-list-bullet-hollow'
+          : 'cm-lp-list-bullet';
+    content.textContent = this.text;
+    marker.appendChild(content);
+    return marker;
+  }
+}
+
 class CheckboxWidget extends WidgetType {
   constructor(private readonly checked: boolean) {
     super();
@@ -596,10 +623,10 @@ function toDecoration(s: DecoSpec): Decoration | null {
           block: true,
         });
       }
-      if (s.tag === 'list-bullet') {
-        const glyph = s.attrs?.widget ?? '';
-        const cls = glyph === '○' ? 'cm-lp-list-bullet cm-lp-list-bullet-hollow' : 'cm-lp-list-bullet';
-        return Decoration.replace({ widget: new TextWidget(glyph, cls) });
+      if (s.tag === 'list-bullet' || s.tag === 'list-number') {
+        return Decoration.replace({
+          widget: new ListMarkerWidget(s.attrs?.widget ?? '', s.tag === 'list-bullet' ? 'bullet' : 'number'),
+        });
       }
       return Decoration.replace({ widget: new TextWidget(s.attrs?.widget ?? '', `cm-lp-${s.tag}`) });
     default:

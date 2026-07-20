@@ -56,42 +56,43 @@ describe('R-01-05 箇条書きは階層別マーカー(•/○/▪)を返す', (
 
 // R-01-07: 番号付きリストの階層別numeral
 describe('R-01-07 番号付きリストは階層別numeralを返す', () => {
-  it('level0はwidget無し、level1はローマ数字、level2はアルファベット', () => {
+  it('level0はアラビア数字、level1はローマ数字、level2はアルファベット', () => {
     const doc = ['1. a', '  1. b', '    1. c'].join('\n');
     const specs = computeDecorations(doc, new Set());
     const numbers = byTag(specs, 'list-number');
-    // level0 (line 0, "1. a") has no widget at all — only levels 1 and 2 do.
-    expect(numbers).toHaveLength(2);
-    expect(numbers[0].attrs?.widget).toBe('i.');
-    expect(numbers[1].attrs?.widget).toBe('a.');
+    expect(numbers).toHaveLength(3);
+    expect(numbers.map((n) => n.attrs?.widget)).toEqual(['1.', 'i.', 'a.']);
   });
 
   it('カーソル行ではwidgetを生成しない(生記法のまま)', () => {
     const doc = ['1. a', '  1. b'].join('\n');
     const specs = computeDecorations(doc, new Set([1]));
-    expect(byTag(specs, 'list-number')).toHaveLength(0);
+    const numbers = byTag(specs, 'list-number');
+    expect(numbers).toHaveLength(1);
+    expect(numbers[0].attrs?.widget).toBe('1.');
   });
 
-  it('indent 0 の単独番号付きリストは従来通りwidget無し(既存互換)', () => {
+  it('indent 0 の単独番号付きリストは元のアラビア数字をwidgetで返す', () => {
     const specs = computeDecorations('1. first', new Set());
-    expect(byTag(specs, 'list-number')).toHaveLength(0);
+    const numbers = byTag(specs, 'list-number');
+    expect(numbers).toHaveLength(1);
+    expect(numbers[0].attrs?.widget).toBe('1.');
   });
 
   it('indent 6/8(4・5段目)も3段目と同じアルファベット小文字を返す(周期繰り返しは行わない)', () => {
     const doc = ['1. a', '  1. b', '    1. c', '      1. d', '        1. e'].join('\n');
     const specs = computeDecorations(doc, new Set());
     const numbers = byTag(specs, 'list-number');
-    // level0 has no widget; levels 1-4 do.
-    expect(numbers).toHaveLength(4);
-    expect(numbers.map((n) => n.attrs?.widget)).toEqual(['i.', 'a.', 'a.', 'a.']);
+    expect(numbers).toHaveLength(5);
+    expect(numbers.map((n) => n.attrs?.widget)).toEqual(['1.', 'i.', 'a.', 'a.', 'a.']);
   });
 
   it('3段目と4段目は同一アルファベットだがindent属性は異なる(階層差は保持、回帰: Issue #31)', () => {
     const doc = ['1. a', '  1. b', '    1. c', '      1. d'].join('\n');
     const specs = computeDecorations(doc, new Set());
     const numbers = byTag(specs, 'list-number');
-    expect(numbers.map((n) => n.attrs?.widget)).toEqual(['i.', 'a.', 'a.']);
-    expect(numbers.map((n) => n.attrs?.indent)).toEqual(['2', '4', '6']);
+    expect(numbers.map((n) => n.attrs?.widget)).toEqual(['1.', 'i.', 'a.', 'a.']);
+    expect(numbers.map((n) => n.attrs?.indent)).toEqual(['0', '2', '4', '6']);
   });
 });
 
@@ -143,10 +144,10 @@ describe('R-02-05 入れ子引用は階層クラスを返す', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
     // Issue #41: 段差を 2em から 16px(= l1 のバー↔テキスト間隔)へ改め、各入れ子
     // 階層のバーが親のテキスト列に整列するようにした。l2 は 32px、l6 は 6 段ぶん。
-    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*padding-left:\s*32px;/);
-    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*background-position:\s*0 0, 16px 0;/);
-    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*padding-left:\s*96px;/);
-    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*background-position:\s*0 0, 16px 0, 32px 0, 48px 0, 64px 0, 80px 0;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l2\s*\{[^}]*padding-left:\s*32px;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l2\s*\{[^}]*background-position:\s*0 0, 16px 0;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l6\s*\{[^}]*padding-left:\s*96px;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l6\s*\{[^}]*background-position:\s*0 0, 16px 0, 32px 0, 48px 0, 64px 0, 80px 0;/);
   });
 });
 

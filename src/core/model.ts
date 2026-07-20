@@ -1185,18 +1185,19 @@ export function computeDecorations(
         className: 'cm-lp-list cm-lp-list-ordered',
         attrs: { indent: String(indent), ordered: 'true' },
       });
-      // Ordered list markers: level 0 keeps the original Arabic numeral visible
-      // (numbers carry meaning); deeper levels render a Roman-numeral / alphabetic
-      // numeral widget to visually distinguish nesting (never on the cursor line,
-      // where the raw source stays editable per R-01-01).
+      // Ordered list markers use a common widget at every level so their marker
+      // slot has the same geometry as unordered lists. Level 0 preserves the
+      // original Arabic numeral; deeper levels render a Roman-numeral / alphabetic
+      // numeral to visually distinguish nesting (never on the cursor line, where
+      // the raw source stays editable per R-01-01).
       const level = Math.floor(indent / 2);
-      if (level > 0 && !isCursor) {
+      if (!isCursor) {
         const markerMatch = /^(\d+)([.)])$/.exec(m[2]);
         if (markerMatch) {
           const num = parseInt(markerMatch[1], 10);
           const sep = markerMatch[2];
           const numeralLevel = Math.min(level, 2);
-          const numeral = numeralLevel === 1 ? toRomanLower(num) : toAlpha(num);
+          const numeral = numeralLevel === 0 ? markerMatch[1] : numeralLevel === 1 ? toRomanLower(num) : toAlpha(num);
           const markerStart = line.from + indent;
           const markerEnd = markerStart + m[2].length + m[3].length;
           specs.push({
