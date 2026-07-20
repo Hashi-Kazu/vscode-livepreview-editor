@@ -314,7 +314,7 @@ body {
   display: inline-block;
   min-width: 1em;
   text-align: center;
-  font-size: 1.2em;
+  font-size: 1.4em;
   line-height: inherit;
 }
 /* The hollow circle (○, 2nd-level bullet) still reads visually larger than •/▪
@@ -614,7 +614,7 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
    get progressively smaller nudges than the base 0.15em; H4–H6 use the base
    value untouched. */
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h1 {
-  transform: translateY(0.55em);
+  transform: translateY(0.7em);
 }
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h2 {
   transform: translateY(0.42em);
