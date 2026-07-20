@@ -380,9 +380,10 @@ body {
    size on top of the shared box above (Issue #24 follow-up / R-01-05). Only the
    glyph gains the extra class (`decorations.ts`); •/▪ keep the 1.0em above
    (Issue #26: •/▪ enlarged and ○ shrunk further to rebalance tier sizes;
-   Issue #33: base reverted 1.6em→1.4em, ○ kept at 0.62em unchanged). */
+   Issue #33: base reverted 1.6em→1.4em, ○ kept at 0.62em unchanged;
+   Issue #33 follow-up: ○ shrunk further 0.62em→0.55em). */
 .cm-lp-list-bullet-hollow {
-  font-size: 0.62em;
+  font-size: 0.55em;
 }
 
 .cm-lp-list-number {
