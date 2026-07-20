@@ -100,6 +100,43 @@ export function continueList(lineText: string): ListContinuation {
   return { isList: false, insert: '', removeMarker: false, markerLength: 0 };
 }
 
+/** A CodeMirror-independent transaction spec describing how Enter should edit a
+ *  list line: the text change plus the resulting collapsed selection anchor. */
+export interface ListEnterEdit {
+  changes: { from: number; to: number; insert: string };
+  selection: { anchor: number };
+}
+
+/**
+ * Pure counterpart of the Webview `handleEnter` keymap (R-23). Given the caret's
+ * line text, the document offset of that line's start, and the current
+ * selection range, decide the exact edit Enter should apply — or `null` when the
+ * caret is not a collapsed caret inside a continuable list, so the default Enter
+ * behaviour should run. Extracting this lets the end-to-end continuation
+ * behaviour be regression-tested against an `EditorState` without importing the
+ * DOM-bound webview entry point.
+ */
+export function computeListEnterEdit(
+  lineText: string,
+  lineFrom: number,
+  from: number,
+  to: number,
+): ListEnterEdit | null {
+  if (from !== to) return null;
+  const cont = continueList(lineText);
+  if (!cont.isList) return null;
+  if (cont.removeMarker) {
+    return {
+      changes: { from: lineFrom, to: lineFrom + cont.markerLength, insert: '' },
+      selection: { anchor: lineFrom },
+    };
+  }
+  return {
+    changes: { from, to, insert: '\n' + cont.insert },
+    selection: { anchor: from + 1 + cont.insert.length },
+  };
+}
+
 /**
  * Add or remove one indentation unit at the start of a line.
  * @param delta +1 to indent, -1 to outdent

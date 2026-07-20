@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown } from '../src/core/editing';
+import { EditorState } from '@codemirror/state';
+import {
+  continueList,
+  changeIndent,
+  toggleHeading,
+  shouldOpenLinkOnMouseDown,
+  computeListEnterEdit,
+} from '../src/core/editing';
 
 // R-26-02: リンクのマウスボタン別操作
 describe('R-26-02 shouldOpenLinkOnMouseDown', () => {
@@ -65,6 +72,49 @@ describe('R-23 continueList', () => {
   it('リスト行でなければ isList=false', () => {
     expect(continueList('plain text').isList).toBe(false);
     expect(continueList('# heading').isList).toBe(false);
+  });
+});
+
+// R-23-01/02/04: Webview の Enter キーマップ(handleEnter)エンドツーエンド回帰。
+// main.ts の handleEnter は DOM 依存(acquireVsCodeApi)なので import できない。
+// そこで純粋部 computeListEnterEdit を EditorState + モック dispatch で駆動し、
+// handleEnter と同じ「選択→lineAt→編集適用」の経路を再現して検証する。
+describe('R-23 handleEnter エンドツーエンド(EditorState 経由)', () => {
+  /** handleEnter(main.ts) と同一ロジックを EditorState 上で再現する。 */
+  const runEnter = (state: EditorState) => {
+    const { from, to } = state.selection.main;
+    const line = state.doc.lineAt(from);
+    const edit = computeListEnterEdit(line.text, line.from, from, to);
+    if (!edit) return { handled: false, state };
+    const next = state.update({ changes: edit.changes, selection: edit.selection }).state;
+    return { handled: true, state: next };
+  };
+
+  it('4階層目の番号付きリストで Enter を押すと同一階層・番号+1(      2. )が挿入される', () => {
+    const doc = ['1. a', '  1. b', '    1. c', '      1. d'].join('\n');
+    let state = EditorState.create({ doc, selection: { anchor: doc.length } });
+    const result = runEnter(state);
+    expect(result.handled).toBe(true);
+    state = result.state;
+    const lines = state.doc.toString().split('\n');
+    // 新規行が4階層目(indent 6)で番号 2 の項目として挿入される。
+    expect(lines[4]).toBe('      2. ');
+    // キャレットは挿入した継続マーカーの直後。
+    expect(state.selection.main.anchor).toBe(doc.length + '\n      2. '.length);
+  });
+
+  it('4階層目の空項目で Enter を押すとマーカーが除去されリストを抜ける', () => {
+    const doc = ['      1. '].join('\n');
+    let state = EditorState.create({ doc, selection: { anchor: doc.length } });
+    const result = runEnter(state);
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toString()).toBe('');
+  });
+
+  it('リスト外の行では handleEnter は処理せず既定 Enter に委ねる', () => {
+    const doc = 'plain paragraph';
+    const state = EditorState.create({ doc, selection: { anchor: doc.length } });
+    expect(runEnter(state).handled).toBe(false);
   });
 });
 
