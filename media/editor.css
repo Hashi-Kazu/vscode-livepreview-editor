@@ -472,13 +472,21 @@ table.cm-lp-table th .cm-lp-em {
   line-height: inherit;
   font-size: inherit;
 }
+/* Header row: a clearly stronger band than the zebra stripe below, plus
+   heavier weight and a bottom rule, so th/td are unmistakable at a glance
+   (R-28-18). Border stays 1px so the row-height accounting in tableRowPx()/
+   estimatedHeight (R-28-11) is unaffected; differentiation is via color only. */
 table.cm-lp-table th {
-  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
-  font-weight: 600;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.2));
+  background: color-mix(in srgb, var(--vscode-editor-foreground) 18%, var(--vscode-editor-background));
+  font-weight: 700;
+  border-bottom: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.6));
 }
-/* Subtle zebra striping for readability. */
+/* Subtle zebra striping for readability, kept noticeably weaker than the
+   header band above (R-28-18). */
 table.cm-lp-table tr:nth-child(2n) td {
   background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.06));
+  background: color-mix(in srgb, var(--vscode-editor-foreground) 6%, var(--vscode-editor-background));
 }
 
 /* Direct cell editing: the cell holding the in-place <input> and the input
