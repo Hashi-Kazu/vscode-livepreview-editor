@@ -45,14 +45,16 @@ describe('R-02-05 引用の入れ子表示(Issue #41)', () => {
   it('CSS: 入れ子の段差は 16px 固定で、各段のバーが親テキスト列に整列する', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
     // l1(単独引用)は従来どおり padding-left 16px・バー1本(x=0)で不変。
-    expect(css).toMatch(/\.cm-lp-quote-l1\s*\{[^}]*padding-left:\s*16px;[^}]*background-position:\s*0 0;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l1\s*\{[^}]*padding-left:\s*16px;[^}]*background-position:\s*0 0;/);
     // l2 は 32px、バーは x=0 と x=16px（16px 段差 = l1 のバー↔テキスト間隔）。
-    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*padding-left:\s*32px;/);
-    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*background-position:\s*0 0,\s*16px 0;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l2\s*\{[^}]*padding-left:\s*32px;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l2\s*\{[^}]*background-position:\s*0 0,\s*16px 0;/);
     // l3 は 48px、バーは 0/16px/32px。
-    expect(css).toMatch(/\.cm-lp-quote-l3\s*\{[^}]*padding-left:\s*48px;/);
-    expect(css).toMatch(/\.cm-lp-quote-l3\s*\{[^}]*background-position:\s*0 0,\s*16px 0,\s*32px 0;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l3\s*\{[^}]*padding-left:\s*48px;/);
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l3\s*\{[^}]*background-position:\s*0 0,\s*16px 0,\s*32px 0;/);
     // 旧実装の 2em 段差が残っていないこと。
-    expect(css).not.toMatch(/\.cm-lp-quote-l2\s*\{[^}]*background-position:[^;]*2em/);
+    expect(css).not.toMatch(/\.cm-line\.cm-lp-quote-l2\s*\{[^}]*background-position:[^;]*2em/);
+    // Match CodeMirror's `.cm-content > .cm-line` specificity (0,2,0).
+    expect(css).toMatch(/\.cm-line\.cm-lp-quote-l1\s*\{/);
   });
 });

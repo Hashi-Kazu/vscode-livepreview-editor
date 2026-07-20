@@ -423,8 +423,11 @@ const arrowKeymap = keymap.of([
   { key: 'ArrowDown', run: lineStepCommand(1) },
 ]);
 
+// List continuation must run before CodeMirror's default and Markdown language
+// keymaps, including at deeply nested ordered-list levels (R-23-02/R-23-04).
+const enterKeymap = Prec.highest(keymap.of([{ key: 'Enter', run: handleEnter }]));
+
 const editingKeymap = keymap.of([
-  { key: 'Enter', run: handleEnter },
   { key: 'Tab', run: indentCommand(1) },
   { key: 'Shift-Tab', run: indentCommand(-1) },
   ...[1, 2, 3, 4, 5, 6].map((n) => ({ key: `Mod-Alt-${n}`, run: headingCommand(n) })),
@@ -513,6 +516,7 @@ function makeState(text: string, selection?: { anchor: number; head: number }): 
       // CodeMirror keeps no undo stack of its own and no undo keymap is bound.
       formatKeymap,
       arrowKeymap,
+      enterKeymap,
       editingKeymap,
       mediaDomHandlers,
       keymap.of([...defaultKeymap, ...foldKeymap]),

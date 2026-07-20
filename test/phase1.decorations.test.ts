@@ -83,12 +83,22 @@ describe('Phase 1: lists', () => {
     expect(byTag(specs, 'list-bullet')).toHaveLength(0);
   });
 
-  it('recognises ordered lists without replacing the number', () => {
+  it('replaces an ordered-list marker off-cursor while preserving the Arabic number', () => {
     const doc = '1. first';
     const specs = computeDecorations(doc, new Set());
     const line = byTag(specs, 'list');
     expect(line[0].attrs?.ordered).toBe('true');
     expect(byTag(specs, 'list-bullet')).toHaveLength(0);
+    const number = byTag(specs, 'list-number');
+    expect(number).toHaveLength(1);
+    expect(number[0].type).toBe('replaceWidget');
+    expect(number[0].attrs?.widget).toBe('1.');
+    expect(text(doc, number[0])).toBe('1. ');
+  });
+
+  it('keeps the ordered-list marker raw on the cursor line', () => {
+    const specs = computeDecorations('1. first', new Set([0]));
+    expect(byTag(specs, 'list-number')).toHaveLength(0);
   });
 });
 

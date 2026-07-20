@@ -302,13 +302,13 @@ body {
    column (bar step 2em ≠ text gap 16px) and the nesting looked broken (Issue
    #41's report). `l1` (a plain single-level blockquote) is unchanged; bar
    count/width/colour stay as before. */
-.cm-lp-quote-l1 {
+.cm-line.cm-lp-quote-l1 {
   padding-left: 16px;
   background-image: linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%;
   background-position: 0 0;
 }
-.cm-lp-quote-l2 {
+.cm-line.cm-lp-quote-l2 {
   padding-left: 32px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -316,7 +316,7 @@ body {
   background-size: 3px 100%, 3px 100%;
   background-position: 0 0, 16px 0;
 }
-.cm-lp-quote-l3 {
+.cm-line.cm-lp-quote-l3 {
   padding-left: 48px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -325,7 +325,7 @@ body {
   background-size: 3px 100%, 3px 100%, 3px 100%;
   background-position: 0 0, 16px 0, 32px 0;
 }
-.cm-lp-quote-l4 {
+.cm-line.cm-lp-quote-l4 {
   padding-left: 64px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -335,7 +335,7 @@ body {
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%;
   background-position: 0 0, 16px 0, 32px 0, 48px 0;
 }
-.cm-lp-quote-l5 {
+.cm-line.cm-lp-quote-l5 {
   padding-left: 80px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -346,7 +346,7 @@ body {
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%;
   background-position: 0 0, 16px 0, 32px 0, 48px 0, 64px 0;
 }
-.cm-lp-quote-l6 {
+.cm-line.cm-lp-quote-l6 {
   padding-left: 96px;
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -368,18 +368,24 @@ body {
   text-decoration: underline;
 }
 
+.cm-lp-list-marker {
+  /* A shared, fixed marker slot keeps unordered and ordered list body text on
+     the same column at a given indent (Issue #51 / R-01-05 / R-01-07). */
+  display: inline-block;
+  width: 2em;
+  height: 1.6em;
+  margin-right: 0.5em;
+  line-height: 1.6em;
+  vertical-align: bottom;
+  text-align: center;
+  box-sizing: border-box;
+}
+
 .cm-lp-list-bullet {
   /* Bullet color follows the body text color (standard Markdown-preview look),
      not the link color (R-01-05). */
   color: var(--vscode-editor-foreground);
-  padding-right: 8px;
-  /* The three hierarchy glyphs (•/○/▪) have different intrinsic advance widths,
-     which made deeper levels look larger/smaller than shallower ones. Normalise
-     the rendered glyph to a fixed box + font-size so every level reads at the
-     same marker size (only the shape differs, #3 / R-01-05). */
   display: inline-block;
-  min-width: 1em;
-  text-align: center;
   font-size: 1.4em;
   /* `.cm-line` uses a unitless `line-height: 1.6`, which the enlarged 1.4em
      glyph would inherit as a 1.6×1.4em = 2.24em line box — taller than the
@@ -408,7 +414,9 @@ body {
 
 .cm-lp-list-number {
   color: var(--vscode-editor-foreground);
-  padding-right: 8px;
+  display: inline-block;
+  line-height: 1;
+  vertical-align: baseline;
   font-variant-numeric: tabular-nums;
 }
 
