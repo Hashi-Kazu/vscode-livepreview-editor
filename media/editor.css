@@ -628,8 +628,12 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 .cm-content {
   padding-left: 30px !important;
 }
-/* Folded-section placeholder: a subtle, theme-following pill. */
-.cm-foldPlaceholder {
+/* Folded-section placeholder: a subtle, theme-following pill.
+   Selector is prefixed with .cm-editor so its specificity (0,2,0) matches
+   or exceeds CodeMirror's built-in base theme rule
+   (`.${baseThemeID} .cm-foldPlaceholder`), otherwise the default #eee
+   background wins and this theme-following color is never applied. */
+.cm-editor .cm-foldPlaceholder {
   background: color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-editor-foreground) 10%);
   border: 1px solid var(--vscode-widget-border, transparent);
   color: var(--vscode-descriptionForeground);
