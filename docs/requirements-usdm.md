@@ -1,12 +1,14 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.37.6
+**バージョン**: 1.37.7
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-20
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-20 時点 / v1.37.7）**: v1.37.7 で、箇条書きの基本アイコンサイズ（`.cm-lp-list-bullet` の `font-size`）を `1.4em` から `1.6em` へさらに拡大した（2 段目の ○＝`.cm-lp-list-bullet-hollow` の `0.62em` は不変、R-01-05）。`test/feature.issue16.decorations.test.ts` の CSS 値アサーションを更新して検証。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
+>
 > ▶️ **開発継続中（2026-07-20 時点 / v1.37.6）**: v1.37.6 で、折りたたみプレースホルダー（`.cm-foldPlaceholder`）の背景色が CodeMirror 既定テーマの `#eee`（詳細度 0,2,0）に上書きされ、editor.css 側で意図した地色寄りの `color-mix` 配色（R-30-04）が実際には適用されていなかった不具合を修正した。セレクタを `.cm-foldPlaceholder` から `.cm-editor .cm-foldPlaceholder` へ変更し、詳細度を 0,2,0 以上へ引き上げることで CodeMirror 既定テーマより優先されるようにした。`background`／`border`／`border-radius`／`padding`／`margin` の値自体は変更していない。`test/feature.issue30.foldPlaceholderTheme.test.ts` を新設して検証した。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
 >
 > ▶️ **開発継続中（2026-07-20 時点 / v1.37.5）**: v1.37.5 で、3 点の微調整と不具合修正を行った。(1) 箇条書きの基本アイコンサイズ（`.cm-lp-list-bullet` の `font-size`）を `1.2em` から `1.4em` へさらに拡大した（2 段目の ○＝`.cm-lp-list-bullet-hollow` の `0.62em` は不変、R-01-05）。(2) 見出し 1 の折りたたみシェブロンの下方向ナッジを `translateY(0.55em)` から `translateY(0.7em)` へさらに下げた（見出し 2・3 の `0.42em`／`0.28em` は不変、R-30-04）。(3) ネスト引用（`>>` 等）の継続行が、`>` の再掲が無い、または再掲があっても直前の引用行より浅い深度の場合に階層インデント・背景バンドを失う不具合を修正した。`src/core/model.ts` に直前の引用行の深度を保持する状態（`lastQuoteLevel`）を追加し、空行を挟まない非空の継続行は直前の深度を継承した `cm-lp-quote-l{1〜6}` を付与するようにした（CommonMark の lazy continuation 準拠）。空行、または引用以外のブロック開始（見出し・水平線・フェンスコード・表・アコーディオン・数式ブロック・GitHub Alerts）で継続はリセットされる（R-02-05）。純粋関数の spec 変更は `test/feature.issue16.decorations.test.ts` の追加テストで検証。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
