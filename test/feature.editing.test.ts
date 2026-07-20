@@ -38,6 +38,21 @@ describe('R-23 continueList', () => {
     expect(continueList('    - nested').insert).toBe('    - ');
   });
 
+  it('R-23-04: 4階層目以降(indent 6/8)でも箇条書きの継続を維持する（回帰: Issue #31）', () => {
+    expect(continueList('      - d').insert).toBe('      - ');
+    expect(continueList('        - e').insert).toBe('        - ');
+  });
+
+  it('R-23-02: 4階層目以降(indent 6/8)でも番号付きリストの継続を維持する（回帰: Issue #31）', () => {
+    expect(continueList('      1. d').insert).toBe('      2. ');
+    expect(continueList('        3) e').insert).toBe('        4) ');
+  });
+
+  it('R-23-03: 4階層目以降(indent 6)でもタスクの継続を維持する（回帰: Issue #31）', () => {
+    expect(continueList('      - [ ] d').insert).toBe('      - [ ] ');
+    expect(continueList('      - [x] d').insert).toBe('      - [ ] ');
+  });
+
   it('R-23-05: 空項目では removeMarker=true（リスト終了）', () => {
     const c = continueList('- ');
     expect(c.removeMarker).toBe(true);

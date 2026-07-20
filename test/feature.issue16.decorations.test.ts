@@ -37,6 +37,16 @@ describe('R-01-05 箇条書きは階層別マーカー(•/○/▪)を返す', (
     expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.6em;/);
     expect(css).toMatch(/\.cm-lp-list-bullet-hollow\s*\{[^}]*font-size:\s*0\.62em;/);
   });
+
+  it('3段目と4段目は同一グリフ(▪)だがindent属性は異なる(階層差は保持、回帰: Issue #31)', () => {
+    const doc = ['- a', '  - b', '    - c', '      - d'].join('\n');
+    const specs = computeDecorations(doc, new Set());
+    const listLines = byTag(specs, 'list');
+    expect(listLines.map((l) => l.attrs?.indent)).toEqual(['0', '2', '4', '6']);
+
+    const bullets = byTag(specs, 'list-bullet');
+    expect(bullets.map((b) => b.attrs?.widget)).toEqual(['•', '○', '▪', '▪']);
+  });
 });
 
 // R-01-07: 番号付きリストの階層別numeral
@@ -69,6 +79,14 @@ describe('R-01-07 番号付きリストは階層別numeralを返す', () => {
     // level0 has no widget; levels 1-4 do.
     expect(numbers).toHaveLength(4);
     expect(numbers.map((n) => n.attrs?.widget)).toEqual(['i.', 'a.', 'a.', 'a.']);
+  });
+
+  it('3段目と4段目は同一アルファベットだがindent属性は異なる(階層差は保持、回帰: Issue #31)', () => {
+    const doc = ['1. a', '  1. b', '    1. c', '      1. d'].join('\n');
+    const specs = computeDecorations(doc, new Set());
+    const numbers = byTag(specs, 'list-number');
+    expect(numbers.map((n) => n.attrs?.widget)).toEqual(['i.', 'a.', 'a.']);
+    expect(numbers.map((n) => n.attrs?.indent)).toEqual(['2', '4', '6']);
   });
 });
 

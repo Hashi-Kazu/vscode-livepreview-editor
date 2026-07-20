@@ -533,7 +533,7 @@ function toDecoration(s: DecoSpec): Decoration | null {
       if (s.tag === 'list' || s.tag === 'task') {
         const indent = Number(s.attrs?.indent ?? '0') || 0;
         const level = Math.floor(indent / 2);
-        if (level > 0) attributes = { style: `padding-left: ${level * 1.5}em;` };
+        if (level > 0) attributes = { style: `padding-left: ${level * 2}em;` };
       }
       // Fenced code opener: expose the language name as `data-lang` so CSS can
       // paint a clean language label on the block frame (the raw info string is
