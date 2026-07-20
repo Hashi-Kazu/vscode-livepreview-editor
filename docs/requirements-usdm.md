@@ -122,7 +122,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-01-08 太字＋斜体の複合記法 `***text***`/`___text___` を、内側テキストへ `strong` と `em` を同時に適用して装飾し、外側の `***`/`___` マーカーを非カーソル行で隠すこと。太字（`**`）判定が複合記法を誤って「太字＋内側に生の `*` を含む本文」と解釈しないよう、複合記法の判定を通常の太字・斜体判定より先に行うこと。`___` は語境界規則（R-01-06）を尊重すること。カーソル行では生記法を表示すること（R-01-01）。
 - ■■■ R-01-04 見出し `#`〜`######` をレベル別クラスで装飾し、`#` プレフィックスを非カーソル行で隠す。
 - ■■□ R-01-05 リスト `-` / `1.` を検知し、`-` マーカーをビュレットウィジェットへ置換（非カーソル行）。ビュレットは階層（インデント 2 スペースを 1 段として `Math.floor(indent/2)`）に応じて `•`（0 段目）/`○`（1 段目）/`▪`（2 段目以降はすべて▪と同様）のいずれかに切り替え、色はリンク色ではなく本文文字色（`var(--vscode-editor-foreground)`）に追従すること。○（1 段目）グリフは字形の見え方の都合上 •/▪ と同じ `font-size` では他階層より大きく見えるため、他階層と視覚サイズを揃えるよう僅かに小さく描画すること（Issue #24）。基本アイコンサイズ（`.cm-lp-list-bullet` の `font-size`）は `1.4em` とし（2 段目の ○ 以外のすべての階層がこの `1.4em` の箱で表示される）、○（2 段目、`.cm-lp-list-bullet-hollow`）は `0.55em` とする（Issue #41 で `1.2em`→`1.4em`、○ は不変）。•/▪ の拡大したグリフが `.cm-line` の unitless `line-height: 1.6` を継承すると行ボックス（`1.6 × 1.4em`）が基本行ボックス（`1.6em`）を超えて •/▪ 行のリストアイテム間余白だけが広がるため、`.cm-lp-list-bullet` の `line-height` を `1`（固定）とし、•/▪ 行と ○ 行のアイテム間余白を全階層で揃えること（Issue #41）。2 段目以降のグリフは統一されるため、階層差は `R-28-06` の行装飾インデント（`padding-left`）で表現し、生成される Markdown 本文・indent 文字列（`R-01-02`）は変更しない。
-- ■■□ R-01-07 番号付きリスト `1.`/`1)` は 0 段目（インデント 0〜1）はアラビア数字を生表示のまま維持し、1 段目はローマ数字小文字（`i.`/`ii.`/…）、2 段目以降はすべてアルファベット小文字（`a.`/`b.`/…）へ非カーソル行でのみマーカーをウィジェット置換すること。カーソル行では変換せず生記法（アラビア数字）を表示すること（R-01-01）。
+- ■■■ R-01-07 番号付きリスト `1.`/`1)` は 0 段目（インデント 0〜1）はアラビア数字を生表示のまま維持し、1 段目はローマ数字小文字（`i.`/`ii.`/…）、2 段目以降はすべてアルファベット小文字（`a.`/`b.`/…）へ非カーソル行でのみマーカーをウィジェット置換すること。カーソル行では変換せず生記法（アラビア数字）を表示すること（R-01-01）。
 
 ---
 
@@ -183,7 +183,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 - ■■■ R-04-01 Webview の編集を最小差分（`diffRange`）で `WorkspaceEdit` に適用する。適用は毎打鍵ではなくタイピング停止後のデバウンス（既定 200ms）でバッチ化し、その間の連続打鍵は最新 version で coalesce してから1回の最小差分として適用する。Live Preview の Undo/Redo は CodeMirror が history を持たず VS Code へ委譲する（R-33）。デバウンス中はホストが未 apply のため自己エコーも remote update も発生せず、Webview 内のキャレットはそのまま保持される。ソースエディタ側の undo 粒度はバッチ単位に粗くなる（許容）。host が起こした自己エコー（`consumeExpectedWorkspaceEditChange` が一致させた期待変更）は Webview へ反映しない。真の外部変更（VS Code の Undo/Redo 結果・保存参加者・Git・他エディタ）または apply 失敗 rollback は、`reconcileExternalChange` が一方向に反映し、Webview は `computeRemotePatch` で選択を再マップした新しい EditorState に置換する（CodeMirror は history を持たないため単純置換）。
 - ■■■ R-04-02 Host は Webview の単調 version を受理順に管理し、重複・古い・不正な snapshot を適用しない。`applyPendingEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed の self-echo ledger（`expectedChanges`）へ記録し、`consumeExpectedWorkspaceEditChange` が一致させたその組だけを自己エコーとして消費する（Webview へ反映しない）。ledger に一致しない変更は真の外部変更として `reconcileExternalChange` が一度だけ一方向反映する。反映前に pending edit があれば先に `applyPendingEdit` して確定済み入力を失わない。VS Code の Undo/Redo で TextDocument が書き換わった結果も、この外部変更経路で Webview に反映される。ack は apply 成功または差分なし確認後だけ送る。
-- ■■□ R-04-03 Webview は edit version と ack version を別管理し、external update を `baseVersion === editVersion === ackVersion` のときだけ適用する。未 ack local edit、IME、または保留 local change 中は最新1件を保留して ack 後に再判定し、古い base は破棄する。旧形式（baseVersion なし）は未 ack local edit がない場合だけ適用する。`workspace.applyEdit` false の rollback は失敗 edit version を基準にして、より新しい local edit を上書きしない。
+- ■■■ R-04-03 Webview は edit version と ack version を別管理し、external update を `baseVersion === editVersion === ackVersion` のときだけ適用する。未 ack local edit、IME、または保留 local change 中は最新1件を保留して ack 後に再判定し、古い base は破棄する。旧形式（baseVersion なし）は未 ack local edit がない場合だけ適用する。`workspace.applyEdit` false の rollback は失敗 edit version を基準にして、より新しい local edit を上書きしない。
 
 > **R-04-02 追記（今回 version）**: CustomTextEditor 再採用と Undo/Redo の VS Code 委譲（R-33、ADR-0020）に伴い、旧設計の保存正規化再分類（`classifyDocumentChange`／`SelfSaveGuard`／`preserveHistory`／`isSaveParticipantNormalization`／`isTrailingNewlineOnlyDifference`）による history 保持レコンサイルは撤去した。現行 provider は self-echo ledger（`consumeExpectedWorkspaceEditChange`）で自己エコーだけを消費し、それ以外は `reconcileExternalChange` が一度だけ一方向反映する単純化した経路に統一している。CodeMirror が history を持たないため、外部反映は EditorState の単純置換で足りる（out-of-history 適用による Undo 崩れの問題自体が発生しない）。なお `src/core/sync.ts` の同名純粋関数は他テストの回帰基準として残置している。
 
@@ -205,9 +205,9 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 ###### ＜性能＞
 
 - ■■■ R-05-05 Webview の可視ビューポートに前後 50 行のパディングとカーソル・選択行を加えた範囲へ装飾計算を限定し（`viewportWindow` を `StateEffect` で装飾用 `StateField` に結線）、数千行でもキー入力・カーソル移動時の全行再計算を行わず処理時間が上限内に収まること。
-- ■■□ R-05-06 CRLF 行末の文書でも記法検知・タスクトグルが正しく動作し、Webview 編集の反映時にファイルの EOL を保持して最小差分のみ適用すること。CRLF/LF 混在文書では未編集行を含む各行の EOL を行単位で維持し、Webview が要求した末尾 LF は旧文書に末尾改行がなくても fallback EOL で必ず生成すること（`toLF`/`fromLF`/`fromLFPreserving`、`splitLines` の CR 除外、`toggleTaskAt` の CR 許容）。
+- ■■■ R-05-06 CRLF 行末の文書でも記法検知・タスクトグルが正しく動作し、Webview 編集の反映時にファイルの EOL を保持して最小差分のみ適用すること。CRLF/LF 混在文書では未編集行を含む各行の EOL を行単位で維持し、Webview が要求した末尾 LF は旧文書に末尾改行がなくても fallback EOL で必ず生成すること（`toLF`/`fromLF`/`fromLFPreserving`、`splitLines` の CR 除外、`toggleTaskAt` の CR 許容）。
 - ■■■ R-05-07 `buildDecorations` の `RangeSetBuilder.add()` 呼び出しは CodeMirror が要求する `(from, startSide)` 昇順を遵守すること。`MarkDecoration` の `startSide`（500000000）は `Decoration.replace` の `startSide`（499999999）より大きいため、同一 `from` では `hide`/`replaceWidget` を `mark` より前に追加すること（`sideOf` の順序を修正）。また `builder.add()` が例外をスローした場合は `onError` で報告し `Decoration.none` を返してエディタが空白になることを防ぐこと。
-- ■■□ R-05-08 IME 合成中に受信した remote update は最新1件を保留し、`compositionend` 後のマイクロタスクで確定全文を一度だけ edit として送る。保留 remote は即時適用せず host ack 到達後に `baseVersion === editVersion === ackVersion` で再判定し、古ければ破棄する。`applyingRemote` 中は保留変更を消費しない（`shouldFlushComposition` / `shouldApplyRemoteUpdate`）。
+- ■■■ R-05-08 IME 合成中に受信した remote update は最新1件を保留し、`compositionend` 後のマイクロタスクで確定全文を一度だけ edit として送る。保留 remote は即時適用せず host ack 到達後に `baseVersion === editVersion === ackVersion` で再判定し、古ければ破棄する。`applyingRemote` 中は保留変更を消費しない（`shouldFlushComposition` / `shouldApplyRemoteUpdate`）。
 
 ### R-06 設定 #settings
 
@@ -319,7 +319,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜行・列操作＞
 
-- ■■□ R-22-05 純粋関数（`src/core/tableEdit.ts`）はテーブルの生ソース行配列に対し、行の追加（上/下）・行の削除、列の追加（左/右）・列の削除、および単一セルの更新（`updateTableCell`）を行い、区切り行の整合とアライメントを維持した新配列を返すこと。ヘッダ行の削除・最後の1列削除はガードすること。`updateTableCell` は区切り行・存在しない行/列を無変更コピーとして返し、セル値に含まれる `|` を `\|` にエスケープ（`buildRow`）して表構造を壊さないこと（`parseTableRow` はエスケープ済み `\|` を 1 セル内の文字として復元）。入力配列を破壊しないこと。
+- ■■■ R-22-05 純粋関数（`src/core/tableEdit.ts`）はテーブルの生ソース行配列に対し、行の追加（上/下）・行の削除、列の追加（左/右）・列の削除、および単一セルの更新（`updateTableCell`）を行い、区切り行の整合とアライメントを維持した新配列を返すこと。ヘッダ行の削除・最後の1列削除はガードすること。`updateTableCell` は区切り行・存在しない行/列を無変更コピーとして返し、セル値に含まれる `|` を `\|` にエスケープ（`buildRow`）して表構造を壊さないこと（`parseTableRow` はエスケープ済み `\|` を 1 セル内の文字として復元）。入力配列を破壊しないこと。
 - ■■□ R-22-06 Webview はテーブルウィジェット上の右クリックでカスタムコンテキストメニューを表示し、行・列操作を実行すること。本文変更はチェックボックストグル（R-08-05）と同一経路（`computeRemotePatch` → `view.dispatch` → 既存 edit 同期）で最小 `WorkspaceEdit` として反映すること。右クリックはキャレット移動・ブロック active 化を起こさないこと。メニュー先頭に「セルを編集」を置き、区切りを挟んで既存の行・列操作を並べること。`role="menu"`/`role="menuitem"`、無効項目に `aria-disabled="true"` を付与すること。メニュー色は `var(--vscode-*)` 追従。
 
 ###### ＜セル直接編集＞
@@ -437,11 +437,11 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜ペースト/ドロップ＞
 
-- ■■□ R-29-01 `formatMarkdownLinkTarget` は、パスにスペース・`(`・`)` を含む場合のみ `<...>` で囲むこと（例: `assets/新規 ビットマップ イメージ.bmp` → `<assets/新規 ビットマップ イメージ.bmp>`、`a(b).png` → `<a(b).png>`）。含まない場合は変化させず（例: `マークダウン.md` → `マークダウン.md`）、非 ASCII はエスケープしないこと。囲む場合に本文へ `<`/`>` が含まれれば `%3C`/`%3E` へエンコードすること。
-- ■■□ R-29-02 `buildMediaSnippet` は、画像は `![alt text](<target>)`（プレースホルダ `alt text`）、非画像は `[text](target)` を生成し、プレースホルダ範囲（`placeholderFrom`/`placeholderTo`）が該当文字列を指すこと。非画像の表示名は貼り付け開始時の非空選択を優先し、なければ target basename の最終拡張子を除いた名前とする。`target` は `formatMarkdownLinkTarget` 適用済みを受け取る。
-- ■■□ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
-- ■■□ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
-- ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+- ■■■ R-29-01 `formatMarkdownLinkTarget` は、パスにスペース・`(`・`)` を含む場合のみ `<...>` で囲むこと（例: `assets/新規 ビットマップ イメージ.bmp` → `<assets/新規 ビットマップ イメージ.bmp>`、`a(b).png` → `<a(b).png>`）。含まない場合は変化させず（例: `マークダウン.md` → `マークダウン.md`）、非 ASCII はエスケープしないこと。囲む場合に本文へ `<`/`>` が含まれれば `%3C`/`%3E` へエンコードすること。
+- ■■■ R-29-02 `buildMediaSnippet` は、画像は `![alt text](<target>)`（プレースホルダ `alt text`）、非画像は `[text](target)` を生成し、プレースホルダ範囲（`placeholderFrom`/`placeholderTo`）が該当文字列を指すこと。非画像の表示名は貼り付け開始時の非空選択を優先し、なければ target basename の最終拡張子を除いた名前とする。`target` は `formatMarkdownLinkTarget` 適用済みを受け取る。
+- ■■■ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
+- ■■■ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
+- ■■■ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
 
 ### R-30 見出しセクション折りたたみ #headingfold
 
@@ -451,8 +451,8 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜見出し折りたたみ＞
 
-- ■■□ R-30-01 純粋関数 `scanHeadings` はフェンスコードブロック内の `#` を除外して全見出しを行番号・レベル・テキスト・オフセット付きで返すこと。
-- ■■□ R-30-02 純粋関数 `headingFoldRange` は見出し行に対し、次の同レベル以下の見出し直前までを折りたたみ範囲として返し、配下が無い場合は `null` を返すこと。コードブロックを跨いでも正しく範囲を返すこと。
+- ■■■ R-30-01 純粋関数 `scanHeadings` はフェンスコードブロック内の `#` を除外して全見出しを行番号・レベル・テキスト・オフセット付きで返すこと。
+- ■■■ R-30-02 純粋関数 `headingFoldRange` は見出し行に対し、次の同レベル以下の見出し直前までを折りたたみ範囲として返し、配下が無い場合は `null` を返すこと。コードブロックを跨いでも正しく範囲を返すこと。
 - ■■□ R-30-03 Webview は `codeFolding()`＋カスタム `foldService`（`headingFoldRange` 由来）＋`foldKeymap` で見出し配下を折りたたみ／展開できること。既定は全展開。
 - ■■□ R-30-04 折りたたみ UI は常設ガター幅でレイアウトを崩さず、見出しと本文の左端整列（R-28-07）とテーマ色追従（R-28-04）を維持すること。開状態は下向き、閉状態は右向きの VS Code 標準風の細いシェブロンとし、塗りつぶし三角形を用いないこと。シェブロンは視認性のためさらに拡大する（`font-size: 1.5em` 目安）。ガター要素はガター要素自身の中央揃え（`align-items: center`）とすること（Issue #24：#21 で `align-items: flex-start` ＋大きな `translateY(0.55em)` に変更した結果シェブロンが下方向へずれ過ぎ、別の行に属するように見えてしまったため巻き戻し）。ガター要素の高さは対応する見出し行の（パディング込みの）ブロック高に一致するが、見出し行は `padding-top ≫ padding-bottom` の非対称パディングを持つため、`align-items: center` だけではシェブロンが見出しテキスト字面の視覚中心よりも下にずれる。この補正量は見出しレベルごとに固定値を個別に手調整するのではなく、`(padding-top − padding-bottom) / 2` を、見出し自身の font-size 倍率とガターの font-size 倍率（`--lp-fold-gutter-size`）で単位変換した `translateY` として、見出し 1〜6 全レベルについて `calc()` により導出すること。見出しの font-size・padding-top・padding-bottom・折りたたみガターの font-size 倍率は、見出しレベルごとに 1 か所の CSS カスタムプロパティ（`--lp-hN-size`／`--lp-hN-pt`／`--lp-hN-pb`／`--lp-fold-gutter-size`）で定義し、見出し本体のスタイルとガターのナッジの両方がこの同じ値を参照すること。これにより、見出しのサイズやパディング比率を変更しても、ガターの縦位置ナッジをレベルごとに個別に手調整することなく、シェブロンが見出しテキスト字面の中央に揃い続ける構造とする（旧方式は見出し 1〜3 にのみ独立した固定 `translateY` 値を追加適用しており、見出し 4〜6 には補正が無く、値もパディングとの算出根拠を共有しない手調整のマジックナンバーの積み増しだったため、フォントサイズやパディングを変えるたびにズレが生じていた）。ガターそのものには見出しレベル情報が無いため、見出しレベル別クラス（`cm-lp-fold-h1`〜`cm-lp-fold-h6`、見出し 1〜6 全レベルに付与）をガター要素へ付与する機構（`gutterLineClass` 等）を用いてよい。クリック領域、`foldKeymap`、fold placeholder は維持すること（#8）。fold placeholder の背景は地色に近い控えめな色（`color-mix` によるテーマ追従、白背景を強調しない）とし、`border` による差別化のみで通常表示と区別できること（Issue #26）。
 
@@ -470,8 +470,8 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜数式レンダリング＞
 
-- ■■□ R-32-01 純粋関数はインライン `$…$` を検知し（開き直後／閉じ直前が非空白・内部に `$`／改行なし・`\$` エスケープ尊重・コードブロック除外）、非カーソル行で数式ウィジェットへ置換、カーソル行で生記法を表示すること。装飾は入力文字列を変更しないこと（R-01-02）。
-- ■■□ R-32-02 純粋関数 `detectMathBlocks` は `$$…$$` ブロック（コードブロック除外・未終了は非対象）を検知し、カーソルがブロック外のとき block 数式ウィジェットへ置換、ブロック内では生記法を表示すること。
+- ■■■ R-32-01 純粋関数はインライン `$…$` を検知し（開き直後／閉じ直前が非空白・内部に `$`／改行なし・`\$` エスケープ尊重・コードブロック除外）、非カーソル行で数式ウィジェットへ置換、カーソル行で生記法を表示すること。装飾は入力文字列を変更しないこと（R-01-02）。
+- ■■■ R-32-02 純粋関数 `detectMathBlocks` は `$$…$$` ブロック（コードブロック除外・未終了は非対象）を検知し、カーソルがブロック外のとき block 数式ウィジェットへ置換、ブロック内では生記法を表示すること。
 - ■■□ R-32-03 Webview は KaTeX を JS バンドル同梱・CSS/フォントを `media/katex/` から配信して数式を DOM 描画し、レンダリング失敗時も Webview を落とさず生 tex をフォールバック表示すること。CSP（nonce／font-src cspSource）を維持すること。
 - ■■□ R-32-04 block 数式ウィジェットは `estimatedHeight` を実装し、`toDOM` 内で `requestMeasure` を呼ばず `updateDOM` で呼ぶこと（R-28-10 / R-28-11）。
 
@@ -504,6 +504,6 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 > **説明：** 同期アンカーは、両者が同一 `TextDocument` にバインドされることを利用した **0 始まり行番号**（最上部可視行）である。Webview → host は `.cm-scroller`（唯一のスクロールコンテナ、R-28-13）の `scroll` イベントを rAF スロットルで拾い、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を算出して `{ type: 'scroll', binding, line, fraction }` を host へ送る（`fraction` は行内の 0〜1 位置で、host は参照しない）。host（`src/livePreviewCustomEditorProvider.ts`）は対象 URI に一致する `vscode.window.visibleTextEditors`（カスタムエディタの Webview 自体は含まれないため、常に標準ソースエディタだけが対象になる）へ `revealRange(new vscode.Range(line,0,line,0), vscode.TextEditorRevealType.AtTop)` を適用する。逆方向（host → Webview）は `vscode.window.onDidChangeTextEditorVisibleRanges` を購読し、対象 URI に一致するイベントの `visibleRanges[0].start.line` を `{ type: 'scrollTo', binding, line }` として Webview へ送り、Webview は CodeMirror をその行が最上部に来るようスクロールする。`scroll`/`scrollTo` はいずれも既存の `binding`（session id）で照合し、他 session のメッセージは無視する。相互ループは 3 層で防止する：(1) Webview 側 `applyingRemoteScroll` ブールガード（`scrollTo` 適用中〜適用直後の 1 フレームは自前 scroll ハンドラの送信を抑止）、(2) host 側の時刻ベース抑止窓（`revealRange` 実行直後 `SCROLL_SUPPRESS_WINDOW_MS` の間に発火した `onDidChangeTextEditorVisibleRanges` は中継しない）、(3) host 側の行一致デデュープ（直近に同期した行と同じ行への同期要求は中継しない）。行クランプ・抑止窓・デデュープの判定ロジックは `src/core/viewport.ts` の純粋関数（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`）として実装し、DOM/vscode 非依存を保つ（ADR-0002）。ユーザーの Markdown 本文は書き換えない（R-01-02、スクロール同期は表示のみ）。方式・ループ防止設計は ADR-0022 に記録。
 
-- ■■□ R-35-01 標準ソースエディタを縦スクロールすると、Live Preview（Webview）が対応する行が最上部に来るよう追従してスクロールすること。同期は 0 始まり行番号を同期キーとし、`onDidChangeTextEditorVisibleRanges` の対象 URI 一致イベントを `scrollTo` メッセージとして Webview へ送ること。
-- ■■□ R-35-02 Live Preview（Webview）を縦スクロールすると、対象 URI に一致する標準ソースエディタ（`visibleTextEditors`）が対応する行を `revealRange`（`AtTop`）で追従すること。算出は `.cm-scroller` の scroll イベントを rAF スロットルし、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を求めること。
-- ■■□ R-35-03 相互のスクロール同期が無限ループ・振動を起こさないこと。(1) Webview 側 `applyingRemoteScroll` ガード、(2) host 側の時刻ベース抑止窓（`revealRange` 起因の `onDidChangeTextEditorVisibleRanges` を中継しない）、(3) host 側の直近同期行デデュープ、の 3 層で防止し、各層の純粋判定ロジック（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`、`src/core/viewport.ts`）は DOM/vscode 非依存に実装し単体テストすること（`test/feature.issue37.scrollSync.test.ts`）。長文（数千行規模）でも安定して同期し振動しないこと（手動確認）。
+- ■■■ R-35-01 標準ソースエディタを縦スクロールすると、Live Preview（Webview）が対応する行が最上部に来るよう追従してスクロールすること。同期は 0 始まり行番号を同期キーとし、`onDidChangeTextEditorVisibleRanges` の対象 URI 一致イベントを `scrollTo` メッセージとして Webview へ送ること。
+- ■■■ R-35-02 Live Preview（Webview）を縦スクロールすると、対象 URI に一致する標準ソースエディタ（`visibleTextEditors`）が対応する行を `revealRange`（`AtTop`）で追従すること。算出は `.cm-scroller` の scroll イベントを rAF スロットルし、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を求めること。
+- ■■■ R-35-03 相互のスクロール同期が無限ループ・振動を起こさないこと。(1) Webview 側 `applyingRemoteScroll` ガード、(2) host 側の時刻ベース抑止窓（`revealRange` 起因の `onDidChangeTextEditorVisibleRanges` を中継しない）、(3) host 側の直近同期行デデュープ、の 3 層で防止し、各層の純粋判定ロジック（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`、`src/core/viewport.ts`）は DOM/vscode 非依存に実装し単体テストすること（`test/feature.issue37.scrollSync.test.ts`）。長文（数千行規模）でも安定して同期し振動しないこと（手動確認）。

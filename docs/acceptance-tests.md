@@ -11,16 +11,20 @@
 | テストファイル | 対応仕様 |
 |---|---|
 | `test/phase1.decorations.test.ts` | R-01（太字・見出し・リスト・カーソル連動） |
-| `test/phase2.syntax.test.ts` | R-02（斜体・コード・リンク・画像・引用・コードブロック・表）、R-01-02（モデル純粋性：入力不変・決定性） |
-| `test/phase2.sync.test.ts` | R-04（diffRange・shouldResync・cursorLines） |
+| `test/phase2.syntax.test.ts` | R-02（斜体・コード・リンク・画像・引用・コードブロック・表）、R-01-02（モデル純粋性：入力不変・決定性）、R-32（数式検知：インライン $…$／ブロック $$…$$） |
+| `test/phase2.sync.test.ts` | R-04（diffRange・shouldResync・cursorLines・R-04-03 ack version）・R-05-06（EOL 保持：fromLFPreserving） |
 | `test/phase3.edge.test.ts` | R-05-01/02/04（ネスト・誤装飾防止・フォールバック） |
-| `test/phase3.behavior.test.ts` | R-04-01（Undo round-trip）・R-05-03/05（IME・性能）・R-06-02（fontSize 設定）・R-28-16（ホイールズーム計算） |
+| `test/phase3.behavior.test.ts` | R-04-01（Undo round-trip）・R-05-03/05（IME・性能）・R-06-02（fontSize 設定）・R-28-16（ホイールズーム計算）・R-05-08（IME 合成中 remote 保留：shouldFlushComposition/shouldApplyRemoteUpdate） |
 | `test/feature.task.test.ts` | R-08（GFM タスク検知・完了スタイル・カーソル行・ネスト・トグル・CRLF・EOL） |
 | `test/feature.richtext.test.ts` | R-09（取消線・ハイライト） |
 | `test/robustness.combinations.test.ts` | R-01-06（語中アンダースコア）・R-05-06（CRLF）・記法組み合わせ・構造不変条件（オフセット境界・replace 非重複） |
 | `test/feature.format.test.ts` | R-16（toggleWrap：囲む・解除・空選択・往復） |
-| `test/feature.markdown.test.ts` | R-19（水平線）・R-20（エスケープ）・R-21（オートリンク）・R-22（表のレンダリング/parseTable） |
+| `test/feature.pasteLink.test.ts` | R-29（画像・ファイルペースト純粋関数：formatMarkdownLinkTarget・buildMediaSnippet・isImageFile・uniqueMediaName・URI/絶対パス fallback） |
+| `test/feature.markdown.test.ts` | R-19（水平線）・R-20（エスケープ）・R-21（オートリンク）・R-22（表のレンダリング/parseTable）・R-30（見出し折りたたみ：scanHeadings/headingFoldRange）・R-22-05（表行列操作・セル編集の純粋関数） |
+| `test/feature.issue16.decorations.test.ts` | R-01-07（番号付きリスト階層別 numeral）ほか Issue #16/#31/#41 装飾回帰 |
 | `test/feature.editing.test.ts` | R-23（リスト継続）・R-24（インデント）・R-25（見出しトグル）・R-26-02（リンクのマウスボタン判定） |
+| `test/webview.inputFlow.test.ts` | R-03-08／R-04-01／R-04-02／R-04-03（未 ack local edit・IME 中の remote 保留と ack 後再判定） |
+| `test/feature.issue37.scrollSync.test.ts` | R-35（スクロール同期の純粋判定：clampScrollLine・isEchoScroll・nextScrollSuppressUntil・shouldRelayScrollLine） |
 | `test/customEditor.provider.test.ts` | R-03-12（custom editor 登録）・R-33（Undo/Redo 委譲・key routing・host sync 契約）・R-04（self-echo/外部反映） |
 
 ## 実行方法
