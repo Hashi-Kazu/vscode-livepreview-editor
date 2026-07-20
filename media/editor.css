@@ -163,6 +163,40 @@ body {
 }
 
 /* --- Headings (GitHub-preview sizing, MPE-style strengthened hierarchy) --- */
+/* R-30-04: heading size / vertical-padding ratios are the single source of
+   truth for both the heading's own look (font-size + padding-top/bottom below)
+   AND the fold-gutter chevron's vertical centring nudge further down (`.cm-
+   foldGutter .cm-gutterElement.cm-lp-fold-hN`). Each level exposes three
+   unitless numbers: `-size` (font-size multiplier, unitless em factor),
+   `-pt` / `-pb` (padding-top/bottom, in the heading's own em). Changing a
+   heading's padding or size here automatically keeps its fold chevron
+   centred on the text glyph — no per-level `translateY` nudge is hand-tuned
+   independently of these values anymore (previously the gutter carried its
+   own disconnected magic-number nudges that drifted whenever these values
+   changed). `--lp-fold-gutter-size` is the fold gutter's own font-size
+   multiplier (matches `.cm-foldGutter .cm-gutterElement`'s `font-size`),
+   needed to convert a heading-em offset into a gutter-em offset. */
+:root {
+  --lp-h1-size: 2;
+  --lp-h1-pt: 1.4;
+  --lp-h1-pb: 0.3;
+  --lp-h2-size: 1.6;
+  --lp-h2-pt: 1.2;
+  --lp-h2-pb: 0.3;
+  --lp-h3-size: 1.3;
+  --lp-h3-pt: 1.2;
+  --lp-h3-pb: 0.6;
+  --lp-h4-size: 1.15;
+  --lp-h4-pt: 1.2;
+  --lp-h4-pb: 0.6;
+  --lp-h5-size: 1;
+  --lp-h5-pt: 1.2;
+  --lp-h5-pb: 0.6;
+  --lp-h6-size: 0.9;
+  --lp-h6-pt: 1.2;
+  --lp-h6-pb: 0.6;
+  --lp-fold-gutter-size: 1.5;
+}
 .cm-lp-heading {
   font-weight: 600;
   line-height: 1.25;
@@ -188,32 +222,56 @@ body {
 .cm-line.cm-lp-h6 {
   /* margin-top/bottom → padding-top/bottom: getBoundingClientRect() は margin を
      含まないため、margin を使うと CodeMirror の height oracle が見出し行の実寸を
-     過小評価しスクロール量に比例したクリック位置ずれが累積する (R-28-14)。 */
-  padding-top: 1.2em;
-  padding-bottom: 0.6em;
+     過小評価しスクロール量に比例したクリック位置ずれが累積する (R-28-14)。
+     具体的な padding 値は各見出しレベルのルールで `--lp-hN-pt`/`--lp-hN-pb`
+     から算出する（このルールはコメントのみを共有する空のベース）。 */
 }
-/* h1 gets extra top padding to separate it further from preceding content. */
+/* Per-level padding-top/bottom and font-size, all derived from the single set
+   of ratios declared above (R-30-04). h1/h2's effective padding-bottom
+   (`--lp-h1-pb` / `--lp-h2-pb` = 0.3) is already the tightened value used
+   under their underline rule further below; no separate override is needed. */
 .cm-line.cm-lp-h1 {
-  padding-top: 1.4em;
+  padding-top: calc(var(--lp-h1-pt) * 1em);
+  padding-bottom: calc(var(--lp-h1-pb) * 1em);
 }
-.cm-lp-h1 { font-size: 2em; }
-.cm-lp-h2 { font-size: 1.6em; }
-.cm-lp-h3 { font-size: 1.3em; }
-.cm-lp-h4 { font-size: 1.15em; }
-.cm-lp-h5 { font-size: 1em; }
-.cm-lp-h6 { font-size: 0.9em; }
+.cm-line.cm-lp-h2 {
+  padding-top: calc(var(--lp-h2-pt) * 1em);
+  padding-bottom: calc(var(--lp-h2-pb) * 1em);
+}
+.cm-line.cm-lp-h3 {
+  padding-top: calc(var(--lp-h3-pt) * 1em);
+  padding-bottom: calc(var(--lp-h3-pb) * 1em);
+}
+.cm-line.cm-lp-h4 {
+  padding-top: calc(var(--lp-h4-pt) * 1em);
+  padding-bottom: calc(var(--lp-h4-pb) * 1em);
+}
+.cm-line.cm-lp-h5 {
+  padding-top: calc(var(--lp-h5-pt) * 1em);
+  padding-bottom: calc(var(--lp-h5-pb) * 1em);
+}
+.cm-line.cm-lp-h6 {
+  padding-top: calc(var(--lp-h6-pt) * 1em);
+  padding-bottom: calc(var(--lp-h6-pb) * 1em);
+}
+.cm-lp-h1 { font-size: calc(var(--lp-h1-size) * 1em); }
+.cm-lp-h2 { font-size: calc(var(--lp-h2-size) * 1em); }
+.cm-lp-h3 { font-size: calc(var(--lp-h3-size) * 1em); }
+.cm-lp-h4 { font-size: calc(var(--lp-h4-size) * 1em); }
+.cm-lp-h5 { font-size: calc(var(--lp-h5-size) * 1em); }
+.cm-lp-h6 { font-size: calc(var(--lp-h6-size) * 1em); }
 /* h5/h6 are de-emphasized relative to body text, matching GitHub/MPE preview. */
 .cm-lp-h5,
 .cm-lp-h6 {
   color: var(--vscode-descriptionForeground);
 }
-/* h1/h2 get an underline rule like GitHub-flavored Markdown preview. */
+/* h1/h2 get an underline rule like GitHub-flavored Markdown preview. Their
+   tightened padding-bottom (0.3em, vs the 0.6em other levels use) is already
+   set via `--lp-h1-pb`/`--lp-h2-pb` above (R-28-14: padding, not margin, so
+   the height oracle sees the true rendered height); no override needed here. */
 .cm-line.cm-lp-h1,
 .cm-line.cm-lp-h2 {
   border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-editorWidget-border, rgba(127, 127, 127, 0.3)));
-  /* 見出し直下の罫線までの余白を詰めて標準プレビュー相当の締まった見た目にする
-     （padding-bottom を上書き、R-28-14: margin ではなく padding）。 */
-  padding-bottom: 0.3em;
 }
 
 .cm-lp-quote {
@@ -314,7 +372,7 @@ body {
   display: inline-block;
   min-width: 1em;
   text-align: center;
-  font-size: 1.2em;
+  font-size: 1.6em;
   line-height: inherit;
 }
 /* The hollow circle (○, 2nd-level bullet) still reads visually larger than •/▪
@@ -584,24 +642,26 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
   width: 18px;
 }
 .cm-editor .cm-foldGutter .cm-gutterElement {
-  /* Reverted to the pre-#21 layout (Issue #24 follow-up): centering the chevron
-     in the gutter element's own box, with only a small baseline nudge, keeps it
-     next to the heading line it belongs to. #21's `flex-start` + large
-     `translateY(0.55em)` pushed the chevron down far enough that it visually
-     read as belonging to a different line. The larger `font-size` from #21 is
-     kept for visibility (R-30-04 / R-28-06); only the vertical alignment is
-     reverted. H1–H3 get a small extra downward nudge via `.cm-lp-fold-h1/-h2/-h3`
-     below (added to the gutter element by `gutterLineClass` in `main.ts`, since
-     the gutter itself has no heading-level information); H4–H6 keep this base
-     value unchanged. */
+  /* CodeMirror sizes the gutter element to the full (padding-included) height
+     of its heading line, so `align-items: center` alone centres the chevron
+     on that box's geometric middle — not on the heading text's visual centre,
+     since heading lines use an asymmetric padding-top/padding-bottom
+     (R-28-14). The per-level `.cm-lp-fold-hN` rules below correct for this by
+     deriving the exact downward offset, `(padding-top − padding-bottom) / 2`,
+     from the very same `--lp-hN-pt`/`--lp-hN-pb`/`--lp-hN-size` ratios the
+     heading itself uses (declared once, near `.cm-lp-heading` above), instead
+     of an independently hand-tuned `translateY` per level (R-30-04). This is
+     the base gutter-element box; no vertical nudge is applied here because
+     every heading level (H1–H6) gets its own derived nudge via
+     `.cm-lp-fold-h1`.. `.cm-lp-fold-h6` (attached by `gutterLineClass` in
+     `main.ts`, since the gutter itself carries no heading-level info). */
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding: 0 2px 0 0;
   font-family: var(--vscode-editor-font-family, sans-serif);
-  font-size: 1.5em;
+  font-size: calc(var(--lp-fold-gutter-size) * 1em);
   line-height: 1;
-  transform: translateY(0.15em);
   cursor: pointer;
   color: var(--vscode-descriptionForeground);
   opacity: 0.7;
@@ -609,18 +669,29 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 .cm-editor .cm-foldGutter .cm-gutterElement:hover {
   opacity: 1;
 }
-/* Heading 1 sits visually a bit lower within its (taller, more top-padded)
-   line block, so its chevron gets the largest downward nudge; heading 2 and 3
-   get progressively smaller nudges than the base 0.15em; H4–H6 use the base
-   value untouched. */
+/* Derived downward nudge per heading level: (pt − pb) / 2 converts the
+   heading's own padding asymmetry into a gutter-em offset by rescaling
+   through the heading's font-size multiplier and the gutter's own font-size
+   multiplier (both declared once, near `.cm-lp-heading` above). Changing a
+   heading's size/padding ratios there keeps the chevron centred on the text
+   glyph automatically — no independent per-level constant to re-tune. */
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h1 {
-  transform: translateY(0.55em);
+  transform: translateY(calc((var(--lp-h1-pt) - var(--lp-h1-pb)) / 2 * var(--lp-h1-size) / var(--lp-fold-gutter-size) * 1em));
 }
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h2 {
-  transform: translateY(0.42em);
+  transform: translateY(calc((var(--lp-h2-pt) - var(--lp-h2-pb)) / 2 * var(--lp-h2-size) / var(--lp-fold-gutter-size) * 1em));
 }
 .cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h3 {
-  transform: translateY(0.28em);
+  transform: translateY(calc((var(--lp-h3-pt) - var(--lp-h3-pb)) / 2 * var(--lp-h3-size) / var(--lp-fold-gutter-size) * 1em));
+}
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h4 {
+  transform: translateY(calc((var(--lp-h4-pt) - var(--lp-h4-pb)) / 2 * var(--lp-h4-size) / var(--lp-fold-gutter-size) * 1em));
+}
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h5 {
+  transform: translateY(calc((var(--lp-h5-pt) - var(--lp-h5-pb)) / 2 * var(--lp-h5-size) / var(--lp-fold-gutter-size) * 1em));
+}
+.cm-editor .cm-foldGutter .cm-gutterElement.cm-lp-fold-h6 {
+  transform: translateY(calc((var(--lp-h6-pt) - var(--lp-h6-pb)) / 2 * var(--lp-h6-size) / var(--lp-fold-gutter-size) * 1em));
 }
 /* Reduce the content left padding by the gutter width so the total left offset
    (gutter + padding) stays at 48px and heading/body left edges keep aligning
@@ -628,8 +699,12 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 .cm-content {
   padding-left: 30px !important;
 }
-/* Folded-section placeholder: a subtle, theme-following pill. */
-.cm-foldPlaceholder {
+/* Folded-section placeholder: a subtle, theme-following pill.
+   Selector is prefixed with .cm-editor so its specificity (0,2,0) matches
+   or exceeds CodeMirror's built-in base theme rule
+   (`.${baseThemeID} .cm-foldPlaceholder`), otherwise the default #eee
+   background wins and this theme-following color is never applied. */
+.cm-editor .cm-foldPlaceholder {
   background: color-mix(in srgb, var(--vscode-editor-background) 90%, var(--vscode-editor-foreground) 10%);
   border: 1px solid var(--vscode-widget-border, transparent);
   color: var(--vscode-descriptionForeground);

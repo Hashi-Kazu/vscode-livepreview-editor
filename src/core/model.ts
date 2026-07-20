@@ -841,6 +841,14 @@ export function computeDecorations(
   }
   const specs: DecoSpec[] = [];
 
+  // Tracks the nesting level of the most recently seen blockquote line, so a
+  // non-blank "lazy continuation" line right after it (no `>` marker at all, or
+  // one with a shallower depth) still renders as part of the same blockquote
+  // (indentation + background band), matching CommonMark's lazy-continuation
+  // rule (R-02-05). Reset to 0 whenever a blank line or any other block type is
+  // encountered.
+  let lastQuoteLevel = 0;
+
   const inRange = (i: number) =>
     !options.lineRange || (i >= options.lineRange.startLine && i <= options.lineRange.endLine);
 
@@ -857,6 +865,7 @@ export function computeDecorations(
 
     // --- Fenced code blocks ---------------------------------------------
     if (role) {
+      lastQuoteLevel = 0;
       const block = code.blockOf[i]!;
       const active = blockHasCursor(block.open, block.close);
       const roleClass =
@@ -896,6 +905,7 @@ export function computeDecorations(
 
     // --- Tables ----------------------------------------------------------
     if (tableMember[i]) {
+      lastQuoteLevel = 0;
       const block = tableStartAt.get(i);
       if (!block) continue; // non-start rows are handled by the block at start
       const active = blockHasCursor(block.start, block.end);
@@ -921,6 +931,7 @@ export function computeDecorations(
 
     // --- HTML <details> accordion ---------------------------------------
     if (detailsMember[i]) {
+      lastQuoteLevel = 0;
       const owner = detailsBlockOf[i]!;
       // R-27-07: the user may opt a specific accordion into raw-source editing
       // via the "Markdownコードを直接編集" context-menu item. While the caret is
@@ -955,6 +966,7 @@ export function computeDecorations(
 
     // --- Block math ($$…$$) ---------------------------------------------
     if (mathMember[i]) {
+      lastQuoteLevel = 0;
       const block = mathStartAt.get(i);
       if (!block) continue; // inner lines handled by the start
       const active = blockHasCursor(block.start, block.end);
@@ -984,6 +996,7 @@ export function computeDecorations(
     // stays visible/editable (R-01-01) and the source is never mutated (R-01-02).
     const alert = alertBlockOf[i];
     if (alert) {
+      lastQuoteLevel = 0;
       const isStart = i === alert.start;
       const isEnd = i === alert.end;
       const roleClass = `${isStart ? ' cm-lp-alert-open' : ''}${isEnd ? ' cm-lp-alert-close' : ''}`;
@@ -1031,6 +1044,7 @@ export function computeDecorations(
     // --- Headings --------------------------------------------------------
     let m = HEADING_RE.exec(line.text);
     if (m) {
+      lastQuoteLevel = 0;
       const level = m[1].length;
       specs.push({
         from: line.from,
@@ -1049,6 +1063,7 @@ export function computeDecorations(
 
     // --- Horizontal rule (---, ***, ___) --------------------------------
     if (/^ {0,3}([-*_])( *\1){2,} *$/.test(line.text)) {
+      lastQuoteLevel = 0;
       specs.push({ from: line.from, to: line.from, type: 'line', tag: 'hr', className: 'cm-lp-hr' });
       if (!isCursor) {
         specs.push({ from: line.from, to: line.to, type: 'replaceWidget', tag: 'hr-widget', attrs: { widget: '' } });
@@ -1061,7 +1076,14 @@ export function computeDecorations(
     if (m) {
       const markerLen = m[1].length + m[2].length;
       const depth = (m[2].match(/>/g) || []).length;
-      const level = Math.max(1, Math.min(depth, 6));
+      let level = Math.max(1, Math.min(depth, 6));
+      // Lazy continuation: a quote line whose own depth is shallower than the
+      // immediately preceding (non-blank) quote line still belongs to that
+      // deeper level, matching CommonMark's lazy-continuation rule (R-02-05).
+      if (lastQuoteLevel > level) {
+        level = lastQuoteLevel;
+      }
+      lastQuoteLevel = level;
       specs.push({
         from: line.from,
         to: line.from,
@@ -1076,6 +1098,24 @@ export function computeDecorations(
       specs.push(...parseInline(line.text, line.from, isCursor, markerLen));
       continue;
     }
+    if (lastQuoteLevel > 0 && line.text.trim() !== '') {
+      // Lazy continuation line with no `>` marker at all: it still belongs to
+      // the enclosing blockquote (R-02-05), inheriting the same nesting level
+      // (indentation + background band), but has no marker to hide and its
+      // text is never mutated (R-01-02).
+      const level = lastQuoteLevel;
+      specs.push({
+        from: line.from,
+        to: line.from,
+        type: 'line',
+        tag: 'quote',
+        className: `cm-lp-quote cm-lp-quote-l${level}`,
+        attrs: { level: String(level) },
+      });
+      specs.push(...parseInline(line.text, line.from, isCursor));
+      continue;
+    }
+    lastQuoteLevel = 0;
 
     // --- Lists (unordered / ordered) ------------------------------------
     m = ULIST_RE.exec(line.text);

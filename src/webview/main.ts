@@ -478,13 +478,15 @@ const headingFoldService = foldService.of((state, lineStart) =>
   headingFoldRange(state.doc.toString(), state.doc.lineAt(lineStart).number - 1),
 );
 
-// R-30-04: the fold gutter chevron's vertical nudge differs only for H1–H3 (see
-// `.cm-lp-fold-h1/-h2/-h3` in editor.css). The gutter element itself carries no
-// heading-level information, so `gutterLineClass` attaches a level-specific CSS
-// class (via a marker-only `GutterMarker`, no `toDOM`) to every heading line's
-// gutter cell, computed from the same pure `scanHeadings` scanner used for
-// folding. H4–H6 intentionally get no marker (their nudge stays at the base
-// value defined on `.cm-gutterElement`).
+// R-30-04: the fold gutter chevron's vertical centring nudge is derived per
+// heading level from that level's own padding-top/padding-bottom ratio (see
+// `.cm-lp-fold-h1`..`.cm-lp-fold-h6` in editor.css, computed via `calc()` from
+// the `--lp-hN-*` custom properties shared with the heading's own font-size/
+// padding rules — not an independently hand-tuned constant). The gutter
+// element itself carries no heading-level information, so `gutterLineClass`
+// attaches a level-specific CSS class (via a marker-only `GutterMarker`, no
+// `toDOM`) to every heading line's gutter cell (H1–H6, all levels), computed
+// from the same pure `scanHeadings` scanner used for folding.
 class HeadingLevelGutterMarker extends GutterMarker {
   constructor(readonly level: number) {
     super();
@@ -499,7 +501,7 @@ function headingGutterMarks(state: EditorState): RangeSet<GutterMarker> {
   const headings = scanHeadings(state.doc.toString());
   const builder = new RangeSetBuilder<GutterMarker>();
   for (const h of headings) {
-    if (h.level >= 1 && h.level <= 3) {
+    if (h.level >= 1 && h.level <= 6) {
       builder.add(h.from, h.from, new HeadingLevelGutterMarker(h.level));
     }
   }

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { computeDecorations, DecoSpec } from '../src/core/model';
 import { displayFontSize } from '../src/core/viewport';
 
@@ -28,6 +30,12 @@ describe('R-01-05 箇条書きは階層別マーカー(•/○/▪)を返す', (
     const bullets = byTag(specs, 'list-bullet');
     expect(bullets).toHaveLength(5);
     expect(bullets.map((b) => b.attrs?.widget)).toEqual(['•', '○', '▪', '▪', '▪']);
+  });
+
+  it('.cm-lp-list-bulletのfont-sizeは1.6em、hollow(○)は0.62emのまま', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
+    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.6em;/);
+    expect(css).toMatch(/\.cm-lp-list-bullet-hollow\s*\{[^}]*font-size:\s*0\.62em;/);
   });
 });
 
@@ -90,6 +98,22 @@ describe('R-02-05 入れ子引用は階層クラスを返す', () => {
     const hide = byTag(specs, 'quote-mark');
     expect(hide).toHaveLength(1);
     expect(text(doc, hide[0])).toBe('>> ');
+  });
+
+  it('>>再掲なしの継続行もcm-lp-quote-l2を含む(lazy continuation)', () => {
+    const doc = ['>> nested', 'continuation without markers'].join('\n');
+    const specs = computeDecorations(doc, new Set());
+    const quotes = byTag(specs, 'quote');
+    expect(quotes).toHaveLength(2);
+    expect(quotes[0].className).toContain('cm-lp-quote-l2');
+    expect(quotes[1].className).toContain('cm-lp-quote-l2');
+  });
+
+  it('空行を挟むと継続はリセットされる(次段落は引用にならない)', () => {
+    const doc = ['>> nested', '', 'not a continuation'].join('\n');
+    const specs = computeDecorations(doc, new Set());
+    const quotes = byTag(specs, 'quote');
+    expect(quotes).toHaveLength(1);
   });
 });
 
