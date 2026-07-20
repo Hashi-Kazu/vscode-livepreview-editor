@@ -32,7 +32,7 @@ import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, u
 import { toggleWrap, WrapResult } from '../core/format';
 import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
 import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
-import { LineWindow, viewportWindow, zoomFontSize, displayFontSize } from '../core/viewport';
+import { LineWindow, viewportWindow, zoomFontSize, displayFontSize, clampScrollLine } from '../core/viewport';
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -47,6 +47,11 @@ let binding = 0;
 /** True while we are applying an edit that came from the extension host, so we
  *  do not echo it straight back and create a feedback loop. */
 let applyingRemote = false;
+/** True while applying a host-driven `scrollTo` (R-35), cleared on the next
+ *  animation frame after the scroll is dispatched. Guards the `.cm-scroller`
+ *  scroll listener from echoing the host's own scroll command back to it
+ *  (loop-prevention layer 1 of 3; see `src/core/viewport.ts`). */
+let applyingRemoteScroll = false;
 let editVersion = 0;
 let ackVersion = 0;
 let pendingCompositionChange = false;
@@ -1191,6 +1196,55 @@ view.dom.addEventListener(
   { passive: false },
 );
 
+// --- R-35: vertical scroll sync with the standard source TextEditor --------
+//
+// `.cm-scroller` is the single scroll container (R-28-13, `#editor { overflow:
+// hidden }`); CodeMirror geometry (`lineBlockAtHeight`) maps its `scrollTop` to
+// a 0-based document line, which is the sync anchor shared with the host.
+let scrollSyncRafScheduled = false;
+
+/** The 0-based line currently at the top of the viewport, plus how far scrolled
+ *  into that line (0–1) — the latter is only meaningful for restoring a
+ *  Webview-local scroll position and is not relied on by the host side. */
+function topVisibleLineFraction(): { line: number; fraction: number } {
+  const scrollTop = view.scrollDOM.scrollTop;
+  const block = view.lineBlockAtHeight(scrollTop);
+  const line = view.state.doc.lineAt(block.from).number - 1;
+  const fraction = block.height > 0 ? Math.min(1, Math.max(0, (scrollTop - block.top) / block.height)) : 0;
+  return { line, fraction };
+}
+
+/** Report the current top visible line to the host, rAF-throttled so a scroll
+ *  gesture posts at most once per animation frame. Suppressed entirely while
+ *  applying a host-driven `scrollTo` (loop-prevention layer 1 of 3). */
+function scheduleScrollReport(): void {
+  if (applyingRemoteScroll || scrollSyncRafScheduled) return;
+  scrollSyncRafScheduled = true;
+  requestAnimationFrame(() => {
+    scrollSyncRafScheduled = false;
+    if (applyingRemoteScroll) return;
+    const { line, fraction } = topVisibleLineFraction();
+    vscode.postMessage({ type: 'scroll', binding, line, fraction });
+  });
+}
+
+view.scrollDOM.addEventListener('scroll', scheduleScrollReport, { passive: true });
+
+/** Scroll CodeMirror so `line0` (0-based, clamped to the document) sits at the
+ *  top of the viewport, in response to a host `scrollTo` message. */
+function scrollToRemoteLine(line0: number): void {
+  const clamped = clampScrollLine(line0, view.state.doc.lines);
+  applyingRemoteScroll = true;
+  const pos = view.state.doc.line(clamped + 1).from;
+  view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'start' }) });
+  // Cleared next frame: CodeMirror applies the scroll effect via its own
+  // measure/write cycle, so the resulting native `scroll` event can still land
+  // in this frame or the next one.
+  requestAnimationFrame(() => {
+    applyingRemoteScroll = false;
+  });
+}
+
 function setText(text: string, rollback = false) {
   const doc = view.state.doc.toString();
   if (doc === text) return;
@@ -1234,6 +1288,7 @@ window.addEventListener('message', (event) => {
       pendingRemote = undefined;
       pendingMediaRequests.clear();
       renderErrorReported = false;
+      applyingRemoteScroll = false;
       applyFontSize(msg.fontSize ?? 14);
       if (typeof msg.resourceBase === 'string') setResourceBase(msg.resourceBase);
       // Blocks start expanded; the user folds/unfolds via the ▸/▾ gutter.
@@ -1275,6 +1330,10 @@ window.addEventListener('message', (event) => {
       break;
     case 'settings':
       if (typeof msg.fontSize === 'number') applyFontSize(msg.fontSize);
+      break;
+    case 'scrollTo': // host-driven scroll sync (R-35)
+      if (msg.binding !== binding) break;
+      if (typeof msg.line === 'number') scrollToRemoteLine(msg.line);
       break;
     case 'format':
       if (typeof msg.kind === 'string') runFormat(msg.kind);

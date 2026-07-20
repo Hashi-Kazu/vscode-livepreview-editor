@@ -29,6 +29,8 @@
 | [0018](0018-explicit-save-over-idle-autosave.md) | 明示保存＋ライフサイクル flush（アイドル自動保存廃止） | `SaveDebouncer` を廃止し、Webview Ctrl+S→host `performSave` と失焦・破棄・バインド切替の flush 保存へ変更。Undo 安全機構は据え置き（ADR-0019 で supersede） | 採用 |
 | [0019](0019-debounced-apply-immediate-save.md) | デバウンスバッチ apply＋即時保存 | デバウンス apply＋直後保存で dirty 滞留を防止する。v1.34.0 でソースタブ自動クローズ backstop を廃止し、該当判断を部分的に supersede | 採用 |
 | [0020](0020-readopt-custom-text-editor-and-delegate-undo.md) | CustomTextEditorProvider の再採用と Undo/Redo の VS Code 委譲 | 単一 TextDocument バインド、`classifyUndoRedoKey` で undo/redo/save を host 転送、CodeMirror history 撤去、per-editor serial queue、デバウンス apply。ADR-0005 復活・ADR-0015 廃止・ADR-0017 の単独 Undo を supersede | 高 |
+| [0021](0021-code-block-syntax-highlighting-and-github-alerts.md) | コードブロック言語別構文ハイライトと GitHub Alerts 記法 | 個別 `@codemirror/lang-*` を静的 import する同期リゾルバで言語解析、`--vscode-symbolIcon-*` 追従のトークン色、行装飾ベースの GitHub Alerts | 高 |
+| [0022](0022-line-anchored-bidirectional-scroll-sync.md) | 行番号アンカー双方向スクロール同期とループ防止 | 標準ソースエディタと Live Preview の縦スクロールを 0 始まり行番号で双方向連動。Webview 1 フレームガード＋host 時刻抑止窓＋行一致デデュープの 3 層でループ防止、判定は `src/core/viewport.ts` の純粋関数 | 高 |
 
 ---
 
