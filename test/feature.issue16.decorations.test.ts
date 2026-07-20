@@ -32,9 +32,14 @@ describe('R-01-05 箇条書きは階層別マーカー(•/○/▪)を返す', (
     expect(bullets.map((b) => b.attrs?.widget)).toEqual(['•', '○', '▪', '▪', '▪']);
   });
 
-  it('.cm-lp-list-bulletのfont-sizeは1.2em、hollow(○)は0.55emのまま(Issue #36)', () => {
+  it('.cm-lp-list-bulletのfont-sizeは1.4emでline-heightは1固定、hollow(○)は0.55emのまま(Issue #41)', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
-    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.2em;/);
+    // •/▪ は 1.2em → 1.4em に拡大(Issue #41)。
+    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.4em;/);
+    // 拡大したグリフが行ボックスを押し広げないよう line-height を固定(unitless
+    // 1.6 の継承を止める)。これで •/▪ 行と ○ 行のアイテム間余白が揃う。
+    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*line-height:\s*1;/);
+    // hollow(○, 2階層目)は 0.55em のまま不変。
     expect(css).toMatch(/\.cm-lp-list-bullet-hollow\s*\{[^}]*font-size:\s*0\.55em;/);
   });
 
@@ -134,13 +139,14 @@ describe('R-02-05 入れ子引用は階層クラスを返す', () => {
     expect(quotes).toHaveLength(1);
   });
 
-  it('入れ子引用の1段あたりインデント段差は2emに拡大されている(Issue #36)', () => {
+  it('入れ子引用の1段あたりインデント段差は16px固定(親テキスト列に整列、Issue #41)', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
-    // l2 は親より 2em 右へ(旧 1.4em)、l6 は 5 段ぶんで 10em。
-    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*padding-left:\s*calc\(2em \+ 16px\);/);
-    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*background-position:\s*0 0, 2em 0;/);
-    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*padding-left:\s*calc\(10em \+ 16px\);/);
-    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*background-position:\s*0 0, 2em 0, 4em 0, 6em 0, 8em 0, 10em 0;/);
+    // Issue #41: 段差を 2em から 16px(= l1 のバー↔テキスト間隔)へ改め、各入れ子
+    // 階層のバーが親のテキスト列に整列するようにした。l2 は 32px、l6 は 6 段ぶん。
+    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*padding-left:\s*32px;/);
+    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*background-position:\s*0 0, 16px 0;/);
+    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*padding-left:\s*96px;/);
+    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*background-position:\s*0 0, 16px 0, 32px 0, 48px 0, 64px 0, 80px 0;/);
   });
 });
 
