@@ -14,7 +14,7 @@
 │ - デバウンス apply（最小差分 WorkspaceEdit）・明示保存 │
 │ - Undo/Redo は executeCommand へ委譲・self-echo ledger │
 └───────────────────────┬─────────────────────────────┘
-                        │ init/update/ack/edit/undo/redo/save/openLink/pasteMedia/insertMedia/…
+                        │ init/update/ack/edit/undo/redo/save/openLink/pasteMedia/insertMedia/scroll/scrollTo/…
 ┌───────────────────────▼─────────────────────────────┐
 │ Webview (browser/IIFE) src/webview/main.ts          │
 │ - CodeMirror 6 EditorView（history を持たない）      │
@@ -58,6 +58,14 @@ Live Preview の Undo/Redo は CodeMirror の history を持たず、VS Code へ
 host は `applyPendingEdit` 前に「期待 LF 本文＋期待 TextDocument version」を version-keyed の self-echo ledger（`expectedChanges`）へ記録し、`consumeExpectedWorkspaceEditChange` で一致する変更だけを自己エコーとして消費する（Webview へ反映しない）。ledger に一致しない変更（VS Code の Undo/Redo、標準編集、保存参加者、Git、他拡張、autoSave 正規化）は真の外部変更として `reconcileExternalChange` が一方向に反映する（1回）。反映前に pending edit があれば先に `applyPendingEdit` して確定済み入力を失わない。
 
 Webview（`src/webview/main.ts`）は edit version と ack version を別管理し、`shouldApplyRemoteUpdate` により `baseVersion === editVersion === ackVersion` の update だけを適用する。IME 合成中・未 ack edit 中は最新1件を保留する。外部更新・apply false rollback は `computeRemotePatch` で選択を再マップした新しい EditorState に置換する（CodeMirror history を持たないため単純置換）。`paste`/`drop`/`dragover` は `Prec.highest(EditorView.domEventHandlers)` で DataTransfer の File、URI MIME、file URI-only plain text を処理し、URI は File より優先する。
+
+## 縦スクロール同期（R-35）
+
+標準ソースエディタ（VS Code TextEditor）と Live Preview（Webview）は同一 `TextDocument` にバインドされるため、0 始まり行番号を同期アンカーとして双方向にスクロールを連動させる（ADR-0022）。
+
+- Webview → host: `.cm-scroller`（唯一のスクロールコンテナ、R-28-13）の `scroll` イベントを rAF スロットルし、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を算出して `{ type: 'scroll', binding, line, fraction }` を postMessage する。host は対象 URI に一致する `vscode.window.visibleTextEditors`（カスタムエディタの Webview 自体は含まれないため、常に標準ソースエディタだけが対象）へ `revealRange(new vscode.Range(line,0,line,0), AtTop)` を適用する。
+- host → Webview: `vscode.window.onDidChangeTextEditorVisibleRanges` を購読し、対象 URI に一致するイベントの `visibleRanges[0].start.line` を `{ type: 'scrollTo', binding, line }` として Webview へ送る。Webview は `EditorView.scrollIntoView(pos, { y: 'start' })` でその行が最上部に来るようスクロールする。
+- 相互ループ防止は 3 層：(1) Webview 側 `applyingRemoteScroll` ブールガード（`scrollTo` 適用中〜適用直後の 1 フレームは自前 scroll ハンドラの送信を抑止）、(2) host 側の時刻ベース抑止窓（`revealRange` 実行直後 `SCROLL_SUPPRESS_WINDOW_MS`（既定 200ms）の間に発火した `onDidChangeTextEditorVisibleRanges` は中継しない）、(3) host 側の行一致デデュープ（`lastSyncedScrollLine` と同じ行への同期要求は中継しない）。行クランプ・抑止窓・デデュープの判定ロジックは `src/core/viewport.ts` の純粋関数（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`）として実装し、DOM/vscode 非依存を保つ（ADR-0002）。`scroll`/`scrollTo` はいずれも既存の `binding`（session id）で照合し、他 session のメッセージは無視する。
 
 ## Webview 描画
 

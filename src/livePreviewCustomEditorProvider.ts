@@ -8,7 +8,13 @@ import {
   fromLFPreserving,
   toLF,
 } from './core/sync';
-import { resolveSettings } from './core/viewport';
+import {
+  clampScrollLine,
+  isEchoScroll,
+  nextScrollSuppressUntil,
+  resolveSettings,
+  shouldRelayScrollLine,
+} from './core/viewport';
 import {
   buildMediaSnippet,
   dedupeFilesAgainstUris,
@@ -105,6 +111,16 @@ class LivePreviewEditorSession {
   /** Self echoes of our own WorkspaceEdits, keyed by source Webview version. */
   private readonly expectedChanges = new Map<number, ExpectedWorkspaceEditChange>();
 
+  // --- R-35: vertical scroll sync state ---------------------------------------
+  /** 0-based line most recently synced in either direction; deduped so an echo
+   *  of the same line (in either direction) is not relayed again. */
+  private lastSyncedScrollLine: number | undefined;
+  /** Epoch-ms deadline until which `onDidChangeTextEditorVisibleRanges` events
+   *  are treated as our own `revealRange` echo and not relayed to the Webview
+   *  (loop-prevention layer 2 of 3; layer 1 is the Webview's own guard, layer 3
+   *  is the `lastSyncedScrollLine` dedupe above). */
+  private scrollSuppressUntil: number | undefined;
+
   private readonly subscriptions: vscode.Disposable[] = [];
 
   constructor(
@@ -124,6 +140,7 @@ class LivePreviewEditorSession {
     this.subscriptions.push(
       this.panel.webview.onDidReceiveMessage((message) => this.handleMessage(message)),
       vscode.workspace.onDidChangeTextDocument((event) => this.onDocumentChanged(event)),
+      vscode.window.onDidChangeTextEditorVisibleRanges((event) => this.onSourceVisibleRangesChanged(event)),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (!event.affectsConfiguration('livePreview.fontSize')) return;
         void this.panel.webview.postMessage({ type: 'settings', fontSize: this.currentFontSize() });
@@ -190,7 +207,53 @@ class LivePreviewEditorSession {
           `Live Preview のレンダリングに失敗しました: ${message.message}`,
         );
         break;
+      case 'scroll': // Webview → source TextEditor(s) (R-35)
+        if (message.binding !== this.id) return;
+        if (typeof message.line !== 'number') return;
+        this.onWebviewScroll(message.line);
+        break;
     }
+  }
+
+  // --- Vertical scroll sync (R-35) --------------------------------------------
+
+  /** Reveal the Webview's reported top line at the top of every standard source
+   *  `TextEditor` bound to this document. Custom-editor Webviews are never
+   *  included in `visibleTextEditors`, so this only ever targets the standard
+   *  source editor(s), never this Live Preview instance itself. */
+  private onWebviewScroll(line: number): void {
+    if (this.disposed) return;
+    const clamped = clampScrollLine(line, this.document.lineCount);
+    if (!shouldRelayScrollLine(clamped, this.lastSyncedScrollLine)) return;
+    const editors = vscode.window.visibleTextEditors.filter(
+      (editor) => editor.document.uri.toString() === this.uri.toString(),
+    );
+    if (editors.length === 0) return;
+    this.lastSyncedScrollLine = clamped;
+    // Opens the echo-suppression window before revealing: `revealRange` below
+    // synchronously triggers `onDidChangeTextEditorVisibleRanges`, which must
+    // not be relayed back to the Webview as if it were an independent source
+    // scroll.
+    this.scrollSuppressUntil = nextScrollSuppressUntil(Date.now());
+    const range = new vscode.Range(clamped, 0, clamped, 0);
+    for (const editor of editors) {
+      editor.revealRange(range, vscode.TextEditorRevealType.AtTop);
+    }
+  }
+
+  /** Forward the source `TextEditor`'s new top visible line to the Webview,
+   *  unless it is our own `revealRange` echo (suppression window) or a repeat
+   *  of the line last synced in either direction (dedupe). */
+  private onSourceVisibleRangesChanged(event: vscode.TextEditorVisibleRangesChangeEvent): void {
+    if (this.disposed) return;
+    if (event.textEditor.document.uri.toString() !== this.uri.toString()) return;
+    if (isEchoScroll(Date.now(), this.scrollSuppressUntil)) return;
+    const topRange = event.visibleRanges[0];
+    if (!topRange) return;
+    const line = clampScrollLine(topRange.start.line, this.document.lineCount);
+    if (!shouldRelayScrollLine(line, this.lastSyncedScrollLine)) return;
+    this.lastSyncedScrollLine = line;
+    void this.panel.webview.postMessage({ type: 'scrollTo', binding: this.id, line });
   }
 
   // --- Pending edit lifecycle (R-03-08 / R-04-01) ----------------------------

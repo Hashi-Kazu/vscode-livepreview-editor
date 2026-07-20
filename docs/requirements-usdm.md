@@ -1,12 +1,14 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.38.0
+**バージョン**: 1.39.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-20
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-20 時点 / v1.39.0）**: v1.39.0 で、GitHub Issue #37 に対応し、標準 Markdown ソースエディタと Live Preview（Webview）の縦スクロールを、共有 `TextDocument` の 0 始まり行番号を同期キーとして双方向に連動させた（R-35 新設）。Webview → host は `.cm-scroller` の scroll を rAF スロットルし CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を算出して `scroll` メッセージを送り、host は対象 URI の `visibleTextEditors`（カスタムエディタの Webview 自体は含まれない）へ `revealRange(..., AtTop)` する。host → Webview は `onDidChangeTextEditorVisibleRanges` の対象 URI 一致イベントを `scrollTo` メッセージとして送り、Webview は CodeMirror をその行が最上部に来るようスクロールする。相互ループは (1) Webview 側 `applyingRemoteScroll` ガード、(2) host 側の時刻ベース抑止窓、(3) host 側の直近同期行デデュープの 3 層で防止し、行クランプ・抑止窓・デデュープの判定ロジックは DOM/vscode 非依存の純粋関数（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`、`src/core/viewport.ts`）として実装し `test/feature.issue37.scrollSync.test.ts` で検証した。既存の編集同期経路（`edit`/`update`/`ack`/self-echo ledger/`reconcileExternalChange`/デバウンス apply）と Undo/Redo 委譲（R-33）は変更していない。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。方式・ループ防止設計は ADR-0022 に記録。
+>
 > ▶️ **開発継続中（2026-07-20 時点 / v1.38.0）**: v1.38.0 で、GitHub Issue #36（リスト・引用・注釈の表示／入力不具合）4 件へ対応した。(1) 箇条書きの基本アイコンサイズ（`.cm-lp-list-bullet` の `font-size`）を `1.4em` から `1.2em` へ縮小し、2 段目の ○（`.cm-lp-list-bullet-hollow` の `0.55em`）以外の全階層をこの `1.2em` の箱で表示するようにした（R-01-05）。(2) 番号付きリスト 4 階層目での Enter 継続を Webview キーマップ経由で回帰ロックするため、`handleEnter` の純粋部を `computeListEnterEdit`（`src/core/editing.ts`）として切り出し、`EditorState` 経由のエンドツーエンド回帰テストを追加した（挙動は不変、R-23）。(3) 入れ子引用の 1 段あたりインデント段差を `1.4em` から `2em` へ拡大し、各階層が親より明確に右へ字下げされるようにした（バー本数・幅・色・末尾定数 `16px` は不変、R-02-05）。(4) GitHub Alerts と `<details>` アコーディオンを「左端線中心」から背景色を持つ自然なカード（淡い `color-mix` 背景・上下左右の角丸・十分な下パディング）へ再設計し、種別別の色・アイコンを Note＝青／ペン、Tip・Important＝シアン／炎、Warning・Caution＝オレンジ／三角へ統一した（R-02-08／R-27）。色はすべて `--vscode-*` テーマ変数＋フォールバックで表現（R-28-04）。純粋検知ロジック（`continueList`／`OLIST_LINE`／`detectAlertBlocks` 等）は変更していない。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
 >
 > ▶️ **開発継続中（2026-07-20 時点 / v1.37.10）**: v1.37.10 で、GitHub Issue #33（箇条書きアイコンサイズの指摘）に対応した。(1) 基本アイコンサイズ（`.cm-lp-list-bullet` の `font-size`）を `1.6em` から `1.4em` へ縮小した（2 段目以外の •/▪ が大きすぎるという指摘、Issue #33）。(2) ユーザーからの追加指摘を受け、2 段目の ○（`.cm-lp-list-bullet-hollow`）の `font-size` を `0.62em` から `0.55em` へさらに縮小した。`test/feature.issue16.decorations.test.ts` の CSS 値アサーションを更新して検証。純粋ロジックは変更していない。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
@@ -493,3 +495,13 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■□ R-34-01 フェンスコードブロックの内容を言語別に構文ハイライトすること。`markdown({ codeLanguages: codeLanguageFor })` で言語パーサを供給し、`syntaxHighlighting(lpHighlightStyle)` でトークンを色分けする。対応言語は主要言語（js/ts/jsx/tsx/python/html/css/json/c/cpp/rust/java/sql/xml/yaml/php 等）とし、未対応言語はハイライトせず素の等幅表示にフォールバックすること。
 - ■■□ R-34-02 トークン色は `--vscode-symbolIcon-*` を中心とした `var(--vscode-*)` テーマ変数に追従させ、独自ハードコード色を用いない（フォールバックのみ可、R-28-04）。プログラミング言語タグのみを写像し、Markdown 本文の装飾（`.cm-lp-*`）と衝突させないこと。
 - ■■□ R-34-03 言語リゾルバ `codeLanguageFor` は `Language`（`LanguageSupport.language`）を同期に返し、動的 `import()` を用いないこと（Webview 単一バンドル維持）。Undo/Redo 委譲（R-33、`@codemirror/commands` の `history()` を import・登録しない）を壊さないこと。
+
+### R-35 標準ソースエディタと Live Preview の縦スクロール同期 #scrollsync
+
+> **理由：** 同一 Markdown 文書を標準ソースエディタ（VS Code TextEditor）と Live Preview（Webview／CodeMirror）で並べて開いたとき（`livePreview.openWith` は標準ソースを閉じず `ViewColumn.Beside` に開く）、どちらを縦スクロールしても他方が対応箇所へ追従しないと、長文で参照しながら編集する際に見ている行がずれてしまう。
+
+> **説明：** 同期アンカーは、両者が同一 `TextDocument` にバインドされることを利用した **0 始まり行番号**（最上部可視行）である。Webview → host は `.cm-scroller`（唯一のスクロールコンテナ、R-28-13）の `scroll` イベントを rAF スロットルで拾い、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を算出して `{ type: 'scroll', binding, line, fraction }` を host へ送る（`fraction` は行内の 0〜1 位置で、host は参照しない）。host（`src/livePreviewCustomEditorProvider.ts`）は対象 URI に一致する `vscode.window.visibleTextEditors`（カスタムエディタの Webview 自体は含まれないため、常に標準ソースエディタだけが対象になる）へ `revealRange(new vscode.Range(line,0,line,0), vscode.TextEditorRevealType.AtTop)` を適用する。逆方向（host → Webview）は `vscode.window.onDidChangeTextEditorVisibleRanges` を購読し、対象 URI に一致するイベントの `visibleRanges[0].start.line` を `{ type: 'scrollTo', binding, line }` として Webview へ送り、Webview は CodeMirror をその行が最上部に来るようスクロールする。`scroll`/`scrollTo` はいずれも既存の `binding`（session id）で照合し、他 session のメッセージは無視する。相互ループは 3 層で防止する：(1) Webview 側 `applyingRemoteScroll` ブールガード（`scrollTo` 適用中〜適用直後の 1 フレームは自前 scroll ハンドラの送信を抑止）、(2) host 側の時刻ベース抑止窓（`revealRange` 実行直後 `SCROLL_SUPPRESS_WINDOW_MS` の間に発火した `onDidChangeTextEditorVisibleRanges` は中継しない）、(3) host 側の行一致デデュープ（直近に同期した行と同じ行への同期要求は中継しない）。行クランプ・抑止窓・デデュープの判定ロジックは `src/core/viewport.ts` の純粋関数（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`）として実装し、DOM/vscode 非依存を保つ（ADR-0002）。ユーザーの Markdown 本文は書き換えない（R-01-02、スクロール同期は表示のみ）。方式・ループ防止設計は ADR-0022 に記録。
+
+- ■■□ R-35-01 標準ソースエディタを縦スクロールすると、Live Preview（Webview）が対応する行が最上部に来るよう追従してスクロールすること。同期は 0 始まり行番号を同期キーとし、`onDidChangeTextEditorVisibleRanges` の対象 URI 一致イベントを `scrollTo` メッセージとして Webview へ送ること。
+- ■■□ R-35-02 Live Preview（Webview）を縦スクロールすると、対象 URI に一致する標準ソースエディタ（`visibleTextEditors`）が対応する行を `revealRange`（`AtTop`）で追従すること。算出は `.cm-scroller` の scroll イベントを rAF スロットルし、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を求めること。
+- ■■□ R-35-03 相互のスクロール同期が無限ループ・振動を起こさないこと。(1) Webview 側 `applyingRemoteScroll` ガード、(2) host 側の時刻ベース抑止窓（`revealRange` 起因の `onDidChangeTextEditorVisibleRanges` を中継しない）、(3) host 側の直近同期行デデュープ、の 3 層で防止し、各層の純粋判定ロジック（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`、`src/core/viewport.ts`）は DOM/vscode 非依存に実装し単体テストすること（`test/feature.issue37.scrollSync.test.ts`）。長文（数千行規模）でも安定して同期し振動しないこと（手動確認）。

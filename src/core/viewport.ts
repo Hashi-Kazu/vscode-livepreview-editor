@@ -60,6 +60,60 @@ function clampFontSize(size: number): number {
   return Math.max(8, Math.min(40, Math.round(size)));
 }
 
+// --- R-35: bidirectional vertical scroll sync (0-based line anchor) --------
+//
+// The sync key is the 0-based line number that should sit at the top of the
+// viewport. These helpers are pure (no DOM/vscode dependency, ADR-0002) and are
+// shared by the two directions:
+//   - Webview → host: `.cm-scroller` scroll → top visible line → `revealRange`
+//     on the standard source `TextEditor`(s) for the same URI.
+//   - host → Webview: `onDidChangeTextEditorVisibleRanges` on the source
+//     `TextEditor` → top visible line → CodeMirror scroll.
+// Loop prevention is three-layered (Webview `applyingRemoteScroll` guard is
+// implemented in `src/webview/main.ts`; the other two layers are the pure
+// functions below, used by `src/livePreviewCustomEditorProvider.ts`):
+//   1. Webview-side one-frame guard (not pure; see main.ts).
+//   2. host-side time-based suppression window around a `revealRange` call, so
+//      the `onDidChangeTextEditorVisibleRanges` echo it causes is not relayed
+//      back to the Webview (`isEchoScroll`/`nextScrollSuppressUntil`).
+//   3. host-side same-line dedupe against the last line synced in either
+//      direction (`shouldRelayScrollLine`).
+
+/** Default width (ms) of the host-side echo-suppression window opened right
+ *  after a `revealRange` call triggered by a Webview scroll message. Wide
+ *  enough to absorb the round trip of VS Code's own visible-range change
+ *  event, narrow enough not to swallow a genuine, fast follow-up user scroll. */
+export const SCROLL_SUPPRESS_WINDOW_MS = 200;
+
+/** Clamp a (possibly out-of-range) 0-based line number to `[0, totalLines-1]`.
+ *  `totalLines <= 0` clamps to `0` (a single, empty document line). */
+export function clampScrollLine(line: number, totalLines: number): number {
+  const maxLine = Math.max(0, totalLines - 1);
+  if (!Number.isFinite(line)) return 0;
+  return Math.max(0, Math.min(Math.round(line), maxLine));
+}
+
+/** The new suppression-window deadline (epoch ms) after issuing a `revealRange`
+ *  at `now`, open for `windowMs` (default {@link SCROLL_SUPPRESS_WINDOW_MS}). */
+export function nextScrollSuppressUntil(now: number, windowMs: number = SCROLL_SUPPRESS_WINDOW_MS): number {
+  return now + Math.max(0, windowMs);
+}
+
+/** True while `now` falls inside a still-open suppression window (i.e. the
+ *  incoming visible-range event is our own `revealRange` echo and must not be
+ *  relayed to the Webview). `suppressUntil` of `undefined`/`0` means "no active
+ *  window". */
+export function isEchoScroll(now: number, suppressUntil: number | undefined): boolean {
+  return typeof suppressUntil === 'number' && now < suppressUntil;
+}
+
+/** False when `line` is the same line most recently synced (in either
+ *  direction), so a redundant relay is skipped; true otherwise. `lastSyncedLine`
+ *  of `undefined` means "nothing synced yet" (always relay). */
+export function shouldRelayScrollLine(line: number, lastSyncedLine: number | undefined): boolean {
+  return lastSyncedLine === undefined || line !== lastSyncedLine;
+}
+
 /** Scale factor applied to the configured font size for on-screen display
  *  (R-28-17). The underlying `fontSize` setting/zoom baseline is unchanged;
  *  only the rendered `px` value is scaled up so the initial preview reads
