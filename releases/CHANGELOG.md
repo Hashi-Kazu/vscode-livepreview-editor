@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.44.0 — 表のヘッダー行とデータ行のデザインを差別化 (Issue #57)
+
+### 変更
+
+- 表ヘッダー行（`table.cm-lp-table th`）の背景を `color-mix` によるテーマ追従色でデータ行のゼブラより明確に強め、`font-weight` を 600 から 700 へ、下端に `border-bottom`（`var(--vscode-panel-border)`）を追加してヘッダーとデータ行の視覚的な区別を強化。
+- ゼブラ行（`tr:nth-child(2n) td`）の背景もヘッダーより明確に弱い `color-mix` 値へ更新し、ヘッダーとの段差を保ちつつ可読性を維持。
+- ボーダーの太さやセルの `padding`/`line-height` は変更せず、表の高さ計算（行高会計）に影響しない。色はすべて `var(--vscode-*)`/`color-mix` によるテーマ追従で、ライト/ダーク両テーマでコントラストを確保。
+- 新設した仕様 R-28-18 とテスト（`test/feature.issue57.tableHeader.test.ts`）で検証。
+
 ## v1.42.0 — Tab キーでリストのマーカー幅に沿ったインデントを挿入 (Issue #53)
 
 ### 変更
