@@ -260,10 +260,14 @@ class DetailsWidget extends WidgetType {
    *  and drifted clicks below them (R-28-11). The `toggle` listener requests a
    *  re-measure when the user opens/closes it at runtime. */
   get estimatedHeight() {
+    // The card wrapper adds 6px top + 6px bottom padding (media/editor.css
+    // `.cm-lp-details`, Issue #36); include it so the block-height estimate stays
+    // accurate and clicks below the accordion do not drift (R-28-11).
+    const cardPadding = 12;
     const summaryPx = Math.round(currentFontSize * 1.4) + 2;
-    if (!openDetails.has(this.summary)) return summaryPx + 2;
+    if (!openDetails.has(this.summary)) return summaryPx + 2 + cardPadding;
     const bodyLinePx = Math.round(currentFontSize * 1.4) + 2; // line-height 1.4 + 2px padding
-    return summaryPx + this.body.length * bodyLinePx + 2;
+    return summaryPx + this.body.length * bodyLinePx + 2 + cardPadding;
   }
   toDOM(view: EditorView) {
     const details = document.createElement('details');
@@ -330,15 +334,23 @@ class DetailsWidget extends WidgetType {
   }
 }
 
-/** SVG path data for each alert kind's leading icon (GitHub-style octicons,
- *  simplified). Rendered via an inline <svg> so the glyph follows `currentColor`
- *  and therefore the theme-driven per-kind color set in CSS (R-28-04). */
+/** SVG path data for each alert kind's leading icon (GitHub-style octicons).
+ *  Rendered via an inline <svg> so the glyph follows `currentColor` and therefore
+ *  the theme-driven per-kind color set in CSS (R-28-04). Issue #36 regrouped the
+ *  glyphs to a shared visual language: note = pencil, tip/important = flame,
+ *  warning/caution = alert triangle. */
+const ALERT_ICON_PENCIL =
+  'M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z';
+const ALERT_ICON_FLAME =
+  'M9.533.753V.752c.217 2.385 1.463 3.626 2.653 4.81C13.37 6.69 14.498 7.82 14.498 10c0 3.5-3 6-6.5 6S1.5 13.5 1.5 10c0-1.207.606-2.283 1.298-3.216.144-.194.293-.38.442-.559.216-.259.475-.548.762-.87l.157-.176c.174-.194.311-.348.436-.512.234-.309.478-.751.632-1.463.264.484.633.925 1.02 1.343.02.021.041.043.062.065l.037.038c.216.223.418.432.594.665.208.276.397.606.508 1.05.116.462.13.887.128 1.28-.001.323-.02.626-.049.905l-.005.036c.235-.13.507-.297.79-.503.617-.45 1.203-1.043 1.567-1.777.396-.798.53-1.735.322-2.755-.174-.853-.687-1.788-1.5-2.606-.812-.817-1.71-1.415-2.588-1.759ZM7.85 12.55c1.34 0 2.4-.93 2.4-2.126 0-1.32-1.24-2.014-2.4-3.052-1.16 1.038-2.4 1.732-2.4 3.052 0 1.196 1.06 2.126 2.4 2.126Z';
+const ALERT_ICON_TRIANGLE =
+  'M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z';
 const ALERT_ICON_PATHS: Record<string, string> = {
-  note: 'M0 8a8 8 0 1116 0A8 8 0 010 8zm8-6.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM6.5 7.75A.75.75 0 017.25 7h1a.75.75 0 01.75.75v2.75h.25a.75.75 0 010 1.5h-2a.75.75 0 010-1.5h.25v-2h-.25a.75.75 0 01-.75-.75zM8 6a1 1 0 100-2 1 1 0 000 2z',
-  tip: 'M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 01-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 00-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.75.75 0 01-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75zM5.75 12h4.5a.75.75 0 010 1.5h-4.5a.75.75 0 010-1.5zM6 15.25a.75.75 0 01.75-.75h2.5a.75.75 0 010 1.5h-2.5a.75.75 0 01-.75-.75z',
-  important: 'M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0114.25 13H8.06l-2.573 2.573A1.457 1.457 0 013 14.543V13H1.75A1.75 1.75 0 010 11.25zM9 9a1 1 0 10-2 0 1 1 0 002 0zm-.25-5.25a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0z',
-  warning: 'M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0114.082 15H1.918a1.75 1.75 0 01-1.543-2.575zM9 11a1 1 0 10-2 0 1 1 0 002 0zm-.25-5.25a.75.75 0 00-1.5 0v2.5a.75.75 0 001.5 0z',
-  caution: 'M4.47.22A.749.749 0 015 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 01-.22.53l-4.25 4.25A.749.749 0 0111 16H5a.749.749 0 01-.53-.22L.22 11.53A.749.749 0 010 11V5c0-.199.079-.389.22-.53zM8 4a.75.75 0 00-.75.75v3.5a.75.75 0 001.5 0v-3.5A.75.75 0 008 4zm0 8a1 1 0 100-2 1 1 0 000 2z',
+  note: ALERT_ICON_PENCIL,
+  tip: ALERT_ICON_FLAME,
+  important: ALERT_ICON_FLAME,
+  warning: ALERT_ICON_TRIANGLE,
+  caution: ALERT_ICON_TRIANGLE,
 };
 
 /** Leading title of a GitHub alert (icon + kind name), replacing the raw

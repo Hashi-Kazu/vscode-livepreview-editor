@@ -288,12 +288,14 @@ body {
   color: var(--vscode-textBlockQuote-foreground, var(--vscode-descriptionForeground, inherit));
 }
 /* Nested blockquotes (`>>`, `>>>`, …): each level draws `n` vertical bars (one
-   per ancestor level plus itself) at `k * 1.4em` offsets via stacked
+   per ancestor level plus itself) at `k * 2em` offsets via stacked
    `linear-gradient`s, and reserves the equivalent horizontal space with
-   `padding-left` so body text still starts at the same indent the previous
-   `margin-left`-per-level layout produced. Bars are 3px wide, matching the
-   previous single `border-left`. Colours reuse the same theme variable for
-   every level (R-28-04). */
+   `padding-left` so body text starts further right at each level. Bars are 3px
+   wide, matching the previous single `border-left`. Colours reuse the same
+   theme variable for every level (R-28-04).
+   Issue #36: the per-level step was widened 1.4em→2em so nested levels are
+   clearly offset from their parent (and visually consistent with the 2em/level
+   list indentation from Issue #31); bar count/width/colour are unchanged. */
 .cm-lp-quote-l1 {
   padding-left: 16px;
   background-image: linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
@@ -301,34 +303,34 @@ body {
   background-position: 0 0;
 }
 .cm-lp-quote-l2 {
-  padding-left: calc(1.4em + 16px);
+  padding-left: calc(2em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%;
-  background-position: 0 0, 1.4em 0;
+  background-position: 0 0, 2em 0;
 }
 .cm-lp-quote-l3 {
-  padding-left: calc(2.8em + 16px);
+  padding-left: calc(4em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 1.4em 0, 2.8em 0;
+  background-position: 0 0, 2em 0, 4em 0;
 }
 .cm-lp-quote-l4 {
-  padding-left: calc(4.2em + 16px);
+  padding-left: calc(6em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0;
+  background-position: 0 0, 2em 0, 4em 0, 6em 0;
 }
 .cm-lp-quote-l5 {
-  padding-left: calc(5.6em + 16px);
+  padding-left: calc(8em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -336,10 +338,10 @@ body {
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0, 5.6em 0;
+  background-position: 0 0, 2em 0, 4em 0, 6em 0, 8em 0;
 }
 .cm-lp-quote-l6 {
-  padding-left: calc(7em + 16px);
+  padding-left: calc(10em + 16px);
   background-image:
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
@@ -348,7 +350,7 @@ body {
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888))),
     linear-gradient(var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)), var(--vscode-textBlockQuote-border, var(--vscode-panel-border, #888)));
   background-size: 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%, 3px 100%;
-  background-position: 0 0, 1.4em 0, 2.8em 0, 4.2em 0, 5.6em 0, 7em 0;
+  background-position: 0 0, 2em 0, 4em 0, 6em 0, 8em 0, 10em 0;
 }
 
 .cm-lp-link {
@@ -372,16 +374,18 @@ body {
   display: inline-block;
   min-width: 1em;
   text-align: center;
-  font-size: 1.4em;
+  font-size: 1.2em;
   line-height: inherit;
 }
 /* The hollow circle (○, 2nd-level bullet) still reads visually larger than •/▪
    at the same font-size because of its glyph shape, so it gets its own smaller
    size on top of the shared box above (Issue #24 follow-up / R-01-05). Only the
-   glyph gains the extra class (`decorations.ts`); •/▪ keep the 1.0em above
+   glyph gains the extra class (`decorations.ts`); •/▪ keep the base size above
    (Issue #26: •/▪ enlarged and ○ shrunk further to rebalance tier sizes;
    Issue #33: base reverted 1.6em→1.4em, ○ kept at 0.62em unchanged;
-   Issue #33 follow-up: ○ shrunk further 0.62em→0.55em). */
+   Issue #33 follow-up: ○ shrunk further 0.62em→0.55em;
+   Issue #36: base bullet shrunk 1.4em→1.2em so every level except ○ reads at
+   the 1.2em box; ○ stays at 0.55em unchanged). */
 .cm-lp-list-bullet-hollow {
   font-size: 0.55em;
 }
@@ -570,14 +574,21 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 }
 
 /* --- HTML <details> accordion (collapsed by default) ----------------------
-   Lightweight look: no background bar, no border — just a ▶/▼ marker plus the
-   summary text on a single line, blending in with body inline text (R-27). */
+   Card look shared with the GitHub-alert callouts (Issue #36): a neutral tinted
+   background with fully rounded corners wraps the whole <details> element, so a
+   closed accordion reads as a self-contained card and an open one keeps the
+   summary and body on one continuous background with no cut-off bottom edge. The
+   ▶/▼ marker and summary stay on a single line (R-27). */
 .cm-lp-details {
   display: block;
-  margin: 0;
-  padding: 0;
+  margin: 0.3em 0;
+  padding: 6px 12px;
   border: none;
-  background: none;
+  border-radius: 6px;
+  /* Neutral card tint (details are not kind-specific); color-mix falls back to
+     the quote band on engines without support. */
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
+  background: color-mix(in srgb, var(--vscode-editor-foreground) 6%, var(--vscode-editor-background));
   color: var(--vscode-editor-foreground);
 }
 /* Hide the native disclosure triangle; we render our own marker span. */
@@ -769,29 +780,40 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
 
 /* --- GitHub alerts (`> [!NOTE]` …) #7 ------------------------------------- */
 /* Each alert kind sets its own accent color via a custom property, which the
-   line band, left border, and title (icon + name) all reference. Colors follow
-   VS Code theme variables with GitHub-like fallbacks only (R-28-04). */
+   card background, left border, and title (icon + name) all reference. Colors
+   follow VS Code theme variables with GitHub-like fallbacks only (R-28-04).
+   Issue #36 regrouped kinds to a shared palette so alerts read as a small family
+   of natural cards: note = blue, tip/important = cyan, warning/caution = orange
+   (matching the pencil / flame / triangle icon grouping in decorations.ts). */
 .cm-lp-alert-note { --lp-alert-color: var(--vscode-editorInfo-foreground, #1f6feb); }
-.cm-lp-alert-tip { --lp-alert-color: var(--vscode-charts-green, var(--vscode-terminal-ansiGreen, #1a7f37)); }
-.cm-lp-alert-important { --lp-alert-color: var(--vscode-charts-purple, var(--vscode-terminal-ansiMagenta, #8250df)); }
-.cm-lp-alert-warning { --lp-alert-color: var(--vscode-editorWarning-foreground, #9a6700); }
-.cm-lp-alert-caution { --lp-alert-color: var(--vscode-editorError-foreground, #cf222e); }
+.cm-lp-alert-tip { --lp-alert-color: var(--vscode-terminal-ansiCyan, var(--vscode-charts-blue, #0a7ea4)); }
+.cm-lp-alert-important { --lp-alert-color: var(--vscode-terminal-ansiCyan, var(--vscode-charts-blue, #0a7ea4)); }
+.cm-lp-alert-warning { --lp-alert-color: var(--vscode-editorWarning-foreground, #bb8009); }
+.cm-lp-alert-caution { --lp-alert-color: var(--vscode-editorWarning-foreground, #bb8009); }
 
 .cm-line.cm-lp-alert {
   border-left: 3px solid var(--lp-alert-color, var(--vscode-panel-border, #888));
   padding-left: 16px;
-  /* Faint per-kind tinted band; falls back to the neutral quote band on engines
-     without color-mix (modern VS Code Chromium supports color-mix). */
+  padding-right: 12px;
+  /* Per-kind tinted card background spanning the full line width. Falls back to
+     the neutral quote band on engines without color-mix; modern VS Code Chromium
+     supports color-mix, giving a solid, natural card fill (Issue #36). */
   background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.06));
-  background: color-mix(in srgb, var(--lp-alert-color) 8%, transparent);
+  background: color-mix(in srgb, var(--lp-alert-color) 10%, var(--vscode-editor-background));
 }
+/* Round the top corners on the first line and the bottom corners on the last so
+   left AND right edges close into a single card (previously only the left edge
+   was rounded). The close row also gets extra bottom padding so the background
+   and bottom corners never look cut off (Issue #36). */
 .cm-line.cm-lp-alert-open {
   padding-top: 8px;
   border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
 }
 .cm-line.cm-lp-alert-close {
-  padding-bottom: 8px;
+  padding-bottom: 10px;
   border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
 }
 /* Alert title (icon + kind name) that replaces the raw `[!TYPE]` label. */
 .cm-lp-alert-title {

@@ -30,7 +30,7 @@ import {
 import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
-import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey } from '../core/editing';
+import { continueList, changeIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
 import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
 import { LineWindow, viewportWindow, zoomFontSize, displayFontSize } from '../core/viewport';
 
@@ -341,21 +341,10 @@ const formatKeymap = keymap.of([
 /** Enter: continue or terminate a Markdown list. */
 function handleEnter(target: EditorView): boolean {
   const { from, to } = target.state.selection.main;
-  if (from !== to) return false;
   const line = target.state.doc.lineAt(from);
-  const cont = continueList(line.text);
-  if (!cont.isList) return false;
-  if (cont.removeMarker) {
-    target.dispatch({
-      changes: { from: line.from, to: line.from + cont.markerLength, insert: '' },
-      selection: { anchor: line.from },
-    });
-    return true;
-  }
-  target.dispatch({
-    changes: { from, to, insert: '\n' + cont.insert },
-    selection: { anchor: from + 1 + cont.insert.length },
-  });
+  const edit = computeListEnterEdit(line.text, line.from, from, to);
+  if (!edit) return false;
+  target.dispatch(edit);
   return true;
 }
 

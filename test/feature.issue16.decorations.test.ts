@@ -32,9 +32,9 @@ describe('R-01-05 箇条書きは階層別マーカー(•/○/▪)を返す', (
     expect(bullets.map((b) => b.attrs?.widget)).toEqual(['•', '○', '▪', '▪', '▪']);
   });
 
-  it('.cm-lp-list-bulletのfont-sizeは1.4em、hollow(○)は0.55emのまま', () => {
+  it('.cm-lp-list-bulletのfont-sizeは1.2em、hollow(○)は0.55emのまま(Issue #36)', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
-    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.4em;/);
+    expect(css).toMatch(/\.cm-lp-list-bullet\s*\{[^}]*font-size:\s*1\.2em;/);
     expect(css).toMatch(/\.cm-lp-list-bullet-hollow\s*\{[^}]*font-size:\s*0\.55em;/);
   });
 
@@ -132,6 +132,53 @@ describe('R-02-05 入れ子引用は階層クラスを返す', () => {
     const specs = computeDecorations(doc, new Set());
     const quotes = byTag(specs, 'quote');
     expect(quotes).toHaveLength(1);
+  });
+
+  it('入れ子引用の1段あたりインデント段差は2emに拡大されている(Issue #36)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
+    // l2 は親より 2em 右へ(旧 1.4em)、l6 は 5 段ぶんで 10em。
+    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*padding-left:\s*calc\(2em \+ 16px\);/);
+    expect(css).toMatch(/\.cm-lp-quote-l2\s*\{[^}]*background-position:\s*0 0, 2em 0;/);
+    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*padding-left:\s*calc\(10em \+ 16px\);/);
+    expect(css).toMatch(/\.cm-lp-quote-l6\s*\{[^}]*background-position:\s*0 0, 2em 0, 4em 0, 6em 0, 8em 0, 10em 0;/);
+  });
+});
+
+// R-02-08 / R-27: callout(GitHub Alerts)と折りたたみ(details)のカード統一
+describe('R-02-08 / R-27 callout・details のカード表示(Issue #36)', () => {
+  const readCss = () => fs.readFileSync(path.join(__dirname, '..', 'media', 'editor.css'), 'utf8');
+  const readDeco = () =>
+    fs.readFileSync(path.join(__dirname, '..', 'src', 'webview', 'decorations.ts'), 'utf8');
+
+  it('Alert の open 行は上側左右、close 行は下側左右が角丸(両端が閉じたカード)', () => {
+    const css = readCss();
+    expect(css).toMatch(
+      /\.cm-line\.cm-lp-alert-open\s*\{[^}]*border-top-left-radius:\s*6px;[^}]*border-top-right-radius:\s*6px;/,
+    );
+    expect(css).toMatch(
+      /\.cm-line\.cm-lp-alert-close\s*\{[^}]*border-bottom-left-radius:\s*6px;[^}]*border-bottom-right-radius:\s*6px;/,
+    );
+  });
+
+  it('Alert 背景は per-kind の color-mix カード塗り(ハードコード色なし)', () => {
+    expect(readCss()).toMatch(
+      /\.cm-line\.cm-lp-alert\s*\{[^}]*color-mix\(in srgb, var\(--lp-alert-color\)/,
+    );
+  });
+
+  it('details は共通カード(border-radius と color-mix 背景)を持つ', () => {
+    const css = readCss();
+    expect(css).toMatch(/\.cm-lp-details\s*\{[^}]*border-radius:\s*6px;/);
+    expect(css).toMatch(/\.cm-lp-details\s*\{[^}]*color-mix\(in srgb,/);
+  });
+
+  it('ALERT_ICON_PATHS は note=pencil / tip・important=flame / warning・caution=triangle', () => {
+    const src = readDeco();
+    expect(src).toMatch(/note:\s*ALERT_ICON_PENCIL/);
+    expect(src).toMatch(/tip:\s*ALERT_ICON_FLAME/);
+    expect(src).toMatch(/important:\s*ALERT_ICON_FLAME/);
+    expect(src).toMatch(/warning:\s*ALERT_ICON_TRIANGLE/);
+    expect(src).toMatch(/caution:\s*ALERT_ICON_TRIANGLE/);
   });
 });
 
