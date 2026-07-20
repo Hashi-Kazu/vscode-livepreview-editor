@@ -3,6 +3,7 @@ import { EditorState } from '@codemirror/state';
 import {
   continueList,
   changeIndent,
+  changeListIndent,
   toggleHeading,
   shouldOpenLinkOnMouseDown,
   computeListEnterEdit,
@@ -129,6 +130,186 @@ describe('R-24 changeIndent', () => {
   });
   it('タブのアウトデントは1文字除去', () => {
     expect(changeIndent('\t- a', -1)).toEqual({ text: '- a', shift: -1 });
+  });
+});
+
+// R-24-03/04: リストマーカー幅に沿ったインデント（Issue #53）
+describe('R-24-03/04 changeListIndent', () => {
+  it('リスト行でなければ null を返す', () => {
+    expect(changeListIndent('plain text', 1, [])).toBeNull();
+  });
+
+  it('直前の項目が無ければインデントしない', () => {
+    expect(changeListIndent('- item', 1, [])).toEqual({ text: '- item', shift: 0 });
+  });
+
+  it('箇条書き(-/*/+)は直前項目の本文開始位置(2スペース)に揃える', () => {
+    expect(changeListIndent('- child', 1, ['- item1', '- item2'])).toEqual({ text: '  - child', shift: 2 });
+    expect(changeListIndent('* child', 1, ['* item1', '* item2'])).toEqual({ text: '  * child', shift: 2 });
+    expect(changeListIndent('+ child', 1, ['+ item1', '+ item2'])).toEqual({ text: '  + child', shift: 2 });
+  });
+
+  it('番号付きリスト "1. " は3スペースに揃える', () => {
+    expect(changeListIndent('1. child', 1, ['1. a', '2. b'])).toEqual({ text: '   1. child', shift: 3 });
+  });
+
+  it('番号付きリスト "10. " は4スペースに揃える（桁数が増えても本文開始位置に揃う）', () => {
+    expect(changeListIndent('1. detail', 1, ['9. step', '10. step'])).toEqual({ text: '    1. detail', shift: 4 });
+  });
+
+  it('"1) " 形式も同様に3スペースに揃える', () => {
+    expect(changeListIndent('1) child', 1, ['1) a', '2) b'])).toEqual({ text: '   1) child', shift: 3 });
+  });
+
+  it('Issue再現例1: 番号付きリスト3行目のTabは3階層目の内容位置に揃う', () => {
+    expect(changeListIndent('1. 詳細手順', 1, ['1. 手順1', '2. 手順2'])).toEqual({
+      text: '   1. 詳細手順',
+      shift: 3,
+    });
+  });
+
+  it('Issue再現例2: 箇条書き3行目のTabは子項目になる', () => {
+    expect(changeListIndent('- 子項目', 1, ['- 項目1', '- 項目2'])).toEqual({ text: '  - 子項目', shift: 2 });
+  });
+
+  it('既に直前項目の子として最大階層にある場合はそれ以上インデントしない', () => {
+    expect(changeListIndent('   1. b', 1, ['1. a'])).toEqual({ text: '   1. b', shift: 0 });
+  });
+
+  it('直前の非空行がリストでなければインデントしない', () => {
+    expect(changeListIndent('- item', 1, ['plain text'])).toEqual({ text: '- item', shift: 0 });
+  });
+
+  it('空行を挟んでも直前のリスト項目を参照する', () => {
+    expect(changeListIndent('- child', 1, ['- item', ''])).toEqual({ text: '  - child', shift: 2 });
+  });
+
+  it('Shift+Tabで1階層戻す', () => {
+    expect(changeListIndent('   1. detail', -1, ['1. step1', '2. step2'])).toEqual({
+      text: '1. detail',
+      shift: -3,
+    });
+  });
+
+  it('Shift+Tabはより浅い項目まで遡って階層を戻す', () => {
+    expect(changeListIndent('      1. c', -1, ['1. a', '   1. b'])).toEqual({ text: '   1. c', shift: -3 });
+  });
+
+  it('最上位項目でのShift+Tabは変化しない', () => {
+    expect(changeListIndent('- item', -1, [])).toEqual({ text: '- item', shift: 0 });
+  });
+
+  it('複数階層でTab/Shift-Tabを繰り返しても崩れない', () => {
+    const step1 = changeListIndent('1. child', 1, ['1. parent']);
+    expect(step1).toEqual({ text: '   1. child', shift: 3 });
+    const step2 = changeListIndent(step1!.text, -1, ['1. parent']);
+    expect(step2).toEqual({ text: '1. child', shift: -3 });
+  });
+});
+
+// Issue #53: main.ts の indentCommand（Tab/Shift-Tab）エンドツーエンド回帰。
+// indentCommand は DOM 依存(EditorView)なので import できず、R-23 handleEnter と同じ
+// 方式で、EditorState + 同一ロジックの再現(runIndent)により検証する。
+describe('Issue#53 indentCommand エンドツーエンド(EditorState 経由)', () => {
+  const runIndent = (state: EditorState, delta: number) => {
+    const doc = state.doc;
+    const sel = state.selection.main;
+    const startLine = doc.lineAt(sel.from).number;
+    const endLine = doc.lineAt(sel.to).number;
+    const allLines: string[] = [];
+    for (let n = 1; n <= doc.lines; n++) allLines.push(doc.line(n).text);
+
+    const changes: { from: number; to: number; insert: string }[] = [];
+    let anyListLine = false;
+    let singleShift = 0;
+    for (let n = startLine; n <= endLine; n++) {
+      const line = doc.line(n);
+      const precedingLines = allLines.slice(0, n - 1);
+      const listEdit = changeListIndent(line.text, delta, precedingLines);
+      let editText = line.text;
+      let editShift = 0;
+      if (listEdit) {
+        anyListLine = true;
+        editText = listEdit.text;
+        editShift = listEdit.shift;
+      } else if (delta < 0) {
+        const fallback = changeIndent(line.text, delta);
+        editText = fallback.text;
+        editShift = fallback.shift;
+      }
+      if (editText !== line.text) changes.push({ from: line.from, to: line.from + line.text.length, insert: editText });
+      if (n === startLine) singleShift = editShift;
+    }
+
+    if (delta > 0 && !anyListLine) return { handled: false, state };
+    if (changes.length === 0) return { handled: true, state };
+
+    const spec =
+      startLine === endLine
+        ? { changes, selection: { anchor: Math.max(doc.line(startLine).from, sel.from + singleShift) } }
+        : { changes };
+    return { handled: true, state: state.update(spec).state };
+  };
+
+  it('番号付きリストの3行目でTabすると3階層目の内容位置に揃う（Issue再現例1）', () => {
+    const doc = ['1. 手順1', '2. 手順2', '1. 詳細手順'].join('\n');
+    const state = EditorState.create({ doc, selection: { anchor: doc.indexOf('1. 詳細手順') } });
+    const result = runIndent(state, 1);
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toString()).toBe(['1. 手順1', '2. 手順2', '   1. 詳細手順'].join('\n'));
+  });
+
+  it('箇条書きの3行目でTabすると子項目になる（Issue再現例2）', () => {
+    const doc = ['- 項目1', '- 項目2', '- 子項目'].join('\n');
+    const state = EditorState.create({ doc, selection: { anchor: doc.indexOf('- 子項目') } });
+    const result = runIndent(state, 1);
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toString()).toBe(['- 項目1', '- 項目2', '  - 子項目'].join('\n'));
+  });
+
+  it('複数行選択の兄弟項目をまとめてTabすると同じ階層へ揃う', () => {
+    const doc = ['- item1', '- item2', '- item3'].join('\n');
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.indexOf('- item2'), head: doc.length },
+    });
+    const result = runIndent(state, 1);
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toString()).toBe(['- item1', '  - item2', '  - item3'].join('\n'));
+  });
+
+  it('複数行選択でTabのあとShift-Tabすると元に戻る', () => {
+    const doc = ['- item1', '  - item2', '  - item3'].join('\n');
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.indexOf('- item2'), head: doc.length },
+    });
+    const result = runIndent(state, -1);
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toString()).toBe(['- item1', '- item2', '- item3'].join('\n'));
+  });
+
+  it('リスト以外の行だけの選択ではTabを処理せず既定Tabに委ねる', () => {
+    const doc = 'plain paragraph';
+    const state = EditorState.create({ doc, selection: { anchor: 0 } });
+    expect(runIndent(state, 1).handled).toBe(false);
+  });
+
+  it('リスト以外の行はShift-Tabで既存どおり固定幅(最大2スペース)を除去する', () => {
+    const doc = '    plain text';
+    const state = EditorState.create({ doc, selection: { anchor: 4 } });
+    const result = runIndent(state, -1);
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toString()).toBe('  plain text');
+  });
+
+  it('空行・コードブロック行はリスト扱いされず変更されない', () => {
+    const doc = ['- item', '', '```', 'code', '```'].join('\n');
+    const state = EditorState.create({ doc, selection: { anchor: 0, head: doc.length } });
+    const result = runIndent(state, 1);
+    expect(result.handled).toBe(true);
+    // 先頭のリスト行は直前項目が無いため変化なし。他の非リスト行も不変。
+    expect(result.state.doc.toString()).toBe(doc);
   });
 });
 

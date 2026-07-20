@@ -152,6 +152,86 @@ export function changeIndent(lineText: string, delta: number, unit = '  '): { te
   return { text: lineText.slice(remove), shift: remove === 0 ? 0 : -remove };
 }
 
+/** A list line's leading indent width and the column where its content starts. */
+interface ListLineIndent {
+  isList: boolean;
+  /** Width of the leading whitespace. */
+  indent: number;
+  /** Column where the item's content begins: indent + marker + spacing (+ checkbox). */
+  contentCol: number;
+}
+
+function listLineIndent(lineText: string): ListLineIndent {
+  const ul = ULIST_LINE.exec(lineText);
+  if (ul) {
+    const [, indent, bullet, sp, task] = ul;
+    return {
+      isList: true,
+      indent: indent.length,
+      contentCol: indent.length + bullet.length + sp.length + (task ? task.length : 0),
+    };
+  }
+  const ol = OLIST_LINE.exec(lineText);
+  if (ol) {
+    const [, indent, num, sep, sp] = ol;
+    return { isList: true, indent: indent.length, contentCol: indent.length + num.length + sep.length + sp.length };
+  }
+  return { isList: false, indent: 0, contentCol: 0 };
+}
+
+/**
+ * Marker-width-aware list indent (R-24-03/04, Issue #53). Tab makes a list item
+ * the child of the nearest preceding (non-blank) list item, using that item's
+ * content-start column — its own indent + marker chars + trailing spaces — as
+ * this item's new indent width. This keeps child content aligned under the
+ * parent's text regardless of marker width, so `10. ` (4 chars) indents
+ * further than `- ` (2 chars) or `1. ` (3 chars).
+ *
+ * Shift+Tab reverses this: it looks further back for the nearest preceding
+ * list item whose indent is strictly smaller than the current one, and
+ * restores that item's own indent width (not its content column), which is
+ * exactly the value Tab would have produced for a sibling at that level.
+ *
+ * `precedingLines` must be the document's lines strictly above `lineText`, in
+ * document order; they are only read, never mutated. Returns `null` when
+ * `lineText` itself is not a list line, so the caller can fall back to the
+ * plain (non-list) Tab/Shift-Tab behavior (R-24-01/02).
+ */
+export function changeListIndent(
+  lineText: string,
+  delta: number,
+  precedingLines: string[],
+): { text: string; shift: number } | null {
+  const cur = listLineIndent(lineText);
+  if (!cur.isList) return null;
+
+  let target: number;
+  if (delta > 0) {
+    // Only the immediately preceding non-blank line counts as "the previous
+    // item" — a non-list line breaks the list context (no parent to attach to).
+    let i = precedingLines.length - 1;
+    while (i >= 0 && precedingLines[i].trim() === '') i--;
+    const ref = i >= 0 ? listLineIndent(precedingLines[i]) : null;
+    if (!ref || !ref.isList || ref.contentCol <= cur.indent) return { text: lineText, shift: 0 };
+    target = ref.contentCol;
+  } else {
+    let found: number | null = null;
+    for (let i = precedingLines.length - 1; i >= 0; i--) {
+      if (precedingLines[i].trim() === '') continue;
+      const info = listLineIndent(precedingLines[i]);
+      if (!info.isList) break; // left the list context
+      if (info.indent < cur.indent) {
+        found = info.indent;
+        break;
+      }
+    }
+    target = found ?? 0;
+    if (target >= cur.indent) return { text: lineText, shift: 0 };
+  }
+
+  return { text: ' '.repeat(target) + lineText.slice(cur.indent), shift: target - cur.indent };
+}
+
 const HEADING_LINE = /^(#{1,6})(\s+)(.*)$/;
 
 /**
