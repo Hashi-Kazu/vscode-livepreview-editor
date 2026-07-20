@@ -802,6 +802,37 @@ table.cm-lp-table td.cm-lp-table-cell-selected {
   overflow-x: auto;
 }
 
+/* --- Mermaid diagrams (```mermaid) R-36 ---------------------------------- */
+/* Rendered SVG is centred and allowed to use the full editor width; horizontal
+   overflow scrolls rather than clipping wide flowcharts. The container follows
+   the editor foreground/background so the diagram reads with the theme. */
+.cm-lp-mermaid-block {
+  display: block;
+  margin: 0.5em 0;
+  padding: 0.5em;
+  text-align: center;
+  color: var(--vscode-editor-foreground);
+  overflow-x: auto;
+}
+.cm-lp-mermaid-block svg {
+  max-width: 100%;
+  height: auto;
+}
+/* Fallback shown when mermaid fails to render: the raw diagram source as a
+   monospace block, styled like an inline code block so it reads as source. */
+.cm-lp-mermaid-error {
+  display: block;
+  margin: 0;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: pre-wrap;
+  font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.15));
+  border: 1px solid var(--vscode-panel-border, rgba(127, 127, 127, 0.35));
+  border-radius: 4px;
+}
+
 /* --- GitHub alerts (`> [!NOTE]` …) #7 ------------------------------------- */
 /* Each alert kind sets its own accent color via a custom property, which the
    card background, left border, and title (icon + name) all reference. Colors

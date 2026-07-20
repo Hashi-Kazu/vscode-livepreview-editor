@@ -6,8 +6,31 @@
 import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/view';
 import { EditorState, RangeSetBuilder } from '@codemirror/state';
 import katex from 'katex';
+import mermaid from 'mermaid';
 import { computeDecorationsSafe, DecoSpec, DecorationOptions } from '../core/model';
 import { cursorLinesFromSelections } from '../core/sync';
+
+/** Mermaid theme picked once from the VS Code body class (dark / high-contrast →
+ *  'dark', otherwise 'default'). Live theme switching is out of scope; a reopened
+ *  block reflects the new theme (the cache key includes the theme). */
+const mermaidTheme: 'dark' | 'default' =
+  typeof document !== 'undefined' &&
+  (document.body?.classList.contains('vscode-dark') ||
+    document.body?.classList.contains('vscode-high-contrast'))
+    ? 'dark'
+    : 'default';
+
+// Initialise mermaid ONCE. `startOnLoad: false` (we render on demand) and
+// `securityLevel: 'strict'` (DOMPurify-sanitised SVG, no click/script binding)
+// keep us within the existing CSP (ADR-0006) — no eval, no external fetch (R-36-03).
+mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: mermaidTheme });
+
+/** SVG render cache keyed by `theme + '\n' + code` so an unchanged diagram is
+ *  injected synchronously in `toDOM` (no re-render flicker / re-measure). */
+const mermaidSvgCache = new Map<string, string>();
+
+/** Monotonic id source for mermaid's required unique render id. */
+let mermaidIdSeq = 0;
 
 class TextWidget extends WidgetType {
   constructor(private readonly text: string, private readonly cls: string) {
@@ -517,6 +540,84 @@ class MathBlockWidget extends WidgetType {
   }
 }
 
+/** Mermaid diagram (```mermaid) rendered to SVG (R-36). Unlike KaTeX (`katex.render`
+ *  is synchronous) mermaid's `mermaid.render` returns a Promise, so `toDOM` returns
+ *  a synchronous placeholder container and the SVG is injected asynchronously on
+ *  resolve. `securityLevel: 'strict'` means the SVG string is DOMPurify-sanitised,
+ *  so injecting it via `innerHTML` is not raw-user-HTML injection. On failure the
+ *  raw code is shown as a `<pre>` via `textContent` (never innerHTML) so the Webview
+ *  never crashes. A `block: true` widget → implements `estimatedHeight` and only
+ *  calls `requestMeasure` on async resolve / `updateDOM`, never in `toDOM`
+ *  (R-28-10 / R-28-11). */
+class MermaidBlockWidget extends WidgetType {
+  constructor(private readonly code: string, private readonly startLine: number) {
+    super();
+  }
+  eq(other: MermaidBlockWidget) {
+    return this.code === other.code && this.startLine === other.startLine;
+  }
+  /** Pre-measure estimate: ~one editor line per code line plus chrome. The real
+   *  SVG height is unknown until the async render resolves; `requestMeasure` then
+   *  reconciles the residual so clicks below the block land right (R-28-11). */
+  get estimatedHeight() {
+    const rows = this.code.split('\n').length;
+    return rows * linePx() + currentFontSize;
+  }
+  private cacheKey(): string {
+    return mermaidTheme + '\n' + this.code;
+  }
+  /** Show the raw diagram source as a fallback `<pre>` (bad syntax / render
+   *  failure). Uses `textContent` (never innerHTML) so no raw HTML is injected. */
+  private fallback(container: HTMLElement) {
+    if (!container.isConnected && container.childNodes.length) return;
+    container.textContent = '';
+    const pre = document.createElement('pre');
+    pre.className = 'cm-lp-mermaid-error';
+    pre.textContent = this.code;
+    container.appendChild(pre);
+  }
+  toDOM(view: EditorView) {
+    const container = document.createElement('div');
+    container.className = 'cm-lp-mermaid-block';
+    // data-start-line lets the right-click menu route "Mermaidを編集" to this block.
+    container.setAttribute('data-start-line', String(this.startLine));
+
+    const cached = mermaidSvgCache.get(this.cacheKey());
+    if (cached !== undefined) {
+      // Sanitised SVG string (securityLevel: 'strict') — synchronous, no flicker.
+      container.innerHTML = cached;
+      return container;
+    }
+
+    const id = `mermaid-${mermaidIdSeq++}`;
+    try {
+      Promise.resolve(mermaid.render(id, this.code))
+        .then(({ svg }) => {
+          mermaidSvgCache.set(this.cacheKey(), svg);
+          if (!container.isConnected) return; // widget discarded mid-render
+          container.innerHTML = svg;
+          view.requestMeasure();
+        })
+        .catch(() => {
+          if (!container.isConnected) return;
+          this.fallback(container);
+          view.requestMeasure();
+        });
+    } catch {
+      // Synchronous throw (e.g. mermaid init issue) → raw-code fallback.
+      this.fallback(container);
+    }
+    return container;
+  }
+  updateDOM(_dom: HTMLElement, view: EditorView): boolean {
+    view.requestMeasure();
+    return true;
+  }
+  ignoreEvent() {
+    return false; // let right-click (contextmenu) reach the editor DOM for the menu
+  }
+}
+
 /** Build a CodeMirror DecorationSet from the pure model for the given state.
  *  On a computation error, invokes `onError` (Webview falls back to source) and
  *  returns an empty set rather than crashing. */
@@ -612,6 +713,12 @@ function toDecoration(s: DecoSpec): Decoration | null {
       }
       if (s.tag === 'math-block') {
         return Decoration.replace({ widget: new MathBlockWidget(s.attrs?.tex ?? ''), block: true });
+      }
+      if (s.tag === 'mermaid-block') {
+        return Decoration.replace({
+          widget: new MermaidBlockWidget(s.attrs?.code ?? '', Number(s.attrs?.startLine ?? '0')),
+          block: true,
+        });
       }
       if (s.tag === 'details-block') {
         return Decoration.replace({

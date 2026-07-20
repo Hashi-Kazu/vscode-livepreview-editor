@@ -31,6 +31,7 @@
 | [0020](0020-readopt-custom-text-editor-and-delegate-undo.md) | CustomTextEditorProvider の再採用と Undo/Redo の VS Code 委譲 | 単一 TextDocument バインド、`classifyUndoRedoKey` で undo/redo/save を host 転送、CodeMirror history 撤去、per-editor serial queue、デバウンス apply。ADR-0005 復活・ADR-0015 廃止・ADR-0017 の単独 Undo を supersede | 高 |
 | [0021](0021-code-block-syntax-highlighting-and-github-alerts.md) | コードブロック言語別構文ハイライトと GitHub Alerts 記法 | 個別 `@codemirror/lang-*` を静的 import する同期リゾルバで言語解析、`--vscode-symbolIcon-*` 追従のトークン色、行装飾ベースの GitHub Alerts | 高 |
 | [0022](0022-line-anchored-bidirectional-scroll-sync.md) | 行番号アンカー双方向スクロール同期とループ防止 | 標準ソースエディタと Live Preview の縦スクロールを 0 始まり行番号で双方向連動。Webview 1 フレームガード＋host 時刻抑止窓＋行一致デデュープの 3 層でループ防止、判定は `src/core/viewport.ts` の純粋関数 | 高 |
+| [0023](0023-mermaid-diagram-rendering.md) | Mermaid ダイアグラムのライブレンダリング | ```mermaid を SVG block widget として描画。`mermaid.render` 非同期を同期プレースホルダ＋Promise 注入＋`requestMeasure` 収束＋キャッシュで扱う。編集移行は KaTeX の自動フォールスルーを採らず `<details>`（R-27-07）と同じコンテキストメニュー・オプトイン方式、状態は module-level 集合で純粋関数が判定。CSP 無変更 | 高 |
 
 ---
 

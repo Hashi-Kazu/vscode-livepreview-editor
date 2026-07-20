@@ -152,11 +152,70 @@ function pruneDetailsDirectEdit(state: EditorState): void {
   }
 }
 
+// R-36-05: 0-based start lines of ```mermaid blocks the user has opted into
+// raw-source ("Mermaidを編集") editing for. Unlike KaTeX/tables (auto raw on caret
+// entry), a mermaid block stays a rendered widget regardless of caret position;
+// it only shows raw source while its start line is in this set AND the caret is
+// inside. Pruned automatically once the caret leaves the block, same UX as the
+// `<details>` direct-edit opt-in (R-27-07). Empty by default → mermaid blocks are
+// viewer-only widgets (R-36-02).
+const mermaidDirectEditStartLines = new Set<number>();
+
+const MERMAID_FENCE_RE = /^(\s*)(`{3,}|~{3,})(.*)$/;
+
+/** Inclusive [start,end] line range of the ```mermaid block opening at `start0`
+ *  (0-based), or null when `start0` is not a ```mermaid opener or the block is
+ *  unterminated. Mirrors `detectMermaidBlocks`'s open/close scan (same fence char
+ *  and length, no info string on the closer). */
+function mermaidBlockRange(docLines: string[], start0: number): { start: number; end: number } | null {
+  if (start0 < 0 || start0 >= docLines.length) return null;
+  const m = MERMAID_FENCE_RE.exec(docLines[start0]);
+  if (!m) return null;
+  if (m[3].trim().split(/\s+/)[0].toLowerCase() !== 'mermaid') return null;
+  const fenceChar = m[2][0];
+  const fenceLen = m[2].length;
+  for (let j = start0 + 1; j < docLines.length; j++) {
+    const cm = MERMAID_FENCE_RE.exec(docLines[j]);
+    if (cm && cm[2][0] === fenceChar && cm[2].length >= fenceLen && cm[3].trim() === '') {
+      return { start: start0, end: j };
+    }
+  }
+  return null;
+}
+
+/** Drop any mermaid direct-edit opt-in whose block no longer contains the caret
+ *  so the diagram widget re-forms (R-36-05). Runs on every recompute. */
+function pruneMermaidDirectEdit(state: EditorState): void {
+  if (mermaidDirectEditStartLines.size === 0) return;
+  const doc = state.doc.toString();
+  const selections = state.selection.ranges.map((r) => ({ from: r.from, to: r.to }));
+  const cursorLines = cursorLinesFromSelections(doc, selections);
+  const docLines = doc.split('\n');
+  for (const start of [...mermaidDirectEditStartLines]) {
+    const range = mermaidBlockRange(docLines, start);
+    let inside = false;
+    if (range) {
+      for (let l = range.start; l <= range.end; l++) {
+        if (cursorLines.has(l)) {
+          inside = true;
+          break;
+        }
+      }
+    }
+    if (!inside) mermaidDirectEditStartLines.delete(start);
+  }
+}
+
 function computeField(state: EditorState, lineRange: LineWindow | undefined): LivePreviewFieldValue {
   pruneDetailsDirectEdit(state);
+  pruneMermaidDirectEdit(state);
   const rangeWithSelection = includeSelectionLines(state, lineRange);
   return {
-    decorations: buildDecorations(state, { lineRange: rangeWithSelection, detailsDirectEditStartLines }, onRenderError),
+    decorations: buildDecorations(
+      state,
+      { lineRange: rangeWithSelection, detailsDirectEditStartLines, mermaidDirectEditStartLines },
+      onRenderError,
+    ),
     lineRange,
   };
 }
@@ -696,6 +755,18 @@ view.dom.addEventListener(
     // open/close (native <details>); clicking elsewhere in the widget is
     // swallowed so CodeMirror's default mousedown does not move the caret to the
     // block start. The block is not editable in-place.
+    // Rendered ```mermaid diagram (viewer-only). Swallow primary-button presses
+    // so CodeMirror does not move the caret into the block (which would leave the
+    // diagram rendered per R-36-02); raw editing is reached via the right-click
+    // "Mermaidを編集" item only. A secondary press is left for the contextmenu
+    // listener.
+    const mermaidEl = el.closest('.cm-lp-mermaid-block');
+    if (mermaidEl) {
+      if (!shouldOpenLinkOnMouseDown(event.button)) return; // leave secondary press
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     const details = el.closest('.cm-lp-details');
     if (details) {
       if (el.closest('.cm-lp-details-summary')) return; // let native toggle run
@@ -987,6 +1058,45 @@ function showDetailsMenu(x: number, y: number, startLine: number): void {
   document.addEventListener('keydown', onKeyDownForTableMenu, true);
 }
 
+/**
+ * R-36-05: right-click menu for a rendered ```mermaid diagram. Its single item
+ * opts the block into raw-source editing (adds its start line to
+ * `mermaidDirectEditStartLines`) and moves the caret inside so the model shows the
+ * raw ```mermaid source. Reuses the table-menu overlay chrome/lifecycle.
+ */
+function showMermaidMenu(x: number, y: number, startLine: number): void {
+  closeTableMenu();
+  const menu = document.createElement('div');
+  menu.className = 'cm-lp-table-menu';
+  menu.setAttribute('role', 'menu');
+
+  const item = document.createElement('div');
+  item.className = 'cm-lp-table-menu-item';
+  item.setAttribute('role', 'menuitem');
+  item.textContent = 'Mermaidを編集';
+  item.addEventListener('mousedown', (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    mermaidDirectEditStartLines.add(startLine);
+    moveCaretToLineStart(startLine);
+    closeTableMenu();
+  });
+  menu.appendChild(item);
+
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.min(x, window.innerWidth - rect.width - 4);
+  const top = Math.min(y, window.innerHeight - rect.height - 4);
+  menu.style.left = `${Math.max(0, left)}px`;
+  menu.style.top = `${Math.max(0, top)}px`;
+
+  tableMenuEl = menu;
+  document.addEventListener('mousedown', onDocMouseDownForTableMenu, true);
+  document.addEventListener('keydown', onKeyDownForTableMenu, true);
+}
+
 function showTableMenu(
   x: number,
   y: number,
@@ -1073,6 +1183,15 @@ view.dom.addEventListener(
       event.stopImmediatePropagation();
       const startLine = Number(details.getAttribute('data-start-line'));
       if (Number.isInteger(startLine) && startLine >= 0) showDetailsMenu(event.clientX, event.clientY, startLine);
+      return;
+    }
+    // Rendered ```mermaid diagram → offer raw-source editing (R-36-05).
+    const mermaidEl = el.closest('.cm-lp-mermaid-block') as HTMLElement | null;
+    if (mermaidEl) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const startLine = Number(mermaidEl.getAttribute('data-start-line'));
+      if (Number.isInteger(startLine) && startLine >= 0) showMermaidMenu(event.clientX, event.clientY, startLine);
       return;
     }
     const cell = el.closest('.cm-lp-table th, .cm-lp-table td') as HTMLElement | null;
