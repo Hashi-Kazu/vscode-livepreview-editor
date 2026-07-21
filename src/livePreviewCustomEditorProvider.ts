@@ -585,7 +585,6 @@ class LivePreviewEditorSession {
       return undefined;
     }
     if (uri.scheme !== 'file') {
-      vscode.window.showWarningMessage(`Live Preview: unsupported dropped URI: ${raw}`);
       return undefined;
     }
     const inWorkspace = (vscode.workspace.workspaceFolders ?? []).some((folder) => {
