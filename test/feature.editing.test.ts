@@ -172,8 +172,20 @@ describe('R-24-03/04 changeListIndent', () => {
     expect(changeListIndent('- 子項目', 1, ['- 項目1', '- 項目2'])).toEqual({ text: '  - 子項目', shift: 2 });
   });
 
-  it('既に直前項目の子として最大階層にある場合はそれ以上インデントしない', () => {
-    expect(changeListIndent('   1. b', 1, ['1. a'])).toEqual({ text: '   1. b', shift: 0 });
+  it('既にインデントされた項目も現在位置から1段だけ深くする', () => {
+    expect(changeListIndent('   1. b', 1, ['1. a'])).toEqual({ text: '      1. b', shift: 3 });
+  });
+
+  it('直前項目が深い階層でも箇条書きを現在位置から1段だけ深くする', () => {
+    expect(changeListIndent('- C', 1, ['- A', '  - B'])).toEqual({ text: '  - C', shift: 2 });
+  });
+
+  it('直前項目が深い階層でも番号付きリストを現在位置から1段だけ深くする', () => {
+    expect(changeListIndent('1. C', 1, ['1. A', '   2. B'])).toEqual({ text: '   1. C', shift: 3 });
+  });
+
+  it('番号の桁数を1段幅として現在位置へ加算する', () => {
+    expect(changeListIndent('  1. detail', 1, ['    10. step'])).toEqual({ text: '      1. detail', shift: 4 });
   });
 
   it('直前の非空行がリストでなければインデントしない', () => {
@@ -265,6 +277,38 @@ describe('Issue#53 indentCommand エンドツーエンド(EditorState 経由)', 
     const result = runIndent(state, 1);
     expect(result.handled).toBe(true);
     expect(result.state.doc.toString()).toBe(['- 項目1', '- 項目2', '  - 子項目'].join('\n'));
+  });
+
+  it('Issue #61: 直前項目が深い階層でも箇条書き・番号付きリストを現在位置から1段だけインデントする', () => {
+    const bulletDoc = ['- 項目A', '  - 項目B', '- 項目C'].join('\n');
+    const bulletState = EditorState.create({
+      doc: bulletDoc,
+      selection: { anchor: bulletDoc.indexOf('- 項目C') },
+    });
+    const bulletResult = runIndent(bulletState, 1);
+    expect(bulletResult.handled).toBe(true);
+    expect(bulletResult.state.doc.toString()).toBe(['- 項目A', '  - 項目B', '  - 項目C'].join('\n'));
+
+    const orderedDoc = ['1. 項目A', '   2. 項目B', '1. 項目C'].join('\n');
+    const orderedStart = orderedDoc.indexOf('1. 項目C');
+    const orderedState = EditorState.create({
+      doc: orderedDoc,
+      selection: { anchor: orderedStart, head: orderedStart + '1. 項目C'.length },
+    });
+    const orderedResult = runIndent(orderedState, 1);
+    expect(orderedResult.handled).toBe(true);
+    expect(orderedResult.state.doc.toString()).toBe(['1. 項目A', '   2. 項目B', '   1. 項目C'].join('\n'));
+  });
+
+  it('異なる階層の複数行を編集前スナップショットから各々1段だけインデントする', () => {
+    const doc = ['- item1', '  - item2', '- item3'].join('\n');
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: doc.indexOf('  - item2'), head: doc.length },
+    });
+    const result = runIndent(state, 1);
+    expect(result.handled).toBe(true);
+    expect(result.state.doc.toString()).toBe(['- item1', '    - item2', '  - item3'].join('\n'));
   });
 
   it('複数行選択の兄弟項目をまとめてTabすると同じ階層へ揃う', () => {

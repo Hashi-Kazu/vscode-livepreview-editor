@@ -413,11 +413,11 @@ function handleEnter(target: EditorView): boolean {
 }
 
 /**
- * Tab / Shift-Tab: indent or outdent list lines, aligning child content to the
- * parent item's marker width (Issue #53). Every selected line is resolved
- * against a single pre-edit snapshot of the document, so indenting several
- * sibling items together lands them all at the same new level instead of
- * cascading off one another. Non-list lines keep the prior fixed-width
+ * Tab / Shift-Tab: indent or outdent list lines. Tab adds exactly one level to
+ * each line's current indent, using the preceding item's marker width as that
+ * level (Issues #53/#61). Every selected line is resolved against a single
+ * pre-edit snapshot of the document, so changes do not cascade off one
+ * another. Non-list lines keep the prior fixed-width
  * behavior: Tab falls through to the default keymap, Shift-Tab dedents by
  * `changeIndent`'s fixed unit (R-24-01/02).
  */
