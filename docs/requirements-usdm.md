@@ -1,12 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.44.2
+**バージョン**: 1.44.3
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-21
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-21 時点 / v1.44.3）**: v1.44.3 で、GitHub Issue #63（未対応 URI をドロップした際の警告メッセージを表示しない）に対応した。`file:` 以外の未対応 URI は、警告もスニペット挿入も行わずに無視する。一方、無効・ワークスペース外・読込失敗の `file:` URI は従来どおり警告して挿入せず、ワークスペース内 `file:` URI の相対リンク挿入・保存動作も維持する（R-29-05）。
 > ▶️ **開発継続中（2026-07-21 時点 / v1.44.2）**: v1.44.2 で、GitHub Issue #61（直前項目が深い階層にあると Tab で過剰にインデントされる）に対応した。リスト行の Tab は、直前の非空リスト項目の本文開始位置を絶対インデントとしてコピーせず、その項目のマーカー＋直後空白の幅（本文開始位置－先頭インデント）を 1 段幅として、対象行自身の現在インデントへ加算する。これにより箇条書きは現在位置から 2 スペース、番号付きリストは `1. ` なら 3 スペース、`10. ` なら 4 スペースだけ深くなり、直前項目の絶対階層には影響されない。単一行のキャレット配置・行選択・異なる階層を含む複数行選択で同じ相対計算を使い、複数行は編集前スナップショットから独立算出してカスケードを防ぐ。直前項目がない／非リストの場合の no-op、空行越しの参照、Shift+Tab、非リスト行の既存動作、スペースのみの挿入は維持する（R-24-01 改訂、R-24-02/03/04/05 不変）。
 > ▶️ **開発継続中（2026-07-21 時点 / v1.44.1）**: v1.44.1 で、GitHub Issue #59 に対応し、箇条書き・番号付きリストのネスト表示用行装飾インデントを 1 段あたり `2em` から `1.5em` へ縮小した（R-28-06）。`Math.floor(indent / 2)` による階層判定、ul/ol 共通の表示値、indent 0 の追加 padding なし、および `.cm-lp-list-marker` の固定幅マーカースロットは維持する。Markdown 本文・先頭空白・リスト記法・`indent` 属性・Enter/Tab/Shift+Tab の編集挙動は変更せず、タスク行の既存 `2em` 段差も不変である（R-01-02、R-01-05、R-01-07）。
 > ▶️ **開発継続中（2026-07-20 時点 / v1.44.0）**: v1.44.0 で、GitHub Issue #57（表のヘッダー行と内容行のデザインを差別化する）に対応した。`table.cm-lp-table th` の背景を `color-mix(in srgb, var(--vscode-editor-foreground) 18%, var(--vscode-editor-background))`（非対応エンジン向けフォールバックは `var(--vscode-textCodeBlock-background, rgba(127,127,127,0.2))` を先置き）に強化し、`font-weight` を 600→700、下端に `border-bottom: 1px solid var(--vscode-panel-border, rgba(127,127,127,0.6))` を追加した。ゼブラ行（`tr:nth-child(2n) td`）の背景も同系だが明確に弱い `color-mix(in srgb, var(--vscode-editor-foreground) 6%, var(--vscode-editor-background))` へ更新し、ヘッダとの段差を維持した。border の太さは 1px のまま・セルの `padding`/`line-height` は不変とし、`tableRowPx()`/`estimatedHeight` の高さ会計（R-28-11）に影響しない。DOM 構造・装飾ロジック・ユーザー本文は変更せず、CSS のみで実現した（R-28-18 新設、R-01-02）。
@@ -461,7 +462,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-29-02 `buildMediaSnippet` は、画像は `![alt text](<target>)`（プレースホルダ `alt text`）、非画像は `[text](target)` を生成し、プレースホルダ範囲（`placeholderFrom`/`placeholderTo`）が該当文字列を指すこと。非画像の表示名は貼り付け開始時の非空選択を優先し、なければ target basename の最終拡張子を除いた名前とする。`target` は `formatMarkdownLinkTarget` 適用済みを受け取る。
 - ■■■ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■■ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
-- ■■■ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。外部・無効・読込失敗 URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
+- ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。`file:` 以外の未対応 URI は警告・snippet 挿入なしで無視する。無効・ワークスペース外・読込失敗の `file:` URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
 
 ### R-30 見出しセクション折りたたみ #headingfold
 
