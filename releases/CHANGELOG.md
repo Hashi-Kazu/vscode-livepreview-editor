@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.44.1 — 箇条書きと番号付きリストの表示インデントを縮小 (Issue #59)
+
+### 変更
+
+- 箇条書き・番号付きリストのネスト表示用行装飾インデントを、1 段あたり `2em` から `1.5em` へ縮小。タスク行の既存 `2em` 段差、`Math.floor(indent / 2)` による階層判定、indent 0 の追加 padding なし、および固定幅マーカースロット（`width: 2em`、`margin-right: 0.5em`）は維持。
+- Issue #59 専用の回帰テスト（`test/feature.issue59.listIndent.test.ts`）を追加し、ul/ol のネスト表示、タスク行、最上位行、入力 Markdown と固定幅マーカースロットの維持を検証。
+
+## v1.44.0 — 表のヘッダー行とデータ行のデザインを差別化 (Issue #57)
+
+### 変更
+
+- 表ヘッダー行（`table.cm-lp-table th`）の背景を `color-mix` によるテーマ追従色でデータ行のゼブラより明確に強め、`font-weight` を 600 から 700 へ、下端に `border-bottom`（`var(--vscode-panel-border)`）を追加してヘッダーとデータ行の視覚的な区別を強化。
+- ゼブラ行（`tr:nth-child(2n) td`）の背景もヘッダーより明確に弱い `color-mix` 値へ更新し、ヘッダーとの段差を保ちつつ可読性を維持。
+- ボーダーの太さやセルの `padding`/`line-height` は変更せず、表の高さ計算（行高会計）に影響しない。色はすべて `var(--vscode-*)`/`color-mix` によるテーマ追従で、ライト/ダーク両テーマでコントラストを確保。
+- 新設した仕様 R-28-18 とテスト（`test/feature.issue57.tableHeader.test.ts`）で検証。
+
 ## v1.42.0 — Tab キーでリストのマーカー幅に沿ったインデントを挿入 (Issue #53)
 
 ### 変更
