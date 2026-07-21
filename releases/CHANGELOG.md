@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.44.1 — 箇条書きと番号付きリストの表示インデントを縮小 (Issue #59)
+
+### 変更
+
+- 箇条書き・番号付きリストのネスト表示用行装飾インデントを、1 段あたり `2em` から `1.5em` へ縮小。タスク行の既存 `2em` 段差、`Math.floor(indent / 2)` による階層判定、indent 0 の追加 padding なし、および固定幅マーカースロット（`width: 2em`、`margin-right: 0.5em`）は維持。
+- Issue #59 専用の回帰テスト（`test/feature.issue59.listIndent.test.ts`）を追加し、ul/ol のネスト表示、タスク行、最上位行、入力 Markdown と固定幅マーカースロットの維持を検証。
+
 ## v1.44.0 — 表のヘッダー行とデータ行のデザインを差別化 (Issue #57)
 
 ### 変更

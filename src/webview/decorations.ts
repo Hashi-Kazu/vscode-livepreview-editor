@@ -670,7 +670,11 @@ function toDecoration(s: DecoSpec): Decoration | null {
       // preview spacing (R-28-06). Additive to the existing whitespace — never
       // mutates the source text (R-01-02).
       let attributes: Record<string, string> | undefined;
-      if (s.tag === 'list' || s.tag === 'task') {
+      if (s.tag === 'list') {
+        const indent = Number(s.attrs?.indent ?? '0') || 0;
+        const level = Math.floor(indent / 2);
+        if (level > 0) attributes = { style: `padding-left: ${level * 1.5}em;` };
+      } else if (s.tag === 'task') {
         const indent = Number(s.attrs?.indent ?? '0') || 0;
         const level = Math.floor(indent / 2);
         if (level > 0) attributes = { style: `padding-left: ${level * 2}em;` };
