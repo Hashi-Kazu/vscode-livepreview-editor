@@ -180,12 +180,10 @@ function listLineIndent(lineText: string): ListLineIndent {
 }
 
 /**
- * Marker-width-aware list indent (R-24-03/04, Issue #53). Tab makes a list item
- * the child of the nearest preceding (non-blank) list item, using that item's
- * content-start column — its own indent + marker chars + trailing spaces — as
- * this item's new indent width. This keeps child content aligned under the
- * parent's text regardless of marker width, so `10. ` (4 chars) indents
- * further than `- ` (2 chars) or `1. ` (3 chars).
+ * Marker-width-aware list indent (R-24-01/03, Issues #53/#61). Tab deepens a
+ * list item by exactly one level from its current indent. The level width is
+ * taken from the nearest preceding (non-blank) list item's marker and trailing
+ * spaces (`contentCol - indent`), so `10. ` adds 4 spaces while `- ` adds 2.
  *
  * Shift+Tab reverses this: it looks further back for the nearest preceding
  * list item whose indent is strictly smaller than the current one, and
@@ -212,8 +210,9 @@ export function changeListIndent(
     let i = precedingLines.length - 1;
     while (i >= 0 && precedingLines[i].trim() === '') i--;
     const ref = i >= 0 ? listLineIndent(precedingLines[i]) : null;
-    if (!ref || !ref.isList || ref.contentCol <= cur.indent) return { text: lineText, shift: 0 };
-    target = ref.contentCol;
+    if (!ref || !ref.isList) return { text: lineText, shift: 0 };
+    const levelWidth = ref.contentCol - ref.indent;
+    target = cur.indent + levelWidth;
   } else {
     let found: number | null = null;
     for (let i = precedingLines.length - 1; i >= 0; i--) {
