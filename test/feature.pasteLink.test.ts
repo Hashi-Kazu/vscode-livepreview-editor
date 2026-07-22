@@ -169,8 +169,26 @@ describe('R-29-07 buildUrlLinkPaste', () => {
     });
   });
 
-  it('選択が空のときは null', () => {
-    expect(buildUrlLinkPaste('', 'https://example.com')).toBeNull();
+  it('選択が空（collapsed caret）のときは text プレースホルダーをリンクラベルにする', () => {
+    expect(buildUrlLinkPaste('', 'https://example.com')).toEqual({
+      text: '[text](https://example.com)',
+      placeholderFrom: 1,
+      placeholderTo: 5,
+    });
+  });
+
+  it('選択が空、かつ括弧を含む URL は target を山括弧で囲みラベルは text プレースホルダー', () => {
+    expect(buildUrlLinkPaste('', 'https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual({
+      text: '[text](<https://en.wikipedia.org/wiki/Foo_(bar)>)',
+      placeholderFrom: 1,
+      placeholderTo: 5,
+    });
+  });
+
+  it('選択が空でもプロース混じり・複数行・非 http(s) は null', () => {
+    expect(buildUrlLinkPaste('', 'see https://example.com now')).toBeNull();
+    expect(buildUrlLinkPaste('', 'https://example.com\nhttps://example.org')).toBeNull();
+    expect(buildUrlLinkPaste('', 'ftp://example.com/file')).toBeNull();
   });
 
   it('プロース混じり、または複数行は null', () => {

@@ -1,12 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.45.0
+**バージョン**: 1.46.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-22
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-22 時点 / v1.46.0）**: v1.46.0 で、GitHub Issue #66（選択範囲がない状態で単体 URL をペーストしてもリンク化してほしい）に対応した。クリップボード `text/plain` が単体の HTTP/HTTPS URL のとき、非空選択なら選択テキストを、選択が空（collapsed caret）なら固定文字列 `text` をリンクラベルとして `[ラベル](target)` へ置換・挿入する（`buildUrlLinkPaste`、`src/core/pasteLink.ts`）。選択が空の場合はラベル部分（`text`）を選択状態にしてキャレットを置き、即座に書き換えられるようにする（media snippet のプレースホルダー選択と同様、`placeholderFrom`/`placeholderTo`）。この分岐は R-29-01〜05 のメディア処理より前に評価し、URL 単体でない場合は既定 paste（R-29-05）を維持する（R-29-07 改訂）。
 > ▶️ **開発継続中（2026-07-22 時点 / v1.45.0）**: v1.45.0 で、GitHub Issue #47（選択テキストにクリップボードの単体 HTTP/HTTPS URL をペーストすると自動でリンク化してほしい）に対応した。非空選択があり、かつクリップボード `text/plain` が単体の HTTP/HTTPS URL のとき、選択範囲を `[選択テキスト](target)` へ置換して挿入する（`buildUrlLinkPaste`、`src/core/pasteLink.ts`）。この分岐は R-29-01〜05 のメディア処理より前に評価し、選択が空、または URL 単体でない場合は既定 paste（R-29-05）を維持する（R-29-07 新設）。
 > ▶️ **開発継続中（2026-07-21 時点 / v1.44.3）**: v1.44.3 で、GitHub Issue #63（未対応 URI をドロップした際の警告メッセージを表示しない）に対応した。`file:` 以外の未対応 URI は、警告もスニペット挿入も行わずに無視する。一方、無効・ワークスペース外・読込失敗の `file:` URI は従来どおり警告して挿入せず、ワークスペース内 `file:` URI の相対リンク挿入・保存動作も維持する（R-29-05）。
 > ▶️ **開発継続中（2026-07-21 時点 / v1.44.2）**: v1.44.2 で、GitHub Issue #61（直前項目が深い階層にあると Tab で過剰にインデントされる）に対応した。リスト行の Tab は、直前の非空リスト項目の本文開始位置を絶対インデントとしてコピーせず、その項目のマーカー＋直後空白の幅（本文開始位置－先頭インデント）を 1 段幅として、対象行自身の現在インデントへ加算する。これにより箇条書きは現在位置から 2 スペース、番号付きリストは `1. ` なら 3 スペース、`10. ` なら 4 スペースだけ深くなり、直前項目の絶対階層には影響されない。単一行のキャレット配置・行選択・異なる階層を含む複数行選択で同じ相対計算を使い、複数行は編集前スナップショットから独立算出してカスケードを防ぐ。直前項目がない／非リストの場合の no-op、空行越しの参照、Shift+Tab、非リスト行の既存動作、スペースのみの挿入は維持する（R-24-01 改訂、R-24-02/03/04/05 不変）。
@@ -464,7 +465,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-29-03 `isImageFile` は画像拡張子（png/jpg/jpeg/gif/bmp/webp/svg/ico/avif/tiff）を true、それ以外（`.md`/`.txt` 等）を false と判定すること。
 - ■■■ R-29-04 `uniqueMediaName` は、保存先に同名ファイルがあるとき拡張子の前へ `-1`,`-2`… を付与して衝突を回避すること（例: `image.png` 有り → `image-1.png`、さらに有りで `image-2.png`）。
 - ■■□ R-29-05 Webview の高優先度 DataTransfer handler は `files`、`items`、`text/uri-list`、`application/vnd.code.uri-list` を収集する。`text/plain` は、全行 file URI のとき、または（file URI fallback が該当しない場合に限り）全行が絶対ファイルパス（POSIX `/...`、Windows `X:\...`／`X:/...`、UNC `\\server\...`）のときだけ fallback とし、`file:` URI へ正規化して候補へ合流する（Windows パスはドライブレター小文字化・`\`→`/`変換・パーセントエンコードを行う）。通常テキスト・相対パス・HTTP URL、および行の混在（一部行のみ絶対パス）は既定 paste/drop を変えない（HTTP(S) URL は既定 paste 据え置き。ただし非空選択時の単体 HTTP/HTTPS URL の自動リンク化は R-29-07 による）。URI は同名 File より優先し、workspace 内 URI は画像・非画像とも複製せず document フォルダ基準の相対リンクとする。URI を持たない Markdown File は document フォルダへ、画像とその他 File は `assets/` へ同名回避保存する。`file:` 以外の未対応 URI は警告・snippet 挿入なしで無視する。無効・ワークスペース外・読込失敗の `file:` URI（絶対パス fallback 由来を含む）は警告し snippet を挿入しない。host 応答は request ID を返し、開始時 selection を追従して応答時に挿入する。
-- ■■□ R-29-07 Webview の paste handler は、非空選択があり、かつクリップボード `text/plain` が単体の HTTP/HTTPS URL（trim 後に空白・改行を含まず、`new URL` で解釈でき protocol が `http:`/`https:`）のとき、選択範囲を `[選択テキスト](target)`（`target` は `formatMarkdownLinkTarget` 適用済み、R-29-01）へ置換して挿入し、キャレットを挿入末尾へ置くこと。判定は VS Code/CodeMirror 非依存の純粋関数 `buildUrlLinkPaste`（`src/core/pasteLink.ts`）が担い、条件を満たさない場合は `null` を返し既定 paste に委ねること。この分岐は R-29-01〜05 のメディア処理より前に評価し、URI-list に同一 URL が載る場合でもメディア経路に優先すること。選択が空、または URL 単体でない場合は既定 paste（R-29-05）を維持し、`drop` は対象外。
+- ■■□ R-29-07 Webview の paste handler は、クリップボード `text/plain` が単体の HTTP/HTTPS URL（trim 後に空白・改行を含まず、`new URL` で解釈でき protocol が `http:`/`https:`）のとき、非空選択があれば選択範囲を、選択が空（collapsed caret）であればキャレット位置を、`[ラベル](target)`（`target` は `formatMarkdownLinkTarget` 適用済み、R-29-01。ラベルは非空選択時は選択テキスト、選択が空のときは固定文字列 `text`）へ置換して挿入すること。非空選択時はキャレットを挿入末尾へ置き、選択が空のときはラベル部分（`text`）を選択状態にして即座に書き換えられるようにすること（media snippet のプレースホルダー選択と同様）。判定は VS Code/CodeMirror 非依存の純粋関数 `buildUrlLinkPaste`（`src/core/pasteLink.ts`）が担い、条件を満たさない場合は `null` を返し既定 paste に委ねること。この分岐は R-29-01〜05 のメディア処理より前に評価し、URI-list に同一 URL が載る場合でもメディア経路に優先すること。URL 単体でない場合は既定 paste（R-29-05）を維持し、`drop` は対象外。
 
 ### R-30 見出しセクション折りたたみ #headingfold
 
