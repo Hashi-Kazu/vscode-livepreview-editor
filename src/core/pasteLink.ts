@@ -187,6 +187,29 @@ export function formatMarkdownLinkTarget(relPath: string): string {
   return `<${escaped}>`;
 }
 
+/**
+ * R-29-07: Wrap a non-empty selection as a Markdown link when the clipboard
+ * text is a single bare http/https URL. Returns null (default paste) for empty
+ * selections or clipboard content that is not a lone http(s) URL.
+ */
+export function buildUrlLinkPaste(
+  selectedText: string,
+  clipboardText: unknown,
+): { text: string } | null {
+  if (selectedText.length === 0) return null;
+  if (typeof clipboardText !== 'string') return null;
+  const trimmed = clipboardText.trim();
+  if (trimmed.length === 0 || /\s/.test(trimmed)) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  return { text: `[${selectedText}](${formatMarkdownLinkTarget(trimmed)})` };
+}
+
 export interface MediaSnippet {
   text: string;
   placeholderFrom: number;

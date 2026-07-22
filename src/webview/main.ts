@@ -27,7 +27,7 @@ import {
   shouldFlushComposition,
   toggleTaskAt,
 } from '../core/sync';
-import { hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
+import { buildUrlLinkPaste, hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
 import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
 import { changeIndent, changeListIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
@@ -536,8 +536,26 @@ const editingKeymap = keymap.of([
 // are declarations and are hoisted below with the rest of the media bridge.
 const mediaDomHandlers = Prec.highest(
   EditorView.domEventHandlers({
-    paste(event) {
+    paste(event, view) {
       const dataTransfer = (event as ClipboardEvent).clipboardData;
+      // R-29-07: non-empty selection + a bare http(s) URL on the clipboard is
+      // auto-wrapped as a Markdown link, ahead of the R-29 media handling below.
+      const sel = view.state.selection.main;
+      if (sel.from !== sel.to) {
+        const link = buildUrlLinkPaste(
+          view.state.sliceDoc(sel.from, sel.to),
+          dataTransfer?.getData('text/plain'),
+        );
+        if (link) {
+          event.preventDefault();
+          view.dispatch({
+            changes: { from: sel.from, to: sel.to, insert: link.text },
+            selection: { anchor: sel.from + link.text.length },
+          });
+          view.focus();
+          return true;
+        }
+      }
       if (!dataTransferHasMedia(dataTransfer)) return false;
       event.preventDefault();
       beginMediaRequest(dataTransfer!);

@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.45.0 — 選択テキスト + 単体 URL ペーストの自動リンク化 (Issue #47)
+
+### 変更
+
+- 非空選択があり、クリップボードの `text/plain` が単体の HTTP/HTTPS URL（trim 後に空白・改行を含まず `new URL` で解釈できるもの）のとき、ペーストで選択テキストを `[選択テキスト](URL)` へ自動変換して挿入するよう変更。挿入後のキャレットは挿入テキスト末尾へ移動。
+- 判定は VS Code/CodeMirror 非依存の純粋関数 `buildUrlLinkPaste`（`src/core/pasteLink.ts`）が担い、条件を満たさない場合は既定 paste（CodeMirror）に委ねる。この分岐は既存のファイル/画像/file URI のペースト処理（R-29-01〜05）より前に評価する。
+- 選択が空の場合、URL 単体でない場合（プロース混じり・複数行）、`http(s)` 以外のスキーム（`ftp:`/`mailto:`/`file:`/相対パス）の場合は既定 paste を維持し、`drop`/`dragover` の挙動は変更していない。
+- 新設した仕様 R-29-07 とテスト（`test/feature.pasteLink.test.ts` の `describe('R-29-07 buildUrlLinkPaste', ...)`）で検証。
+
 ## v1.44.1 — 箇条書きと番号付きリストの表示インデントを縮小 (Issue #59)
 
 ### 変更

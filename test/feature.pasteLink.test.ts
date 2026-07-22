@@ -3,6 +3,7 @@ import {
   isImageFile,
   formatMarkdownLinkTarget,
   buildMediaSnippet,
+  buildUrlLinkPaste,
   dedupeFilesAgainstUris,
   hasMediaPayload,
   parseDataTransferUris,
@@ -139,5 +140,54 @@ describe('R-29-05 absolute path text/plain fallback', () => {
     expect(parseDataTransferUris({ plainText: 'file:///workspace/docs/a.md' })).toEqual([
       'file:///workspace/docs/a.md',
     ]);
+  });
+});
+
+describe('R-29-07 buildUrlLinkPaste', () => {
+  it('選択 + https URL を [選択](URL) に変換する', () => {
+    expect(buildUrlLinkPaste('選択', 'https://example.com')).toEqual({
+      text: '[選択](https://example.com)',
+    });
+  });
+
+  it('選択 + http URL も変換する', () => {
+    expect(buildUrlLinkPaste('選択', 'http://example.com')).toEqual({
+      text: '[選択](http://example.com)',
+    });
+  });
+
+  it('括弧を含む URL は target を山括弧で囲む', () => {
+    const r = buildUrlLinkPaste('選択', 'https://en.wikipedia.org/wiki/Foo_(bar)');
+    expect(r).toEqual({
+      text: '[選択](<https://en.wikipedia.org/wiki/Foo_(bar)>)',
+    });
+  });
+
+  it('前後の改行・空白を trim してから単体 URL として判定する', () => {
+    expect(buildUrlLinkPaste('選択', '\n  https://example.com  \n')).toEqual({
+      text: '[選択](https://example.com)',
+    });
+  });
+
+  it('選択が空のときは null', () => {
+    expect(buildUrlLinkPaste('', 'https://example.com')).toBeNull();
+  });
+
+  it('プロース混じり、または複数行は null', () => {
+    expect(buildUrlLinkPaste('選択', 'see https://example.com now')).toBeNull();
+    expect(buildUrlLinkPaste('選択', 'https://example.com\nhttps://example.org')).toBeNull();
+  });
+
+  it('http(s) 以外・非 URL は null', () => {
+    expect(buildUrlLinkPaste('選択', 'ftp://example.com/file')).toBeNull();
+    expect(buildUrlLinkPaste('選択', 'mailto:a@example.com')).toBeNull();
+    expect(buildUrlLinkPaste('選択', 'file:///workspace/a.md')).toBeNull();
+    expect(buildUrlLinkPaste('選択', 'docs/a.md')).toBeNull();
+    expect(buildUrlLinkPaste('選択', 'not a url')).toBeNull();
+  });
+
+  it('clipboardText が文字列でない場合は null', () => {
+    expect(buildUrlLinkPaste('選択', undefined)).toBeNull();
+    expect(buildUrlLinkPaste('選択', null)).toBeNull();
   });
 });
