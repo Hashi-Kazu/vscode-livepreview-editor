@@ -169,15 +169,19 @@ describe('R-29-07 buildUrlLinkPaste', () => {
     });
   });
 
-  it('選択が空（collapsed caret）のときは URL 自身をリンクラベルにする', () => {
+  it('選択が空（collapsed caret）のときは text プレースホルダーをリンクラベルにする', () => {
     expect(buildUrlLinkPaste('', 'https://example.com')).toEqual({
-      text: '[https://example.com](https://example.com)',
+      text: '[text](https://example.com)',
+      placeholderFrom: 1,
+      placeholderTo: 5,
     });
   });
 
-  it('選択が空、かつ括弧を含む URL は target を山括弧で囲みラベルは元の URL 文字列', () => {
+  it('選択が空、かつ括弧を含む URL は target を山括弧で囲みラベルは text プレースホルダー', () => {
     expect(buildUrlLinkPaste('', 'https://en.wikipedia.org/wiki/Foo_(bar)')).toEqual({
-      text: '[https://en.wikipedia.org/wiki/Foo_(bar)](<https://en.wikipedia.org/wiki/Foo_(bar)>)',
+      text: '[text](<https://en.wikipedia.org/wiki/Foo_(bar)>)',
+      placeholderFrom: 1,
+      placeholderTo: 5,
     });
   });
 

@@ -540,8 +540,8 @@ const mediaDomHandlers = Prec.highest(
       const dataTransfer = (event as ClipboardEvent).clipboardData;
       // R-29-07: a bare http(s) URL on the clipboard is auto-wrapped as a
       // Markdown link, ahead of the R-29 media handling below. A non-empty
-      // selection becomes the link label; a collapsed caret uses the URL
-      // itself as the label.
+      // selection becomes the link label; a collapsed caret inserts a `text`
+      // placeholder label, selected for immediate editing.
       const sel = view.state.selection.main;
       const link = buildUrlLinkPaste(
         view.state.sliceDoc(sel.from, sel.to),
@@ -549,9 +549,13 @@ const mediaDomHandlers = Prec.highest(
       );
       if (link) {
         event.preventDefault();
+        const selection =
+          link.placeholderFrom != null && link.placeholderTo != null
+            ? { anchor: sel.from + link.placeholderFrom, head: sel.from + link.placeholderTo }
+            : { anchor: sel.from + link.text.length };
         view.dispatch({
           changes: { from: sel.from, to: sel.to, insert: link.text },
-          selection: { anchor: sel.from + link.text.length },
+          selection,
         });
         view.focus();
         return true;
