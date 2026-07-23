@@ -32,7 +32,16 @@ import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, u
 import { toggleWrap, WrapResult } from '../core/format';
 import { changeIndent, changeListIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
 import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
-import { LineWindow, viewportWindow, zoomFontSize, displayFontSize, clampScrollLine } from '../core/viewport';
+import {
+  LineWindow,
+  viewportWindow,
+  zoomFontSize,
+  displayFontSize,
+  clampScrollLine,
+  isEchoScroll,
+  nextScrollSuppressUntil,
+  LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS,
+} from '../core/viewport';
 
 interface VsCodeApi {
   postMessage(msg: unknown): void;
@@ -52,6 +61,13 @@ let applyingRemote = false;
  *  scroll listener from echoing the host's own scroll command back to it
  *  (loop-prevention layer 1 of 3; see `src/core/viewport.ts`). */
 let applyingRemoteScroll = false;
+/** Epoch ms deadline of the Webview-side local-edit scroll suppression window
+ *  (R-35-04). While open, `scheduleScrollReport` treats the `.cm-scroller`
+ *  `scroll` event as a side effect of the local edit itself (caret-follow
+ *  autoscroll / decoration height changes), not a genuine user scroll, and
+ *  does not relay it to the host. Opened by `syncPlugin` on every
+ *  `update.docChanged`. `undefined` means "no active window". */
+let localEditScrollSuppressUntil: number | undefined;
 let editVersion = 0;
 let ackVersion = 0;
 let pendingCompositionChange = false;
@@ -339,6 +355,11 @@ function postEdit(text: string) {
 
 const syncPlugin = EditorView.updateListener.of((update: ViewUpdate) => {
   if (update.docChanged) {
+    // Open the local-edit scroll suppression window (R-35-04) so the
+    // `.cm-scroller` `scroll` event(s) this edit's caret-follow autoscroll /
+    // decoration height changes may trigger are not relayed to the host as a
+    // user scroll (see `scheduleScrollReport`).
+    localEditScrollSuppressUntil = nextScrollSuppressUntil(Date.now(), LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS);
     for (const request of pendingMediaRequests.values()) {
       request.from = update.changes.mapPos(request.from, -1);
       request.to = update.changes.mapPos(request.to, 1);
@@ -1404,13 +1425,17 @@ function topVisibleLineFraction(): { line: number; fraction: number } {
 
 /** Report the current top visible line to the host, rAF-throttled so a scroll
  *  gesture posts at most once per animation frame. Suppressed entirely while
- *  applying a host-driven `scrollTo` (loop-prevention layer 1 of 3). */
+ *  applying a host-driven `scrollTo` (loop-prevention layer 1 of 3), and while
+ *  the local-edit scroll suppression window (R-35-04) is open — i.e. the
+ *  scroll is a side effect of a just-applied local edit (caret-follow
+ *  autoscroll / decoration height change), not a genuine user scroll. */
 function scheduleScrollReport(): void {
   if (applyingRemoteScroll || scrollSyncRafScheduled) return;
   scrollSyncRafScheduled = true;
   requestAnimationFrame(() => {
     scrollSyncRafScheduled = false;
     if (applyingRemoteScroll) return;
+    if (isEchoScroll(Date.now(), localEditScrollSuppressUntil)) return;
     const { line, fraction } = topVisibleLineFraction();
     vscode.postMessage({ type: 'scroll', binding, line, fraction });
   });

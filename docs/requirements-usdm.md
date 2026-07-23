@@ -1,12 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.47.0
+**バージョン**: 1.48.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-23
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-23 時点 / v1.48.0）**: v1.48.0 で、GitHub Issue #70（ビューアで改行すると縦スクロール位置が自動的に移動する）に対応した。Webview（`src/webview/main.ts`）の `syncPlugin` が `update.docChanged` のたびにローカル編集スクロール抑止窓（`localEditScrollSuppressUntil`、`nextScrollSuppressUntil` を再利用）を開始し、`scheduleScrollReport` はこの窓が開いている間（`isEchoScroll` で判定）、`.cm-scroller` の `scroll` イベントを host への `scroll` メッセージとして中継しない。これにより、CodeMirror 自身のキャレット追従スクロールや装飾高さ変化に起因する自動スクロールが「ユーザーによる明示スクロール」として誤って中継され、標準ソースエディタや Live Preview 自身が意図せず行頭へジャンプする不具合を止めた。窓幅は既存 `SCROLL_SUPPRESS_WINDOW_MS` を流用した `LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS`（`src/core/viewport.ts`）とし、host 側のエコー抑止窓（`scrollSuppressUntil` 等、`src/livePreviewCustomEditorProvider.ts`）や R-35-01/02/03 の既存同期方向・ループ防止 3 層のロジックは変更していない（R-35-04 新設）。
 > ▶️ **開発継続中（2026-07-23 時点 / v1.47.0）**: v1.47.0 で、GitHub Issue #55（表ウィジェットのパディング部分をクリックすると生ソースへ遷移してしまう）に対応した。mousedown ハンドラの表判定を `.cm-lp-table` から `.cm-lp-table-wrapper` へ変更し、実 `<table>` 要素の外側（ウィジェットのパディング領域）をクリックした場合も `event.preventDefault()`／`event.stopImmediatePropagation()` を実行してキャレット移動・生ソース遷移を防止した（R-22-08 改訂）。セル特定用セレクタ（`.cm-lp-table th, .cm-lp-table td`）・`readCellTarget`／`beginCellEditFromTarget` のセル編集ロジック、右クリックメニュー（R-22-06/R-22-09）は変更していない。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
 > ▶️ **開発継続中（2026-07-22 時点 / v1.46.0）**: v1.46.0 で、GitHub Issue #66（選択範囲がない状態で単体 URL をペーストしてもリンク化してほしい）に対応した。クリップボード `text/plain` が単体の HTTP/HTTPS URL のとき、非空選択なら選択テキストを、選択が空（collapsed caret）なら固定文字列 `text` をリンクラベルとして `[ラベル](target)` へ置換・挿入する（`buildUrlLinkPaste`、`src/core/pasteLink.ts`）。選択が空の場合はラベル部分（`text`）を選択状態にしてキャレットを置き、即座に書き換えられるようにする（media snippet のプレースホルダー選択と同様、`placeholderFrom`/`placeholderTo`）。この分岐は R-29-01〜05 のメディア処理より前に評価し、URL 単体でない場合は既定 paste（R-29-05）を維持する（R-29-07 改訂）。
 > ▶️ **開発継続中（2026-07-22 時点 / v1.45.0）**: v1.45.0 で、GitHub Issue #47（選択テキストにクリップボードの単体 HTTP/HTTPS URL をペーストすると自動でリンク化してほしい）に対応した。非空選択があり、かつクリップボード `text/plain` が単体の HTTP/HTTPS URL のとき、選択範囲を `[選択テキスト](target)` へ置換して挿入する（`buildUrlLinkPaste`、`src/core/pasteLink.ts`）。この分岐は R-29-01〜05 のメディア処理より前に評価し、選択が空、または URL 単体でない場合は既定 paste（R-29-05）を維持する（R-29-07 新設）。
@@ -532,6 +533,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 - ■■■ R-35-01 標準ソースエディタを縦スクロールすると、Live Preview（Webview）が対応する行が最上部に来るよう追従してスクロールすること。同期は 0 始まり行番号を同期キーとし、`onDidChangeTextEditorVisibleRanges` の対象 URI 一致イベントを `scrollTo` メッセージとして Webview へ送ること。
 - ■■■ R-35-02 Live Preview（Webview）を縦スクロールすると、対象 URI に一致する標準ソースエディタ（`visibleTextEditors`）が対応する行を `revealRange`（`AtTop`）で追従すること。算出は `.cm-scroller` の scroll イベントを rAF スロットルし、CodeMirror geometry（`view.lineBlockAtHeight`）で最上部可視行を求めること。
 - ■■■ R-35-03 相互のスクロール同期が無限ループ・振動を起こさないこと。(1) Webview 側 `applyingRemoteScroll` ガード、(2) host 側の時刻ベース抑止窓（`revealRange` 起因の `onDidChangeTextEditorVisibleRanges` を中継しない）、(3) host 側の直近同期行デデュープ、の 3 層で防止し、各層の純粋判定ロジック（`clampScrollLine`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`、`src/core/viewport.ts`）は DOM/vscode 非依存に実装し単体テストすること（`test/feature.issue37.scrollSync.test.ts`）。長文（数千行規模）でも安定して同期し振動しないこと（手動確認）。
+- ■■□ R-35-04 Live Preview（Webview）でのローカル編集（改行等）に起因する `.cm-scroller` の自動スクロール（CodeMirror のキャレット追従・装飾高さ変化によるもの）は、ユーザーによる明示スクロールとして host へ中継しないこと。`syncPlugin`（`src/webview/main.ts`）は `update.docChanged` のたびにローカル編集スクロール抑止窓（`localEditScrollSuppressUntil`）を `nextScrollSuppressUntil`（`LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS`、`src/core/viewport.ts`）で開始し、`scheduleScrollReport` は `isEchoScroll` でこの窓が開いている間、`scroll` メッセージの送信を抑止すること。既存の `applyingRemoteScroll` ガード、host 側のエコー抑止窓（`scrollSuppressUntil`／`isEchoScroll`／`nextScrollSuppressUntil`／`shouldRelayScrollLine`、`src/livePreviewCustomEditorProvider.ts`）、および R-35-01/02/03 の同期方向・ループ防止ロジックは変更しないこと。標準ソースエディタと Live Preview を並べて開いた状態で改行操作を行っても双方の縦スクロール位置が意図せず先頭へジャンプしないこと（手動確認）。
 
 ### R-36 Mermaid ダイアグラムのライブレンダリング #mermaid
 

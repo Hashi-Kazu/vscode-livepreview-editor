@@ -5,6 +5,7 @@ import {
   nextScrollSuppressUntil,
   shouldRelayScrollLine,
   SCROLL_SUPPRESS_WINDOW_MS,
+  LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS,
 } from '../src/core/viewport';
 
 describe('Issue #37: bidirectional vertical scroll sync — pure helpers (R-35)', () => {
@@ -82,6 +83,31 @@ describe('Issue #37: bidirectional vertical scroll sync — pure helpers (R-35)'
 
     it('relays when nothing has been synced yet', () => {
       expect(shouldRelayScrollLine(0, undefined)).toBe(true);
+    });
+  });
+
+  describe('R-35-04: local-edit scroll suppression (Webview-side)', () => {
+    it('LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS is a positive width reusing the shared window constant', () => {
+      expect(LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS).toBe(SCROLL_SUPPRESS_WINDOW_MS);
+      expect(LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS).toBeGreaterThan(0);
+    });
+
+    it('a scroll event right after a local edit falls inside the suppression window (must not be relayed)', () => {
+      const editAt = 1000;
+      const suppressUntil = nextScrollSuppressUntil(editAt, LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS);
+      // A caret-follow/decoration-height scroll firing shortly after the edit.
+      expect(isEchoScroll(editAt + 1, suppressUntil)).toBe(true);
+      expect(isEchoScroll(editAt + LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS - 1, suppressUntil)).toBe(true);
+    });
+
+    it('a scroll event once the window has elapsed is relayed as a genuine user scroll', () => {
+      const editAt = 1000;
+      const suppressUntil = nextScrollSuppressUntil(editAt, LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS);
+      expect(isEchoScroll(editAt + LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS, suppressUntil)).toBe(false);
+    });
+
+    it('with no local edit yet (no active window), a scroll is relayed', () => {
+      expect(isEchoScroll(Date.now(), undefined)).toBe(false);
     });
   });
 });
