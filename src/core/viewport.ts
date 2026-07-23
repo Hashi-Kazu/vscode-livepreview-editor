@@ -98,6 +98,20 @@ export const SCROLL_SUPPRESS_WINDOW_MS = 200;
  *  following the edit. */
 export const LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS = SCROLL_SUPPRESS_WINDOW_MS;
 
+/** Width (ms) of the host-side suppression window opened right after a
+ *  `TextDocument` change (`onDidChangeTextDocument`, either a self-echo of our
+ *  own WorkspaceEdit or an external edit made directly in the standard source
+ *  editor), during which `onSourceVisibleRangesChanged` must not relay a
+ *  source `TextEditor`'s visible-range change to the Webview as a user scroll
+ *  (R-35-05). Editing a document (e.g. pressing Enter) can reflow the editor
+ *  and/or move the caret-follow viewport, firing
+ *  `onDidChangeTextEditorVisibleRanges` even though the user never scrolled;
+ *  without this window that reflow was relayed to the Webview as a `scrollTo`,
+ *  jumping the preview. Reuses {@link SCROLL_SUPPRESS_WINDOW_MS} so a single
+ *  constant covers the host-side revealRange-echo window (R-35-02), the
+ *  Webview-side local-edit window (R-35-04), and this host-side edit window. */
+export const EDIT_SCROLL_SUPPRESS_WINDOW_MS = SCROLL_SUPPRESS_WINDOW_MS;
+
 /** Clamp a (possibly out-of-range) 0-based line number to `[0, totalLines-1]`.
  *  `totalLines <= 0` clamps to `0` (a single, empty document line). */
 export function clampScrollLine(line: number, totalLines: number): number {
