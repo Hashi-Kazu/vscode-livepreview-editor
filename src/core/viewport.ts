@@ -85,6 +85,19 @@ function clampFontSize(size: number): number {
  *  event, narrow enough not to swallow a genuine, fast follow-up user scroll. */
 export const SCROLL_SUPPRESS_WINDOW_MS = 200;
 
+/** Width (ms) of the Webview-side suppression window opened right after a
+ *  local edit (`syncPlugin`'s `update.docChanged`), during which
+ *  `scheduleScrollReport` must not relay the `.cm-scroller` `scroll` event to
+ *  the host as a user scroll (R-35-04). CodeMirror's caret-follow autoscroll
+ *  and decoration-height changes triggered by the edit can otherwise fire a
+ *  native `scroll` event that is indistinguishable from a genuine user
+ *  scroll, causing the standard source editor (and this Webview) to jump.
+ *  Reuses {@link SCROLL_SUPPRESS_WINDOW_MS} so a single constant covers both
+ *  the host-side echo window and this Webview-side local-edit window; wide
+ *  enough to cover CodeMirror's own measure/write (`requestMeasure`) cycle
+ *  following the edit. */
+export const LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS = SCROLL_SUPPRESS_WINDOW_MS;
+
 /** Clamp a (possibly out-of-range) 0-based line number to `[0, totalLines-1]`.
  *  `totalLines <= 0` clamps to `0` (a single, empty document line). */
 export function clampScrollLine(line: number, totalLines: number): number {
