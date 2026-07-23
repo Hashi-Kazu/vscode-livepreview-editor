@@ -10,6 +10,7 @@ import {
 } from './core/sync';
 import {
   clampScrollLine,
+  EDIT_SCROLL_SUPPRESS_WINDOW_MS,
   isEchoScroll,
   nextScrollSuppressUntil,
   resolveSettings,
@@ -120,6 +121,11 @@ class LivePreviewEditorSession {
    *  (loop-prevention layer 2 of 3; layer 1 is the Webview's own guard, layer 3
    *  is the `lastSyncedScrollLine` dedupe above). */
   private scrollSuppressUntil: number | undefined;
+  /** Epoch-ms deadline until which `onDidChangeTextEditorVisibleRanges` events
+   *  are treated as an edit-induced reflow/caret-follow (not a genuine user
+   *  scroll) and not relayed to the Webview, opened on every
+   *  `onDidChangeTextDocument` for this URI (R-35-05). */
+  private editScrollSuppressUntil: number | undefined;
 
   private readonly subscriptions: vscode.Disposable[] = [];
 
@@ -248,6 +254,7 @@ class LivePreviewEditorSession {
     if (this.disposed) return;
     if (event.textEditor.document.uri.toString() !== this.uri.toString()) return;
     if (isEchoScroll(Date.now(), this.scrollSuppressUntil)) return;
+    if (isEchoScroll(Date.now(), this.editScrollSuppressUntil)) return;
     const topRange = event.visibleRanges[0];
     if (!topRange) return;
     const line = clampScrollLine(topRange.start.line, this.document.lineCount);
@@ -385,6 +392,13 @@ class LivePreviewEditorSession {
 
   private onDocumentChanged(event: vscode.TextDocumentChangeEvent): void {
     if (event.document.uri.toString() !== this.uri.toString()) return;
+    // Any document change (self-echo of our own WorkspaceEdit or an external
+    // edit typed directly in the standard source editor) can reflow the
+    // source TextEditor and/or move its caret-follow viewport; that visible-
+    // range change must not be relayed to the Webview as a user scroll
+    // (R-35-05). Opened unconditionally, before the self-echo/external split
+    // below, so both branches are covered.
+    this.editScrollSuppressUntil = nextScrollSuppressUntil(Date.now(), EDIT_SCROLL_SUPPRESS_WINDOW_MS);
     const documentVersion = event.document.version;
     const documentText = toLF(event.document.getText());
 

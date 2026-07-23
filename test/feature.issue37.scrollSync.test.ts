@@ -6,6 +6,7 @@ import {
   shouldRelayScrollLine,
   SCROLL_SUPPRESS_WINDOW_MS,
   LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS,
+  EDIT_SCROLL_SUPPRESS_WINDOW_MS,
 } from '../src/core/viewport';
 
 describe('Issue #37: bidirectional vertical scroll sync — pure helpers (R-35)', () => {
@@ -107,6 +108,31 @@ describe('Issue #37: bidirectional vertical scroll sync — pure helpers (R-35)'
     });
 
     it('with no local edit yet (no active window), a scroll is relayed', () => {
+      expect(isEchoScroll(Date.now(), undefined)).toBe(false);
+    });
+  });
+
+  describe('R-35-05: edit-induced source visible-range suppression (host-side)', () => {
+    it('EDIT_SCROLL_SUPPRESS_WINDOW_MS is a positive width reusing the shared window constant', () => {
+      expect(EDIT_SCROLL_SUPPRESS_WINDOW_MS).toBe(SCROLL_SUPPRESS_WINDOW_MS);
+      expect(EDIT_SCROLL_SUPPRESS_WINDOW_MS).toBeGreaterThan(0);
+    });
+
+    it('a source visible-range change right after a document edit falls inside the suppression window (must not be relayed)', () => {
+      const editAt = 1000;
+      const suppressUntil = nextScrollSuppressUntil(editAt, EDIT_SCROLL_SUPPRESS_WINDOW_MS);
+      // A reflow/caret-follow visible-range change firing shortly after the edit.
+      expect(isEchoScroll(editAt + 1, suppressUntil)).toBe(true);
+      expect(isEchoScroll(editAt + EDIT_SCROLL_SUPPRESS_WINDOW_MS - 1, suppressUntil)).toBe(true);
+    });
+
+    it('a source visible-range change once the window has elapsed is relayed as a genuine user scroll', () => {
+      const editAt = 1000;
+      const suppressUntil = nextScrollSuppressUntil(editAt, EDIT_SCROLL_SUPPRESS_WINDOW_MS);
+      expect(isEchoScroll(editAt + EDIT_SCROLL_SUPPRESS_WINDOW_MS, suppressUntil)).toBe(false);
+    });
+
+    it('with no document edit yet (no active window), a source visible-range change is relayed', () => {
       expect(isEchoScroll(Date.now(), undefined)).toBe(false);
     });
   });
