@@ -798,11 +798,15 @@ view.dom.addEventListener(
     }
     // Rendered table → a normal (primary-button) click edits the clicked cell in
     // place; it never moves the caret into the block, so a plain click no longer
-    // switches the table to raw `| a | b |` source (R-22-08). Raw-source editing
-    // is reachable only via the "Markdownコードを直接編集" context-menu item
-    // (R-22-09). A secondary press is swallowed here (so CodeMirror does not move
-    // the caret) and handled by the `contextmenu` listener.
-    const table = el.closest('.cm-lp-table');
+    // switches the table to raw `| a | b |` source (R-22-08). This is matched
+    // against the whole widget wrapper (`.cm-lp-table-wrapper`), not just the
+    // `<table>` element, so clicks landing in the wrapper's padding area (outside
+    // the `<table>` but still inside the widget) are swallowed too and never move
+    // the caret or reveal raw source. Raw-source editing is reachable only via the
+    // "Markdownコードを直接編集" context-menu item (R-22-09). A secondary press is
+    // swallowed here (so CodeMirror does not move the caret) and handled by the
+    // `contextmenu` listener.
+    const table = el.closest('.cm-lp-table-wrapper');
     if (table) {
       event.preventDefault();
       event.stopImmediatePropagation();
