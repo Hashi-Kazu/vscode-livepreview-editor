@@ -1021,7 +1021,16 @@ function startCellEdit(cell: HTMLElement, target: CellTarget): void {
   activeCellCommit = commit;
 
   const stop = (ev: Event) => ev.stopPropagation();
-  for (const type of ['mousedown', 'click', 'dblclick', 'input', 'contextmenu'] as const) {
+  for (const type of [
+    'mousedown',
+    'click',
+    'dblclick',
+    'input',
+    'contextmenu',
+    'copy',
+    'cut',
+    'paste',
+  ] as const) {
     input.addEventListener(type, stop);
   }
   input.addEventListener('compositionstart', (ev) => {
