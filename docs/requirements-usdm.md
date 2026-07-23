@@ -1,12 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.48.0
+**バージョン**: 1.49.0
 **作成日**: 2026-06-21  
 **最終更新**: 2026-07-23
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-07-23 時点 / v1.49.0）**: v1.49.0 で、GitHub Issue #71（表セル編集中の input で Ctrl+C（コピー）が効かない）に対応した。`src/webview/main.ts` の `startCellEdit` が `.cm-lp-table-cell-input` 上で `stopPropagation` する隔離対象イベントに `copy`/`cut`/`paste` を追加した。従来は `mousedown`/`click`/`dblclick`/`input`/`contextmenu` のみが隔離対象で、copy/cut/paste はバブリングで CodeMirror の `contentDOM` に到達し、CodeMirror 本体の clipboard ハンドラがエディタ文書側の（実質空の）選択範囲でネイティブコピー・カット・ペーストを上書きしていた。イベント隔離の追加のみで、commit/cancel ロジック（Enter/Escape/Tab/blur、IME `isComposing` 判定）・keydown の `stopPropagation`・`updateTableCell` 等の本文変更ロジックは変更していない（R-22-07 改訂）。
 > ▶️ **開発継続中（2026-07-23 時点 / v1.48.0）**: v1.48.0 で、GitHub Issue #70（ビューアで改行すると縦スクロール位置が自動的に移動する）に対応した。Webview（`src/webview/main.ts`）の `syncPlugin` が `update.docChanged` のたびにローカル編集スクロール抑止窓（`localEditScrollSuppressUntil`、`nextScrollSuppressUntil` を再利用）を開始し、`scheduleScrollReport` はこの窓が開いている間（`isEchoScroll` で判定）、`.cm-scroller` の `scroll` イベントを host への `scroll` メッセージとして中継しない。これにより、CodeMirror 自身のキャレット追従スクロールや装飾高さ変化に起因する自動スクロールが「ユーザーによる明示スクロール」として誤って中継され、標準ソースエディタや Live Preview 自身が意図せず行頭へジャンプする不具合を止めた。窓幅は既存 `SCROLL_SUPPRESS_WINDOW_MS` を流用した `LOCAL_EDIT_SCROLL_SUPPRESS_WINDOW_MS`（`src/core/viewport.ts`）とし、host 側のエコー抑止窓（`scrollSuppressUntil` 等、`src/livePreviewCustomEditorProvider.ts`）や R-35-01/02/03 の既存同期方向・ループ防止 3 層のロジックは変更していない（R-35-04 新設）。
 > ▶️ **開発継続中（2026-07-23 時点 / v1.47.0）**: v1.47.0 で、GitHub Issue #55（表ウィジェットのパディング部分をクリックすると生ソースへ遷移してしまう）に対応した。mousedown ハンドラの表判定を `.cm-lp-table` から `.cm-lp-table-wrapper` へ変更し、実 `<table>` 要素の外側（ウィジェットのパディング領域）をクリックした場合も `event.preventDefault()`／`event.stopImmediatePropagation()` を実行してキャレット移動・生ソース遷移を防止した（R-22-08 改訂）。セル特定用セレクタ（`.cm-lp-table th, .cm-lp-table td`）・`readCellTarget`／`beginCellEditFromTarget` のセル編集ロジック、右クリックメニュー（R-22-06/R-22-09）は変更していない。ユーザーの Markdown 本文は引き続き書き換えない（R-01-02）。
 > ▶️ **開発継続中（2026-07-22 時点 / v1.46.0）**: v1.46.0 で、GitHub Issue #66（選択範囲がない状態で単体 URL をペーストしてもリンク化してほしい）に対応した。クリップボード `text/plain` が単体の HTTP/HTTPS URL のとき、非空選択なら選択テキストを、選択が空（collapsed caret）なら固定文字列 `text` をリンクラベルとして `[ラベル](target)` へ置換・挿入する（`buildUrlLinkPaste`、`src/core/pasteLink.ts`）。選択が空の場合はラベル部分（`text`）を選択状態にしてキャレットを置き、即座に書き換えられるようにする（media snippet のプレースホルダー選択と同様、`placeholderFrom`/`placeholderTo`）。この分岐は R-29-01〜05 のメディア処理より前に評価し、URL 単体でない場合は既定 paste（R-29-05）を維持する（R-29-07 改訂）。
@@ -339,7 +340,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜セル直接編集＞
 
-- ■■□ R-22-07 Webview は表を表形式のまま、セルの通常クリック／ダブルクリック（または R-22-06 メニュー「セルを編集」）で当該セルのみをインライン `<input type="text"`（`aria-label="表セルを編集"`）で編集させること。通常クリックはブロックを生表示化せずウィジェットのまま `beginCellEditFromTarget` で当該セルの入力欄を開くこと（R-22-08）。確定（Enter/blur/別セル編集開始）は `updateTableCell` → 行・列操作と同一の本文変更経路（`computeRemotePatch` → `view.dispatch` ＋ `isolateHistory.of('full')`）で反映し、取消（Escape）は本文を変更しないこと。IME 変換中（`event.isComposing`）の Enter を確定と誤認しないこと。入力欄操作中のイベントを CodeMirror 本体へ誤伝播させず、1 文字ごとに Markdown へ反映しない（確定時のみ）こと。外部更新（host `update`）と競合したときはセル編集をキャンセルして host 更新を優先すること。
+- ■■□ R-22-07 Webview は表を表形式のまま、セルの通常クリック／ダブルクリック（または R-22-06 メニュー「セルを編集」）で当該セルのみをインライン `<input type="text"`（`aria-label="表セルを編集"`）で編集させること。通常クリックはブロックを生表示化せずウィジェットのまま `beginCellEditFromTarget` で当該セルの入力欄を開くこと（R-22-08）。確定（Enter/blur/別セル編集開始）は `updateTableCell` → 行・列操作と同一の本文変更経路（`computeRemotePatch` → `view.dispatch` ＋ `isolateHistory.of('full')`）で反映し、取消（Escape）は本文を変更しないこと。IME 変換中（`event.isComposing`）の Enter を確定と誤認しないこと。入力欄操作中のイベント（`mousedown`/`click`/`dblclick`/`input`/`contextmenu`/`copy`/`cut`/`paste`）を CodeMirror 本体（`contentDOM`）へ誤伝播させず、コピー・カット・ペーストは入力欄のネイティブ動作をそのまま許可すること。1 文字ごとに Markdown へ反映しない（確定時のみ）こと。外部更新（host `update`）と競合したときはセル編集をキャンセルして host 更新を優先すること。
 
 ###### ＜通常クリック＝セル編集・生ソースはメニュー経由＞
 
