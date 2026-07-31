@@ -1,8 +1,8 @@
 {
   "name": "vscode-livepreview-editor",
   "displayName": "Markdown ライブプレビューエディタ",
-  "description": "Obsidian ライクな Markdown ライブプレビュー編集エディタ (CodeMirror 6)",
-  "version": "1.50.0",
+  "description": "見た目のまま Markdown を編集できるライブプレビューエディタ。カーソル行だけ生の記法を表示し、表・数式(KaTeX)・Mermaid 図・GitHub Alerts・コードのシンタックスハイライトをその場で描画します。",
+  "version": "1.50.1",
   "publisher": "Hashi-Kazu",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -27,7 +27,12 @@
     "live preview",
     "wysiwyg",
     "obsidian",
-    "editor"
+    "editor",
+    "mermaid",
+    "katex",
+    "math",
+    "gfm",
+    "preview"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
