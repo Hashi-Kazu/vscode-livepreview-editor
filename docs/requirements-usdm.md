@@ -1,9 +1,9 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.50.0
+**バージョン**: 1.50.1
 **作成日**: 2026-06-21  
-**最終更新**: 2026-07-23
+**最終更新**: 2026-07-31
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
