@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.51.0 — 表セル編集で Shift+Enter による `<br>` 挿入 (Issue #77)
+
+### 変更
+
+- 表セルのインライン `<input>` 編集モードで Shift+Enter を押すと、`commit` を行わずカーソル位置へ `<br>` を挿入するよう変更（IME 合成中・通常 Enter・Escape・Tab・blur の既存分岐は変更なし）。
+- 表示側（`appendInlineCell`）のトークナイザに `<br>`/`<br/>`/`<br />`（大小文字を問わない）を認識する分岐を追加し、非編集時の表ウィジェットで実際の改行として描画するよう変更。
+- 新設した仕様 R-22-10 とテスト（`test/feature.issue77.tableCellBr.test.ts`）で検証。
+
 ## v1.50.1 — README と拡張機能説明を最新の実装状況へ更新
 
 ### 変更
