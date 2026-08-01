@@ -122,13 +122,22 @@ interface ParsedTable {
  * raw `textContent`, so `**CPM**` showed literal asterisks; MAIO renders the
  * bold. We keep this intentionally small (cells rarely carry rich syntax) and
  * escape everything else so it stays safe from raw-HTML injection. */
-function appendInlineCell(parent: HTMLElement, text: string): void {
-  // Tokenise into [marker, content] runs. Order: code → bold → italic.
-  const re = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_/g;
+export function appendInlineCell(parent: HTMLElement, text: string): void {
+  // Tokenise into [marker, content] runs. Order: code → bold → italic → br.
+  // The `<br\s*\/?>` alternative (R-22-10) recognises `<br>`/`<br/>`/`<br />`
+  // case-insensitively so a cell edited via Shift+Enter (which always inserts
+  // the literal lowercase `<br>`) renders as a real line break instead of the
+  // literal tag text.
+  const re = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|<br\s*\/?>/gi;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+    if (m[1] === undefined && m[2] === undefined && m[3] === undefined && m[4] === undefined && m[5] === undefined) {
+      parent.appendChild(document.createElement('br'));
+      last = m.index + m[0].length;
+      continue;
+    }
     let el: HTMLElement;
     if (m[1] !== undefined) {
       el = document.createElement('code');
