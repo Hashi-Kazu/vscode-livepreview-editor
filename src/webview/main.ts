@@ -1046,6 +1046,18 @@ function startCellEdit(cell: HTMLElement, target: CellTarget): void {
     if (ev.key === 'Enter') {
       if (ev.isComposing || composing) return; // IME confirmation, not a cell commit
       ev.preventDefault();
+      if (ev.shiftKey) {
+        // Insert a literal `<br>` at the caret instead of committing the cell
+        // (R-22-10). The stored cell text keeps `<br>` verbatim; the widget
+        // renders it as a real line break (see appendInlineCell).
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? start;
+        const tag = '<br>';
+        input.value = input.value.slice(0, start) + tag + input.value.slice(end);
+        const pos = start + tag.length;
+        input.setSelectionRange(pos, pos);
+        return;
+      }
       commit(true);
     } else if (ev.key === 'Escape') {
       ev.preventDefault();
