@@ -1071,7 +1071,8 @@ function startCellEdit(cell: HTMLElement, target: CellTarget): void {
   input.addEventListener('blur', () => commit(true));
 
   input.focus();
-  input.select();
+  const end = input.value.length;
+  input.setSelectionRange(end, end);
 }
 
 /** Move the caret to the start of the given 0-based line (and focus the editor).
