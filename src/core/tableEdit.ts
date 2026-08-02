@@ -123,6 +123,23 @@ export function deleteTableColumn(lines: string[], colIndex: number): string[] {
  * escaped (`\|`) by `buildRow` so the row structure is preserved. The input
  * array is never mutated.
  */
+/**
+ * Insert a literal `<br>` at the caret (R-22-10), replacing the current
+ * selection `[start, end)` if any. Returns the new `value` and the caret
+ * position immediately after the inserted `<br>`. Pure/framework-agnostic
+ * (no DOM access) so it can be unit-tested directly and reused by the
+ * Webview's table-cell keydown handler.
+ */
+export function insertBrAtCaret(
+  value: string,
+  start: number,
+  end: number,
+): { value: string; caret: number } {
+  const tag = '<br>';
+  const newValue = value.slice(0, start) + tag + value.slice(end);
+  return { value: newValue, caret: start + tag.length };
+}
+
 export function updateTableCell(
   lines: string[],
   row: { type: 'header' } | { type: 'body'; index: number },
