@@ -499,6 +499,7 @@ table.cm-lp-table td.cm-lp-table-cell-editing {
 .cm-lp-table-cell-input {
   box-sizing: border-box;
   width: 100%;
+  height: 100%;
   margin: 0;
   padding: 6px 13px;
   border: none;
