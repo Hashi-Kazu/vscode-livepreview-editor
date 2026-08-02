@@ -28,7 +28,14 @@ import {
   toggleTaskAt,
 } from '../core/sync';
 import { buildUrlLinkPaste, hasMediaPayload, parseDataTransferUris } from '../core/pasteLink';
-import { insertTableRow, deleteTableRow, insertTableColumn, deleteTableColumn, updateTableCell } from '../core/tableEdit';
+import {
+  insertTableRow,
+  deleteTableRow,
+  insertTableColumn,
+  deleteTableColumn,
+  updateTableCell,
+  insertBrAtCaret,
+} from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
 import { changeIndent, changeListIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
 import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
@@ -1049,13 +1056,17 @@ function startCellEdit(cell: HTMLElement, target: CellTarget): void {
       if (ev.shiftKey) {
         // Insert a literal `<br>` at the caret instead of committing the cell
         // (R-22-10). The stored cell text keeps `<br>` verbatim; the widget
-        // renders it as a real line break (see appendInlineCell).
+        // renders it as a real line break (see appendInlineCell). Setting
+        // `.value`/`setSelectionRange` programmatically does not guarantee the
+        // browser repaints the caret, so a synthetic `input` event is
+        // dispatched right after to force the redraw (it is caught by the
+        // existing `stop` listener below, so it never reaches CodeMirror).
         const start = input.selectionStart ?? input.value.length;
         const end = input.selectionEnd ?? start;
-        const tag = '<br>';
-        input.value = input.value.slice(0, start) + tag + input.value.slice(end);
-        const pos = start + tag.length;
-        input.setSelectionRange(pos, pos);
+        const { value, caret } = insertBrAtCaret(input.value, start, end);
+        input.value = value;
+        input.setSelectionRange(caret, caret);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
         return;
       }
       commit(true);
