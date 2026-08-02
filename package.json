@@ -2,7 +2,7 @@
   "name": "vscode-livepreview-editor",
   "displayName": "Markdown ライブプレビューエディタ",
   "description": "見た目のまま Markdown を編集できるライブプレビューエディタ。カーソル行だけ生の記法を表示し、表・数式(KaTeX)・Mermaid 図・GitHub Alerts・コードのシンタックスハイライトをその場で描画します。",
-  "version": "1.51.2",
+  "version": "1.51.3",
   "publisher": "Hashi-Kazu",
   "license": "MIT",
   "icon": "media/icon.png",
