@@ -37,7 +37,7 @@ import {
   insertBrAtCaret,
 } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
-import { changeIndent, changeListIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit } from '../core/editing';
+import { changeIndent, changeListIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit, classifyTableWidgetPress } from '../core/editing';
 import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
 import {
   LineWindow,
@@ -836,9 +836,19 @@ view.dom.addEventListener(
     // `contextmenu` listener.
     const table = el.closest('.cm-lp-table-wrapper');
     if (table) {
+      const insideCellInput = el.closest('.cm-lp-table-cell-input') !== null;
+      const action = classifyTableWidgetPress({ insideCellInput, button: event.button });
+      if (action === 'cell-input-native') {
+        // A cell edit session is already open and the press landed inside its
+        // <input>: only stop the press from reaching CodeMirror, and leave
+        // preventDefault() unset so the browser places the caret at the
+        // clicked position / allows drag selection natively (Issue #82).
+        event.stopImmediatePropagation();
+        return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (shouldOpenLinkOnMouseDown(event.button)) {
+      if (action === 'begin-cell-edit') {
         const cell = el.closest('.cm-lp-table th, .cm-lp-table td') as HTMLElement | null;
         const target = cell ? readCellTarget(cell) : null;
         if (target) beginCellEditFromTarget(target);

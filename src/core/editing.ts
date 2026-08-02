@@ -15,6 +15,26 @@ export function shouldOpenLinkOnMouseDown(button: number): boolean {
   return button === 0;
 }
 
+/** Result of classifying a mousedown press inside a rendered table widget (R-22-08, Issue #82). */
+export type TableWidgetPressAction = 'cell-input-native' | 'begin-cell-edit' | 'swallow';
+
+/**
+ * Decide how a mousedown inside a `.cm-lp-table-wrapper` should be handled.
+ *
+ * When the press lands inside a currently-open `<input class="cm-lp-table-cell-input">`
+ * (i.e. an in-place cell edit session is already active), the press must be left
+ * entirely to the browser's native `<input>` behaviour so the caret lands at the
+ * clicked position and drag selection works, rather than always reopening the
+ * editor with the caret forced to the end (#79). Otherwise, a primary-button
+ * press begins editing the clicked cell (caret at end, per #79); any other
+ * button press is swallowed so CodeMirror does not move its own caret.
+ */
+export function classifyTableWidgetPress(input: { insideCellInput: boolean; button: number }): TableWidgetPressAction {
+  if (input.insideCellInput) return 'cell-input-native';
+  if (shouldOpenLinkOnMouseDown(input.button)) return 'begin-cell-edit';
+  return 'swallow';
+}
+
 /** The minimal, DOM-independent view of a KeyboardEvent this module needs. */
 export interface UndoRedoKeyEventLike {
   key: string;

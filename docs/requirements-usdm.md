@@ -1,12 +1,13 @@
 # Live Preview Editor VS Code拡張機能 要求仕様書（USDM形式）
 
 **文書番号**: LPE-REQ-001-USDM  
-**バージョン**: 1.51.0
+**バージョン**: 1.51.2
 **作成日**: 2026-06-21  
-**最終更新**: 2026-08-01
+**最終更新**: 2026-08-03
 **ステータス**: 承認済み  
 **関連文書**: [architecture.md](architecture.md) | [acceptance-tests.md](acceptance-tests.md) | [requirements.md](requirements.md)
 
+> ▶️ **開発継続中（2026-08-03 時点 / v1.51.2）**: v1.51.2 で、GitHub Issue #82（表セルのインライン編集中に `<input>` 内をクリックしてもクリック位置にキャレットが移らず、常に末尾へ戻ってしまう）に対応した。`src/core/editing.ts` に純粋関数 `classifyTableWidgetPress({ insideCellInput, button })` を新設し、`src/webview/main.ts` の表ウィジェット mousedown（capture フェーズ）ハンドラで、押下位置が編集中の `.cm-lp-table-cell-input` 内であれば `event.stopImmediatePropagation()` のみを行い（`preventDefault()` を呼ばず、`beginCellEditFromTarget` によるセル編集再開始も行わない）、ブラウザ既定のキャレット配置・ドラッグ選択を素通しするよう分岐した。編集セルの外側を押下した場合の挙動（プライマリボタン＝セル編集開始・キャレット末尾配置、セカンダリボタン＝握りつぶし）は不変で、編集開始時のキャレット末尾配置（Issue #79）・R-22-07 のイベント隔離・R-22-10 の `<br>` 挿入・R-22-08 のパディング領域ハンドリング（Issue #55）はいずれも変更していない（R-22-08 改訂）。
 > ▶️ **開発継続中（2026-08-01 時点 / v1.51.0）**: v1.51.0 で、GitHub Issue #77（表セル編集で改行を入力できない）に対応した。`src/webview/main.ts` の `startCellEdit` keydown ハンドラで Enter に Shift 修飾が付いている場合は `commit` を呼ばず、選択範囲を `<br>`（常に小文字・自己終了なしで統一）へ置換してカーソルをその直後へ移動する分岐を追加した（IME 合成中・通常 Enter・Escape・Tab・blur の既存分岐は変更なし）。表示側は `src/webview/decorations.ts` の `appendInlineCell` のトークナイザへ `<br\s*\/?>`（大小文字を問わない）の代替パターンを追加し、マッチ時は `document.createElement('br')` を挿入して実際の改行として描画するようにした（既存の code/bold/italic 判定・優先順位・`innerHTML` 不使用方針は不変、`updateTableCell`／`parseTableRow` のパイプエスケープにも変更なし）（R-22-10 新設）。
 > ▶️ **開発継続中（2026-07-23 時点 / v1.50.0）**: v1.50.0 で、GitHub Issue #74（ビューア／ソースエディタで改行すると縦スクロール位置が自動的に移動する残存不具合）に対応した。R-35-04（v1.48.0）は Webview→host 方向（ローカル編集直後の `.cm-scroller` オートスクロール中継）のみを塞いでおり、対称の host→Webview 方向（`onDidChangeTextEditorVisibleRanges` によるドキュメント編集起因の可視範囲変化の中継）が未対応だった。`src/livePreviewCustomEditorProvider.ts` の `onDocumentChanged` が URI 一致判定後・self-echo/external 分岐の前で毎回 host 側編集スクロール抑止窓（`editScrollSuppressUntil`、`nextScrollSuppressUntil(now, EDIT_SCROLL_SUPPRESS_WINDOW_MS)`）を開き、`onSourceVisibleRangesChanged` はこの窓が開いている間 `isEchoScroll` で中継を抑止する。窓幅は既存 `SCROLL_SUPPRESS_WINDOW_MS` を流用した `EDIT_SCROLL_SUPPRESS_WINDOW_MS`（`src/core/viewport.ts`）とし、R-35-01/02/03/04 の既存ロジック（`scrollSuppressUntil`、`localEditScrollSuppressUntil`、`lastSyncedScrollLine` デデュープ、`onWebviewScroll` の `revealRange`）は変更していない（R-35-05 新設）。
 > ▶️ **開発継続中（2026-07-23 時点 / v1.49.0）**: v1.49.0 で、GitHub Issue #71（表セル編集中の input で Ctrl+C（コピー）が効かない）に対応した。`src/webview/main.ts` の `startCellEdit` が `.cm-lp-table-cell-input` 上で `stopPropagation` する隔離対象イベントに `copy`/`cut`/`paste` を追加した。従来は `mousedown`/`click`/`dblclick`/`input`/`contextmenu` のみが隔離対象で、copy/cut/paste はバブリングで CodeMirror の `contentDOM` に到達し、CodeMirror 本体の clipboard ハンドラがエディタ文書側の（実質空の）選択範囲でネイティブコピー・カット・ペーストを上書きしていた。イベント隔離の追加のみで、commit/cancel ロジック（Enter/Escape/Tab/blur、IME `isComposing` 判定）・keydown の `stopPropagation`・`updateTableCell` 等の本文変更ロジックは変更していない（R-22-07 改訂）。
@@ -346,7 +347,7 @@ HTML タグを使ったブロック（`<details>` アコーディオン等）は
 
 ###### ＜通常クリック＝セル編集・生ソースはメニュー経由＞
 
-- ■■□ R-22-08 表の通常クリック（プライマリボタン）は生 Markdown ソース表示へ切り替えず、クリックされたセル（`.cm-lp-table th/td`）の `readCellTarget` を読んで `beginCellEditFromTarget` でそのセルのインライン入力を開くこと。キャレットをブロック内へ移す処理（旧 R-22-02 のクリック→キャレット移動）は行わないこと。セカンダリボタン（右クリック）は握りつぶし、メニューは `contextmenu` 側（R-22-06/R-22-09）で扱うこと。ダブルクリックでもセル編集に入れる状態を維持すること（初回クリックで既に入力が開くため、二度目のクリックは入力欄内に落ちる）。この判定はウィジェット全体（`.cm-lp-table-wrapper`）を対象とし、実 `<table>` 要素の外側だがウィジェット内のパディング領域をクリックした場合も同様にキャレット移動・生ソース遷移を起こさないこと（Issue #55）。
+- ■■□ R-22-08 表の通常クリック（プライマリボタン）は生 Markdown ソース表示へ切り替えず、クリックされたセル（`.cm-lp-table th/td`）の `readCellTarget` を読んで `beginCellEditFromTarget` でそのセルのインライン入力を開くこと。キャレットをブロック内へ移す処理（旧 R-22-02 のクリック→キャレット移動）は行わないこと。セカンダリボタン（右クリック）は握りつぶし、メニューは `contextmenu` 側（R-22-06/R-22-09）で扱うこと。ダブルクリックでもセル編集に入れる状態を維持すること（初回クリックで既に入力が開くため、二度目のクリックは入力欄内に落ちる）。この判定はウィジェット全体（`.cm-lp-table-wrapper`）を対象とし、実 `<table>` 要素の外側だがウィジェット内のパディング領域をクリックした場合も同様にキャレット移動・生ソース遷移を起こさないこと（Issue #55）。押下位置が編集中の `.cm-lp-table-cell-input` 内である場合は `preventDefault()` を行わず（キャレット配置・ドラッグ選択のネイティブ動作を維持）、セル編集の再開始も行わないこと。CodeMirror 本体への伝播のみ止めること（`classifyTableWidgetPress`、Issue #82）。
 - ■■□ R-22-09 表の右クリックメニュー（R-22-06）に「Markdownコードを直接編集」項目を「セルを編集」の下へ追加すること。選択時、対象表ブロックの開始行（`startLine`）先頭へキャレットを移動（`view.dispatch({selection})`＋`view.focus()`）し、既存のカーソル駆動（R-22-02）で表を生行表示にして生 Markdown を直接編集可能にすること。キャレットがブロック外へ出れば従来どおりウィジェットへ復帰すること（追加の表示モード状態は持たない）。
 - ■■□ R-22-10 セル編集の `<input>` で Shift+Enter を押すと `commit` を行わず、カーソル位置へ `<br>` を挿入してカーソルをその直後へ置くこと。挿入は常に `<br>`（小文字・スペースなし・自己終了なし）の表記で統一すること。表示側（`appendInlineCell`）は `<br>`・`<br/>`・`<br />`（大文字小文字を問わない）を実際の改行（`<br>` 要素）として描画すること。カーソルが表ブロック内にあるだけで `<input>` を開いていない生テキスト編集モードは対象外とし、既存の行分割・box-drawing 判定に影響しないこと。
 
