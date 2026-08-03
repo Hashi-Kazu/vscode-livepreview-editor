@@ -1034,8 +1034,9 @@ function syncCellInputCaretScroll(input: HTMLInputElement): void {
   const caret = input.selectionEnd ?? input.value.length;
   const style = getComputedStyle(input);
   const caretOffset = measureTextWidthPx(input.value.slice(0, caret), style.font);
+  const paddingLeft = parseFloat(style.paddingLeft) || 0;
   const paddingRight = parseFloat(style.paddingRight) || 0;
-  const clientWidth = Math.max(0, input.clientWidth - paddingRight);
+  const clientWidth = Math.max(0, input.clientWidth - paddingLeft - paddingRight);
   input.scrollLeft = computeCaretScrollLeft(caretOffset, clientWidth, input.scrollLeft);
 }
 
