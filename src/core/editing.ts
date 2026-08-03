@@ -251,6 +251,32 @@ export function changeListIndent(
   return { text: ' '.repeat(target) + lineText.slice(cur.indent), shift: target - cur.indent };
 }
 
+/**
+ * Compute the `scrollLeft` a single-line text input should have so the caret
+ * stays inside its visible width (R-22-10, Issue #86). `caretOffset` is the
+ * pixel distance from the start of the text content to the caret (i.e. the
+ * rendered width of the text before the caret); `clientWidth` is the input's
+ * visible content width in pixels; `currentScrollLeft` is the input's current
+ * `scrollLeft`.
+ *
+ * Pure/DOM-independent so it can be unit-tested directly: the Webview measures
+ * `caretOffset` (via a canvas using the input's computed font) and `clientWidth`
+ * from the live `<input>`, then applies the returned value to `scrollLeft`.
+ * This is needed because after a *programmatic* `value`/`selectionRange`
+ * change (e.g. the `<br>` insertion on Shift+Enter), the browser's native
+ * caret-follows-scroll behaviour can end up out of sync, leaving the caret
+ * hidden past the input's right edge on subsequent typing.
+ */
+export function computeCaretScrollLeft(
+  caretOffset: number,
+  clientWidth: number,
+  currentScrollLeft: number,
+): number {
+  if (caretOffset < currentScrollLeft) return caretOffset; // caret hidden past the left edge
+  if (caretOffset > currentScrollLeft + clientWidth) return caretOffset - clientWidth; // hidden past the right edge
+  return currentScrollLeft; // already visible; leave scroll position untouched
+}
+
 const HEADING_LINE = /^(#{1,6})(\s+)(.*)$/;
 
 /**
