@@ -37,7 +37,16 @@ import {
   insertBrAtCaret,
 } from '../core/tableEdit';
 import { toggleWrap, WrapResult } from '../core/format';
-import { changeIndent, changeListIndent, toggleHeading, shouldOpenLinkOnMouseDown, classifyUndoRedoKey, computeListEnterEdit, classifyTableWidgetPress } from '../core/editing';
+import {
+  changeIndent,
+  changeListIndent,
+  toggleHeading,
+  shouldOpenLinkOnMouseDown,
+  classifyUndoRedoKey,
+  computeListEnterEdit,
+  classifyTableWidgetPress,
+  computeCaretScrollLeft,
+} from '../core/editing';
 import { headingFoldRange, parseTableRow, scanHeadings } from '../core/model';
 import {
   LineWindow,
@@ -994,6 +1003,42 @@ function beginCellEditFromTarget(target: CellTarget): void {
   if (cell) startCellEdit(cell, target);
 }
 
+/** Cached 2D canvas context reused to measure text width for caret-scroll sync
+ *  (below). Created lazily so it never runs outside a browser/webview. */
+let caretMeasureCtx: CanvasRenderingContext2D | null | undefined;
+
+/** Pixel width of `text` when rendered with `font` (a CSS `font` shorthand),
+ *  via an offscreen canvas. Returns 0 if canvas 2D is unavailable. */
+function measureTextWidthPx(text: string, font: string): number {
+  if (caretMeasureCtx === undefined) {
+    const canvas = document.createElement('canvas');
+    caretMeasureCtx = canvas.getContext('2d');
+  }
+  if (!caretMeasureCtx) return 0;
+  caretMeasureCtx.font = font;
+  return caretMeasureCtx.measureText(text).width;
+}
+
+/**
+ * Keep the caret of a table-cell edit `<input>` visible by adjusting its
+ * `scrollLeft` (R-22-10, Issue #86). After a *programmatic* value/selection
+ * change (the `<br>` insertion on Shift+Enter, via a synthetic `input` event)
+ * the browser's native caret-follows-scroll bookkeeping can end up out of
+ * sync, so this measures the caret's pixel offset with a canvas (matching the
+ * input's computed font) and applies `computeCaretScrollLeft` explicitly. It
+ * is wired to fire on every `input` event — both the synthetic one dispatched
+ * right after `<br>` insertion and every subsequent real keystroke — so the
+ * caret never ends up hidden past the input's edge.
+ */
+function syncCellInputCaretScroll(input: HTMLInputElement): void {
+  const caret = input.selectionEnd ?? input.value.length;
+  const style = getComputedStyle(input);
+  const caretOffset = measureTextWidthPx(input.value.slice(0, caret), style.font);
+  const paddingRight = parseFloat(style.paddingRight) || 0;
+  const clientWidth = Math.max(0, input.clientWidth - paddingRight);
+  input.scrollLeft = computeCaretScrollLeft(caretOffset, clientWidth, input.scrollLeft);
+}
+
 /** Open the inline <input> for `cell` and wire commit/cancel + event isolation. */
 function startCellEdit(cell: HTMLElement, target: CellTarget): void {
   finishActiveCellEdit(true); // commit any other cell edit first
@@ -1050,6 +1095,11 @@ function startCellEdit(cell: HTMLElement, target: CellTarget): void {
   ] as const) {
     input.addEventListener(type, stop);
   }
+  // Keep the caret visible as the cell's content overflows the input's width
+  // (R-22-10, Issue #86). Fires on every `input` event — real keystrokes and
+  // the synthetic one dispatched right after `<br>` insertion below — so the
+  // caret never ends up scrolled out of view.
+  input.addEventListener('input', () => syncCellInputCaretScroll(input));
   input.addEventListener('compositionstart', (ev) => {
     ev.stopPropagation();
     composing = true;
