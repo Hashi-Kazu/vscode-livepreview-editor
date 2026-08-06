@@ -7,7 +7,7 @@ import { Decoration, DecorationSet, EditorView, WidgetType } from '@codemirror/v
 import { EditorState, RangeSetBuilder } from '@codemirror/state';
 import katex from 'katex';
 import mermaid from 'mermaid';
-import { computeDecorationsSafe, DecoSpec, DecorationOptions } from '../core/model';
+import { computeDecorationsSafe, DecoSpec, DecorationOptions, underscoreBoundaryOk } from '../core/model';
 import { cursorLinesFromSelections } from '../core/sync';
 
 /** Mermaid theme picked once from the VS Code body class (dark / high-contrast →
@@ -132,6 +132,22 @@ export function appendInlineCell(parent: HTMLElement, text: string): void {
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
+    // Underscore emphasis (`_..._` / `__..__`) must not open/close intra-word
+    // (CommonMark rule), matching the body editor's `underscoreBoundaryOk`
+    // (`src/core/model.ts`). If the boundary check fails, this match is not
+    // treated as emphasis at all: skip it *without* flushing the pending
+    // plain-text run or advancing `last` — the matched text simply stays
+    // part of that run and is emitted (merged with any surrounding plain
+    // text) by the next flush or the trailing flush after the loop. `re`'s
+    // own `lastIndex` still advances past the match (it is always non-empty
+    // here), so the scan makes forward progress and cannot loop forever
+    // (Issue #92).
+    if (
+      (m[3] !== undefined || m[5] !== undefined) &&
+      !underscoreBoundaryOk(text, m.index, m.index + m[0].length)
+    ) {
+      continue;
+    }
     if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
     if (m[1] === undefined && m[2] === undefined && m[3] === undefined && m[4] === undefined && m[5] === undefined) {
       parent.appendChild(document.createElement('br'));
