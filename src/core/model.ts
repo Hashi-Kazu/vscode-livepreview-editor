@@ -766,7 +766,7 @@ export function parseInline(text: string, base: number, cursorLine: boolean, seg
  * so intra-word underscores like `my_var_name` are not treated as emphasis
  * (CommonMark rule). Asterisk emphasis is intentionally allowed intra-word.
  */
-function underscoreBoundaryOk(text: string, start: number, end: number): boolean {
+export function underscoreBoundaryOk(text: string, start: number, end: number): boolean {
   const prev = start > 0 ? text[start - 1] : '';
   const next = end < text.length ? text[end] : '';
   return !/[A-Za-z0-9]/.test(prev) && !/[A-Za-z0-9]/.test(next);
