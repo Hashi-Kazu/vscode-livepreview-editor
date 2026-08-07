@@ -123,16 +123,31 @@ interface ParsedTable {
  * bold. We keep this intentionally small (cells rarely carry rich syntax) and
  * escape everything else so it stays safe from raw-HTML injection. */
 export function appendInlineCell(parent: HTMLElement, text: string): void {
-  // Tokenise into [marker, content] runs. Order: code → bold → italic → br.
-  // The `<br\s*\/?>` alternative (R-22-10) recognises `<br>`/`<br/>`/`<br />`
-  // case-insensitively so a cell edited via Shift+Enter (which always inserts
-  // the literal lowercase `<br>`) renders as a real line break instead of the
-  // literal tag text.
-  const re = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|<br\s*\/?>/gi;
+  // Split on real `<br>` boundaries *first*, then tokenise each segment
+  // independently. Code/bold/italic markers must never be recognised across a
+  // `<br>` boundary — a stray pair of `_`/`*`/`` ` `` on either side of a
+  // `<br>` (e.g. `report_v1.md<br>final_v2.md`) would otherwise be picked up
+  // by the tokeniser's greedy leftmost-match scan as if the `<br>` weren't
+  // there, swallowing the tag as literal emphasis/code content instead of
+  // rendering it as a line break (Issue #94). Splitting first guarantees each
+  // `appendInlineRun` call only ever sees text on one side of a `<br>`.
+  const segments = text.split(/<br\s*\/?>/gi);
+  segments.forEach((segment, i) => {
+    appendInlineRun(parent, segment);
+    if (i < segments.length - 1) parent.appendChild(document.createElement('br'));
+  });
+}
+
+/** Tokenise a single `<br>`-free run of cell text into [marker, content] runs
+ *  (code → bold → italic) and append the resulting nodes to `parent`. Split
+ *  out of {@link appendInlineCell} so `<br>` boundaries (split before this
+ *  runs) can never be crossed by an emphasis/code match (Issue #94). */
+function appendInlineRun(parent: HTMLElement, text: string): void {
+  const re = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_/gi;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    // Underscore emphasis (`_..._` / `__..__`) must not open/close intra-word
+    // Underscore emphasis (`_..._` / `__..._`) must not open/close intra-word
     // (CommonMark rule), matching the body editor's `underscoreBoundaryOk`
     // (`src/core/model.ts`). If the boundary check fails, this match is not
     // treated as emphasis at all: skip it *without* flushing the pending
@@ -149,11 +164,6 @@ export function appendInlineCell(parent: HTMLElement, text: string): void {
       continue;
     }
     if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
-    if (m[1] === undefined && m[2] === undefined && m[3] === undefined && m[4] === undefined && m[5] === undefined) {
-      parent.appendChild(document.createElement('br'));
-      last = m.index + m[0].length;
-      continue;
-    }
     let el: HTMLElement;
     if (m[1] !== undefined) {
       el = document.createElement('code');
