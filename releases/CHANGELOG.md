@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.51.8 — 表セル内リンクの表示 (バグ修正)
+
+### 変更
+
+- 表セル内の `[text](url)` と自動リンク `<url>` を、本文と同じリンク装飾（`cm-lp-link`）+ `data-href` 付きで描画するよう `appendInlineRun`（`src/webview/decorations.ts`）を修正。左クリックで開ける。
+- テスト（`test/feature.tableCellLink.test.ts`）を追加。
+
 ## v1.51.7 — 表セル内の `<br>` がアンダースコア強調でトークナイズされる問題を修正 (Issue #94)
 
 ### 変更
