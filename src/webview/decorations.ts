@@ -143,7 +143,7 @@ export function appendInlineCell(parent: HTMLElement, text: string): void {
  *  out of {@link appendInlineCell} so `<br>` boundaries (split before this
  *  runs) can never be crossed by an emphasis/code match (Issue #94). */
 function appendInlineRun(parent: HTMLElement, text: string): void {
-  const re = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_/gi;
+  const re = /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*]+)\*|_([^_]+)_|\[([^\]\n]+)\]\(([^)\n]+)\)|<((?:https?:\/\/|mailto:)[^>\s]+|[^>\s@]+@[^>\s@]+\.[^>\s@]+)>/gi;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
@@ -165,7 +165,18 @@ function appendInlineRun(parent: HTMLElement, text: string): void {
     }
     if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
     let el: HTMLElement;
-    if (m[1] !== undefined) {
+    if (m[6] !== undefined || m[8] !== undefined) {
+      // Link `[text](url)` / autolink `<url>`: same decoration + `data-href` as
+      // the body (R-02-03); label via textContent only (no innerHTML).
+      const isAuto = m[8] !== undefined;
+      const label = isAuto ? (m[8] ?? '') : (m[7] ?? '');
+      const url = isAuto && label.includes('@') && !label.includes(':') ? `mailto:${label}` : label.trim();
+      el = document.createElement('span');
+      el.className = 'cm-lp-link';
+      el.setAttribute('data-href', url);
+      el.setAttribute('title', url);
+      el.textContent = isAuto ? label : (m[6] ?? '');
+    } else if (m[1] !== undefined) {
       el = document.createElement('code');
       el.className = 'cm-lp-code';
       el.textContent = m[1];
